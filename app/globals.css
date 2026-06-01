@@ -8,6 +8,7 @@
     --font-heading: var(--font-pjs);
     --font-sans:    var(--font-pjs);
     --font-inter:   var(--font-inter);
+    --font-fredoka: var(--font-fredoka);
     /* Jomie semantic extras */
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
