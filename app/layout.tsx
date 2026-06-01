@@ -1,10 +1,18 @@
-import { Plus_Jakarta_Sans } from "next/font/google"
+import { Inter, Plus_Jakarta_Sans } from "next/font/google"
 import "./globals.css"
 import { cn } from "@/lib/utils"
 
+// Inter — all UI chrome (nav labels, badges, buttons, header)
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  weight: ["300", "400", "500", "600", "700"],
+})
+
+// Plus Jakarta Sans — content headings, brand moments
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-pjs",
   weight: ["400", "500", "600", "700", "800"],
 })
 
@@ -21,11 +29,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      // dark class locks dark mode — Jomie is dark-first
-      className={cn("dark antialiased", plusJakartaSans.variable)}
+      className={cn("dark antialiased", inter.variable, plusJakartaSans.variable)}
       suppressHydrationWarning
     >
-      <body className="font-sans bg-background text-foreground">
+      <body className="font-inter text-foreground" style={{
+        background: "linear-gradient(45deg, #141137 0%, #191647 100%)",
+        minHeight: "100vh",
+      }}>
         {children}
       </body>
     </html>

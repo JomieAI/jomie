@@ -3,13 +3,9 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import {
-  TriangleAlert, ShieldCheck, CheckCircle2,
-  Sparkles, Plus, Download, Search,
-  ChevronRight, ArrowUpRight, Clock,
+  TriangleAlert, ShieldCheck, CheckCircle2, Sparkles,
+  Plus, Download, Search, ChevronRight, Clock,
 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,7 +29,6 @@ interface AIInsight {
   type: "info" | "warn" | "ok"
   title: string
   body: string
-  // Signature: structured citation — module:version → regulation:clause
   cite: string
 }
 
@@ -70,15 +65,15 @@ const PRS: PR[] = [
     budget: "150,000",
     status: "pending",
     approvers: [
-      { initials: "SA", state: "done",    name: "Siti Aisyah",    role: "Dept Head",    level: 1 },
-      { initials: "RA", state: "pending", name: "Razif Abdullah", role: "Finance Mgr",  level: 2 },
-      { initials: "CM", state: "waiting", name: "Chong Mei Ling", role: "CFO",          level: 3 },
+      { initials: "SA", state: "done",    name: "Siti Aisyah",    role: "Dept Head",   level: 1 },
+      { initials: "RA", state: "pending", name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
+      { initials: "CM", state: "waiting", name: "Chong Mei Ling", role: "CFO",         level: 3 },
     ],
     aiFlags: 1,
     lineItems: [
-      { name: "Dell Latitude 5540",  detail: "14 × RM 7,200 · Tech Solutions MY", amount: "100,800" },
-      { name: "LG 27\" UltraFine 4K", detail: "6 × RM 2,500 · Tech Solutions MY",  amount: "15,000"  },
-      { name: "Dell WD22TB4 Dock",   detail: "14 × RM 1,929 · Tech Solutions MY", amount: "27,000"  },
+      { name: "Dell Latitude 5540",   detail: "14 × RM 7,200 · Tech Solutions MY", amount: "100,800" },
+      { name: "LG 27\" UltraFine 4K", detail: "6 × RM 2,500 · Tech Solutions MY",  amount: "15,000" },
+      { name: "Dell WD22TB4 Dock",    detail: "14 × RM 1,929 · Tech Solutions MY", amount: "27,000" },
     ],
     aiInsights: [
       {
@@ -117,9 +112,7 @@ const PRS: PR[] = [
       { initials: "RA", state: "done",    name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
       { initials: "CM", state: "pending", name: "Chong Mei Ling", role: "CFO",         level: 3 },
     ],
-    aiFlags: 0,
-    lineItems: [],
-    aiInsights: [],
+    aiFlags: 0, lineItems: [], aiInsights: [],
   },
   {
     id: "PR-0087",
@@ -138,9 +131,7 @@ const PRS: PR[] = [
       { initials: "RA", state: "done",    name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
       { initials: "CM", state: "pending", name: "Chong Mei Ling", role: "CFO",         level: 3 },
     ],
-    aiFlags: 2,
-    lineItems: [],
-    aiInsights: [],
+    aiFlags: 2, lineItems: [], aiInsights: [],
   },
   {
     id: "PR-0086",
@@ -157,9 +148,7 @@ const PRS: PR[] = [
       { initials: "SA", state: "done", name: "Siti Aisyah",    role: "Dept Head",   level: 1 },
       { initials: "RA", state: "done", name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
     ],
-    aiFlags: 0,
-    lineItems: [],
-    aiInsights: [],
+    aiFlags: 0, lineItems: [], aiInsights: [],
   },
   {
     id: "PR-0085",
@@ -176,9 +165,7 @@ const PRS: PR[] = [
       { initials: "SA", state: "done", name: "Siti Aisyah",    role: "Dept Head",   level: 1 },
       { initials: "RA", state: "done", name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
     ],
-    aiFlags: 0,
-    lineItems: [],
-    aiInsights: [],
+    aiFlags: 0, lineItems: [], aiInsights: [],
   },
   {
     id: "PR-0084",
@@ -192,324 +179,237 @@ const PRS: PR[] = [
     budget: "10,000",
     status: "draft",
     approvers: [],
-    aiFlags: 0,
-    lineItems: [],
-    aiInsights: [],
+    aiFlags: 0, lineItems: [], aiInsights: [],
   },
 ]
 
-// ─── Workflow position indicator ──────────────────────────────────────────────
-// Replaces badge pills — shows approval chain position as a compact visual track
+// ─── Status config ────────────────────────────────────────────────────────────
 
-function WorkflowPosition({ approvers, status }: { approvers: Approver[]; status: PRStatus }) {
-  if (status === "draft") return (
-    <span className="text-[10px] text-muted-foreground/40 font-mono">draft</span>
-  )
-  if (status === "approved") return (
-    <span className="flex items-center gap-1 text-[10px] text-success font-medium">
-      <CheckCircle2 size={10} /> all approved
+const STATUS: Record<PRStatus, { label: string; dot: string; text: string; bg: string }> = {
+  pending:  { label: "Pending",      dot: "#F59E0B", text: "#92400E", bg: "#FEF3C7" },
+  review:   { label: "Under Review", dot: "#5D5EF4", text: "#3730A3", bg: "#EDE9FE" },
+  approved: { label: "Approved",     dot: "#10B981", text: "#065F46", bg: "#D1FAE5" },
+  draft:    { label: "Draft",        dot: "#9CA3AF", text: "#6B7280", bg: "#F3F4F6" },
+}
+
+function StatusBadge({ status }: { status: PRStatus }) {
+  const s = STATUS[status]
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      style={{ background: s.bg, color: s.text }}>
+      <span className="size-1.5 rounded-full shrink-0" style={{ background: s.dot }} />
+      {s.label}
     </span>
   )
-  if (approvers.length === 0) return null
+}
 
+// ─── Workflow dots ────────────────────────────────────────────────────────────
+
+function WorkflowDots({ approvers, status }: { approvers: Approver[]; status: PRStatus }) {
+  if (status === "draft") return <span className="text-[10px] text-gray-400 font-mono">draft</span>
+  if (status === "approved") return (
+    <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
+      <CheckCircle2 size={10} />all done
+    </span>
+  )
+  if (!approvers.length) return null
   const current = approvers.find(a => a.state === "pending")
-  const done = approvers.filter(a => a.state === "done").length
-
   return (
     <div className="flex items-center gap-1.5">
-      {/* Compact dot track */}
       <div className="flex items-center gap-0.5">
         {approvers.map((a, i) => (
-          <div
-            key={i}
-            className={cn(
-              "rounded-full transition-colors",
-              a.state === "done"    && "size-1.5 bg-success",
-              a.state === "pending" && "size-2 bg-warning border border-warning/50 animate-pulse",
-              a.state === "waiting" && "size-1.5 bg-muted-foreground/20",
-            )}
-            title={`L${a.level} ${a.role} — ${a.state}`}
-          />
+          <div key={i} className={cn("rounded-full", {
+            "size-1.5 bg-emerald-500": a.state === "done",
+            "size-2 bg-amber-400": a.state === "pending",
+            "size-1.5 bg-gray-300": a.state === "waiting",
+          })} title={`L${a.level} ${a.role}`} />
         ))}
       </div>
-      {current && (
-        <span className="text-[10px] text-muted-foreground/60 font-mono whitespace-nowrap">
-          L{current.level}
-        </span>
-      )}
+      {current && <span className="text-[10px] text-gray-500 font-mono">L{current.level}</span>}
     </div>
   )
 }
 
-// ─── AI Citation (signature element) ─────────────────────────────────────────
+// ─── AI citation (signature) ──────────────────────────────────────────────────
 
-function AICitation({ cite }: { cite: string }) {
+function AICite({ cite }: { cite: string }) {
   return (
-    <div className="mt-2 pt-2 border-t border-white/[0.05]">
-      <code className="text-[9px] font-mono text-muted-foreground/40 tracking-tight">
-        {cite}
-      </code>
+    <div className="mt-2 pt-2 border-t border-gray-100">
+      <code className="text-[9px] font-mono text-gray-400">{cite}</code>
     </div>
   )
 }
 
-// ─── AI Panel insight card ────────────────────────────────────────────────────
+// ─── Insight card ─────────────────────────────────────────────────────────────
 
 function InsightCard({ insight }: { insight: AIInsight }) {
   const cfg = {
-    info: { dot: "bg-primary", text: "text-primary/80",  border: "border-primary/10",  bg: "bg-primary/[0.05]" },
-    warn: { dot: "bg-warning", text: "text-warning",     border: "border-warning/15",  bg: "bg-warning/[0.05]" },
-    ok:   { dot: "bg-success", text: "text-success",     border: "border-success/12",  bg: "bg-success/[0.04]" },
+    info: { bg: "rgba(93,94,244,0.06)", border: "rgba(93,94,244,0.15)", dot: "#5D5EF4", title: "#4338CA" },
+    warn: { bg: "rgba(245,158,11,0.06)", border: "rgba(245,158,11,0.2)", dot: "#F59E0B", title: "#92400E" },
+    ok:   { bg: "rgba(16,185,129,0.06)", border: "rgba(16,185,129,0.15)", dot: "#10B981", title: "#065F46" },
   }[insight.type]
 
   return (
-    <div className={cn("rounded-lg border p-3", cfg.border, cfg.bg)}>
+    <div className="rounded-lg p-3 mb-2 last:mb-0" style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}>
       <div className="flex items-start gap-2">
-        <div className={cn("size-1.5 rounded-full mt-1.5 shrink-0", cfg.dot)} />
-        <div className="flex-1 min-w-0">
-          <div className={cn("text-[11px] font-semibold mb-1", cfg.text)}>{insight.title}</div>
-          <p className="text-[11px] text-muted-foreground/70 leading-relaxed">{insight.body}</p>
-          <AICitation cite={insight.cite} />
+        <div className="size-1.5 rounded-full mt-1.5 shrink-0" style={{ background: cfg.dot }} />
+        <div className="flex-1">
+          <div className="text-[11px] font-semibold mb-1" style={{ color: cfg.title }}>{insight.title}</div>
+          <p className="text-[11px] text-gray-600 leading-relaxed">{insight.body}</p>
+          <AICite cite={insight.cite} />
         </div>
       </div>
     </div>
   )
 }
 
-// ─── Right co-pilot panel ─────────────────────────────────────────────────────
+// ─── Right panel (AI co-pilot) — uses light panel bg ─────────────────────────
 
 function CopilotPanel({ pr }: { pr: PR | null }) {
   return (
-    <aside className="w-[320px] shrink-0 flex flex-col border-l border-border bg-background overflow-hidden">
+    <div className="flex flex-col h-full">
 
       {/* Panel header */}
-      <div className="flex items-center justify-between px-4 h-11 border-b border-border shrink-0">
+      <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
         <div className="flex items-center gap-1.5">
-          <Sparkles size={11} className="text-primary/60" />
-          <span className="text-[11px] font-semibold text-foreground/70">Jomie AI</span>
-          {/* Live indicator */}
-          <div className="flex items-center gap-1 ml-1">
-            <div className="size-1 rounded-full bg-success animate-pulse" />
-            <span className="text-[9px] font-mono text-muted-foreground/30">LIVE</span>
+          <Sparkles size={13} className="text-[#5D5EF4]" />
+          <span className="text-[12px] font-semibold text-gray-700" style={{ fontFamily: "var(--font-pjs)" }}>
+            Jomie AI
+          </span>
+          <div className="flex items-center gap-1 ml-1.5">
+            <div className="size-1 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[9px] font-mono text-gray-400">LIVE</span>
           </div>
         </div>
-        {pr && (
-          <span className="text-[9px] font-mono text-muted-foreground/30">{pr.id}</span>
-        )}
+        {pr && <span className="text-[9px] font-mono text-gray-400">{pr.id}</span>}
       </div>
 
-      {/* Empty state */}
-      {!pr && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
-          <div className="size-8 rounded-lg bg-primary/8 flex items-center justify-center">
-            <Sparkles size={16} className="text-primary/50" />
+      {!pr ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          <div className="size-10 rounded-xl flex items-center justify-center"
+            style={{ background: "rgba(93,94,244,0.1)" }}>
+            <Sparkles size={18} style={{ color: "#5D5EF4" }} />
           </div>
           <div className="text-center">
-            <div className="text-[12px] font-medium text-muted-foreground/50">Select a PR to analyse</div>
-            <div className="text-[10px] text-muted-foreground/30 mt-1">Jomie will surface tax flags, compliance issues, and approval context</div>
-          </div>
-        </div>
-      )}
-
-      {/* PR Detail */}
-      {pr && (
-        <div className="flex-1 overflow-y-auto">
-
-          {/* PR header */}
-          <div className="px-4 py-3 border-b border-border">
-            <div className="text-[13px] font-semibold text-foreground leading-tight mb-1">{pr.title}</div>
-            <div className="text-[10px] text-muted-foreground/50">{pr.sub}</div>
-            <div className="flex items-center gap-2 mt-2">
-              <Avatar className="size-4">
-                <AvatarFallback className="text-[7px] bg-muted text-muted-foreground">{pr.requesterInitials}</AvatarFallback>
-              </Avatar>
-              <span className="text-[10px] text-muted-foreground/60">{pr.requester}</span>
-              <span className="text-muted-foreground/20">·</span>
-              <span className="text-[10px] text-muted-foreground/40">{pr.date}</span>
+            <div className="text-[13px] font-semibold text-gray-500">Select a PR to analyse</div>
+            <div className="text-[11px] text-gray-400 mt-1 max-w-[200px] leading-relaxed">
+              Jomie surfaces tax flags, compliance issues, and approval context
             </div>
           </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto -mx-1 px-1">
 
-          <div className="p-4 flex flex-col gap-5">
-
-            {/* Amount */}
+          {/* PR summary */}
+          <div className="mb-4">
+            <div className="text-[14px] font-bold text-gray-900 leading-tight mb-1"
+              style={{ fontFamily: "var(--font-pjs)" }}>{pr.title}</div>
+            <div className="text-[11px] text-gray-500 mb-2">{pr.sub}</div>
             <div className="flex items-baseline justify-between">
               <div>
-                <div className="text-[10px] text-muted-foreground/40 uppercase tracking-wider mb-1">Total</div>
-                <div className="text-[22px] font-bold tracking-tight text-foreground font-mono tabular-nums">
+                <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Total</div>
+                <div className="text-[22px] font-bold text-gray-900 font-mono tabular-nums tracking-tight">
                   RM {pr.amount}
                 </div>
-                <div className={cn("text-[10px] mt-0.5", pr.overBudget ? "text-warning" : "text-muted-foreground/40")}>
-                  {pr.overBudget
-                    ? `▲ over budget by RM ${(+pr.amount.replace(",","") - +pr.budget.replace(",","")).toLocaleString()}`
-                    : `budget RM ${pr.budget}`
-                  }
+                <div className={cn("text-[10px] font-mono mt-0.5",
+                  pr.overBudget ? "text-amber-600" : "text-gray-400")}>
+                  {pr.overBudget ? `▲ over by RM ${(+pr.amount.replace(",","") - +pr.budget.replace(",","")).toLocaleString()}` : `/ ${pr.budget}`}
                 </div>
               </div>
-              <div className="text-right">
-                <WorkflowPosition approvers={pr.approvers} status={pr.status} />
+              <StatusBadge status={pr.status} />
+            </div>
+          </div>
+
+          {/* Line items */}
+          {pr.lineItems.length > 0 && (
+            <div className="mb-4">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Line Items</div>
+              <div className="rounded-lg border border-gray-100 overflow-hidden">
+                {pr.lineItems.map((item, i) => (
+                  <div key={i} className={cn("flex items-center gap-2 px-3 py-2", i > 0 && "border-t border-gray-100")}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-medium text-gray-800 truncate">{item.name}</div>
+                      <div className="text-[9px] text-gray-400 truncate">{item.detail}</div>
+                    </div>
+                    <div className="text-[11px] font-mono font-semibold text-gray-800 shrink-0 tabular-nums">{item.amount}</div>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
 
-            {/* Line items — ledger style */}
-            {pr.lineItems.length > 0 && (
-              <div>
-                <div className="text-[9px] uppercase tracking-widest text-muted-foreground/30 mb-2">Line Items</div>
-                <div className="border border-border rounded-lg overflow-hidden">
-                  {pr.lineItems.map((item, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        "flex items-center justify-between px-3 py-2 gap-2",
-                        i > 0 && "border-t border-border/50",
-                      )}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-medium text-foreground truncate">{item.name}</div>
-                        <div className="text-[9px] text-muted-foreground/40 mt-0.5 truncate">{item.detail}</div>
-                      </div>
-                      <div className="text-[11px] font-mono font-semibold text-foreground tabular-nums shrink-0">
-                        {item.amount}
+          {/* AI Insights */}
+          {pr.aiInsights.length > 0 && (
+            <div className="mb-4">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">AI Analysis</div>
+              {pr.aiInsights.map((ins, i) => <InsightCard key={i} insight={ins} />)}
+            </div>
+          )}
+
+          {/* Approval chain */}
+          {pr.approvers.length > 0 && (
+            <div className="mb-4">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Approval Chain</div>
+              <div className="flex flex-col">
+                {pr.approvers.map((a, i) => (
+                  <div key={i} className="flex items-start gap-2.5 pb-3 last:pb-0 relative">
+                    {i < pr.approvers.length - 1 && (
+                      <div className="absolute left-[9px] top-5 bottom-0 w-px bg-gray-200" />
+                    )}
+                    <div className={cn(
+                      "size-[18px] rounded-full border flex items-center justify-center text-[8px] font-bold shrink-0 z-10 bg-white",
+                      a.state === "done"    && "border-emerald-400 text-emerald-600",
+                      a.state === "pending" && "border-amber-400 text-amber-600",
+                      a.state === "waiting" && "border-gray-200 text-gray-400",
+                    )}>
+                      {a.state === "done" ? "✓" : a.level}
+                    </div>
+                    <div className="flex-1 pt-0.5">
+                      <div className="text-[11px] font-semibold text-gray-700">{a.role} <span className="text-gray-400 font-normal text-[9px]">L{a.level}</span></div>
+                      <div className="text-[10px] text-gray-400">{a.name}</div>
+                      <div className={cn("text-[9px] mt-0.5 flex items-center gap-1",
+                        a.state === "done" && "text-emerald-600",
+                        a.state === "pending" && "text-amber-600",
+                        a.state === "waiting" && "text-gray-400")}>
+                        {a.state === "done" && "✓ Approved"}
+                        {a.state === "pending" && <><Clock size={8} />Awaiting · 18 hrs</>}
+                        {a.state === "waiting" && "Waiting"}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            )}
-
-            {/* AI Insights */}
-            {pr.aiInsights.length > 0 && (
-              <div>
-                <div className="text-[9px] uppercase tracking-widest text-muted-foreground/30 mb-2">AI Analysis</div>
-                <div className="flex flex-col gap-2">
-                  {pr.aiInsights.map((insight, i) => (
-                    <InsightCard key={i} insight={insight} />
-                  ))}
-                </div>
+              {/* SOD */}
+              <div className="mt-2 flex items-start gap-1.5 rounded-lg p-2 border border-gray-100 bg-gray-50">
+                <ShieldCheck size={11} className="text-[#5D5EF4] mt-0.5 shrink-0" />
+                <p className="text-[10px] text-gray-500 leading-snug">
+                  SOD enforced — {pr.requester} excluded from all approval steps by system.
+                </p>
               </div>
-            )}
-
-            {/* Approval chain — vertical track */}
-            {pr.approvers.length > 0 && (
-              <div>
-                <div className="text-[9px] uppercase tracking-widest text-muted-foreground/30 mb-2">Approval Chain</div>
-                <div className="flex flex-col">
-                  {pr.approvers.map((a, i) => (
-                    <div key={i} className="flex items-start gap-2.5 relative pb-3 last:pb-0">
-                      {/* Connector */}
-                      {i < pr.approvers.length - 1 && (
-                        <div className="absolute left-[10px] top-5 bottom-0 w-px bg-border/50" />
-                      )}
-                      {/* Node */}
-                      <div className={cn(
-                        "size-5 rounded-full border flex items-center justify-center text-[8px] font-bold shrink-0 z-10 bg-background",
-                        a.state === "done"    && "border-success text-success",
-                        a.state === "pending" && "border-warning text-warning",
-                        a.state === "waiting" && "border-border text-muted-foreground/30",
-                      )}>
-                        {a.state === "done" ? "✓" : a.level}
-                      </div>
-                      <div className="flex-1 pt-0.5">
-                        <div className="flex items-baseline gap-1.5">
-                          <span className="text-[11px] font-medium text-foreground/80">{a.role}</span>
-                          <span className="text-[9px] text-muted-foreground/40">L{a.level}</span>
-                        </div>
-                        <div className="text-[10px] text-muted-foreground/40">{a.name}</div>
-                        <div className={cn(
-                          "text-[9px] mt-0.5 flex items-center gap-1",
-                          a.state === "done"    && "text-success/70",
-                          a.state === "pending" && "text-warning/70",
-                          a.state === "waiting" && "text-muted-foreground/25",
-                        )}>
-                          {a.state === "done"    && "✓ Approved"}
-                          {a.state === "pending" && <><Clock size={8} /> Awaiting · 18 hrs</>}
-                          {a.state === "waiting" && "Waiting"}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* SOD notice — structural, not decorative */}
-                <div className="mt-3 flex items-start gap-2 rounded-md border border-border/60 bg-white/[0.02] px-2.5 py-2">
-                  <ShieldCheck size={11} className="text-primary/50 mt-0.5 shrink-0" />
-                  <p className="text-[10px] text-muted-foreground/50 leading-snug">
-                    SOD enforced — {pr.requester} excluded from all approval steps by system control.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Footer actions */}
+      {/* Actions */}
       {pr && (
-        <div className="px-4 py-3 border-t border-border shrink-0 flex flex-col gap-2">
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              size="sm"
-              className="h-8 text-[11px] font-semibold bg-success/90 hover:bg-success text-white gap-1.5"
-            >
-              <CheckCircle2 size={12} />
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-[11px] border-border text-muted-foreground hover:text-foreground gap-1.5"
-            >
+        <div className="pt-4 mt-auto border-t border-gray-100">
+          <div className="text-[11px] text-gray-400 mb-1.5">Total amount</div>
+          <div className="text-[20px] font-bold text-gray-900 font-mono tabular-nums mb-3">RM {pr.amount}</div>
+          <div className="flex gap-2">
+            <button className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-[12px] font-semibold text-white"
+              style={{ background: "#10B981" }}>
+              <CheckCircle2 size={13} /> Approve
+            </button>
+            <button className="flex-1 flex items-center justify-center h-9 rounded-lg text-[12px] font-medium border border-gray-200 text-gray-600 bg-white hover:bg-gray-50">
               Query
-            </Button>
+            </button>
+            <button className="px-3 h-9 rounded-lg text-[12px] font-medium border border-red-100 text-red-400 bg-white hover:bg-red-50">
+              ✕
+            </button>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-[10px] text-muted-foreground/40 hover:text-destructive hover:bg-destructive/5 gap-1"
-          >
-            Reject this request
-          </Button>
         </div>
       )}
-    </aside>
-  )
-}
-
-// ─── Priority queue (replaces greeting card) ──────────────────────────────────
-
-function PriorityQueue() {
-  const items = [
-    { n: 1, label: "Approve PR-0089", urgent: true },
-    { n: 2, label: "Approve PR-0087", urgent: true },
-    { n: 3, label: "Review AI flag · Raw Materials", urgent: false },
-    { n: 4, label: "8 invoices in AP inbox", urgent: false },
-  ]
-  return (
-    <div className="flex flex-col border-r border-border bg-background shrink-0 w-[200px] overflow-hidden">
-      <div className="px-4 h-11 flex items-center border-b border-border shrink-0">
-        <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-widest">Your queue</span>
-      </div>
-      <div className="flex-1 overflow-y-auto py-2">
-        {items.map((item) => (
-          <div
-            key={item.n}
-            className="flex items-start gap-2.5 px-4 py-2 hover:bg-white/[0.03] cursor-pointer group transition-colors"
-          >
-            <span className={cn(
-              "text-[10px] font-mono mt-0.5 shrink-0 font-bold",
-              item.urgent ? "text-warning/70" : "text-muted-foreground/25",
-            )}>
-              {String(item.n).padStart(2, "0")}
-            </span>
-            <span className="text-[11px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors leading-snug">
-              {item.label}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="px-4 py-2.5 border-t border-border shrink-0">
-        <div className="text-[10px] text-muted-foreground/30">Lim Wei Xiang</div>
-        <div className="text-[9px] text-muted-foreground/20">IT Dept · Finance Manager</div>
-      </div>
     </div>
   )
 }
@@ -517,11 +417,11 @@ function PriorityQueue() {
 // ─── Filter tabs ──────────────────────────────────────────────────────────────
 
 const FILTERS = [
-  { key: "all",      label: "All",      count: 12 },
-  { key: "pending",  label: "Pending",  count: 3 },
-  { key: "review",   label: "Review",   count: 2 },
+  { key: "all", label: "All", count: 12 },
+  { key: "pending", label: "Pending", count: 3 },
+  { key: "review", label: "Review", count: 2 },
   { key: "approved", label: "Approved", count: 6 },
-  { key: "draft",    label: "Draft",    count: 1 },
+  { key: "draft", label: "Draft", count: 1 },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -530,106 +430,109 @@ export default function PurchaseRequestsPage() {
   const [selected, setSelected] = React.useState<PR>(PRS[0])
   const [filter, setFilter] = React.useState("all")
 
+  // Panel styles — #F9FAFB light, 10px radius, matching Figma spec
+  const panelStyle: React.CSSProperties = {
+    background: "#F9FAFB",
+    borderRadius: 10,
+    overflow: "hidden",
+  }
+
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex gap-[10px] h-full">
 
-      {/* Priority queue sidebar */}
-      <PriorityQueue />
+      {/* Main panel — flex-1 (~823px) */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden" style={panelStyle}>
 
-      {/* Main list */}
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-
-        {/* List header */}
-        <div className="flex items-center justify-between px-5 h-11 border-b border-border shrink-0">
-          <div className="flex items-center gap-4">
-            <h1 className="text-[13px] font-semibold text-foreground">Purchase Requests</h1>
-            {/* Filter tabs */}
-            <div className="flex items-center gap-0.5">
-              {FILTERS.map(f => (
-                <button
-                  key={f.key}
-                  onClick={() => setFilter(f.key)}
-                  className={cn(
-                    "flex items-center gap-1 px-2.5 py-1 rounded text-[11px] transition-colors",
-                    filter === f.key
-                      ? "bg-white/[0.06] text-foreground font-medium"
-                      : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-white/[0.03]",
-                  )}
-                >
-                  {f.label}
-                  <span className={cn(
-                    "text-[9px] rounded px-1 font-mono",
-                    filter === f.key ? "text-muted-foreground/60" : "text-muted-foreground/30",
-                  )}>
-                    {f.count}
-                  </span>
-                </button>
-              ))}
+        {/* Page header */}
+        <div className="flex items-center justify-between px-8 pt-6 pb-4 shrink-0">
+          <div>
+            <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-1">
+              <span>P2P</span>
+              <span>/</span>
+              <span className="text-gray-600">Purchase Requests</span>
             </div>
+            <h1 className="text-[20px] font-bold text-gray-900" style={{ fontFamily: "var(--font-pjs)" }}>
+              Purchase Requests
+            </h1>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Search */}
-            <div className="flex items-center gap-1.5 rounded px-2.5 py-1 border border-border/60 bg-white/[0.02] text-muted-foreground/40 hover:border-border hover:text-muted-foreground transition-colors cursor-text">
-              <Search size={11} />
-              <span className="text-[11px]">Search PRs…</span>
-            </div>
-            <Button variant="ghost" size="sm" className="h-7 text-[11px] text-muted-foreground/50 gap-1.5 px-2.5">
-              <Download size={12} />
-              Export
-            </Button>
-            <Button size="sm" className="h-7 text-[11px] gap-1.5 px-3 font-semibold">
-              <Plus size={12} />
-              New PR
-            </Button>
+          <div className="flex gap-2">
+            <button className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 bg-white text-[12px] font-medium text-gray-600 hover:bg-gray-50">
+              <Download size={13} /> Export
+            </button>
+            <button
+              className="flex items-center gap-1.5 h-9 px-4 rounded-lg text-[12px] font-semibold text-white"
+              style={{ background: "#5D5EF4" }}
+            >
+              <Plus size={13} /> New PR
+            </button>
+          </div>
+        </div>
+
+        {/* Filter + search */}
+        <div className="flex items-center gap-2 px-8 pb-3 shrink-0">
+          {/* Search */}
+          <div className="flex items-center gap-2 h-9 px-3 rounded-lg border border-gray-200 bg-white text-[12px] text-gray-400 w-52">
+            <Search size={13} className="shrink-0 text-gray-300" />
+            <span>Search PRs…</span>
+          </div>
+          {/* Filter tabs */}
+          <div className="flex items-center gap-0.5">
+            {FILTERS.map(f => (
+              <button key={f.key} onClick={() => setFilter(f.key)}
+                className={cn(
+                  "flex items-center gap-1 h-8 px-3 rounded-md text-[12px] transition-colors",
+                  filter === f.key
+                    ? "bg-white border border-gray-200 font-semibold text-gray-800 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700 hover:bg-white/60",
+                )}>
+                {f.label}
+                <span className={cn("text-[10px] rounded px-1",
+                  filter === f.key ? "text-gray-400" : "text-gray-400")}>
+                  {f.count}
+                </span>
+              </button>
+            ))}
           </div>
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-y-auto">
-
-          {/* Column headers */}
-          <div className="grid items-center border-b border-border bg-white/[0.01] sticky top-0 z-10"
-            style={{ gridTemplateColumns: "1fr 140px 130px 110px 80px 40px" }}>
-            {["Request", "Requested by", "Amount (RM)", "Status", "AI", ""].map((h, i) => (
+        <div className="flex-1 overflow-y-auto px-8 pb-8">
+          {/* Header row */}
+          <div className="grid border-b border-gray-200 pb-2 mb-1"
+            style={{ gridTemplateColumns: "1fr 140px 130px 120px 90px 36px" }}>
+            {["Request", "Requested by", "Amount (RM)", "Status", "AI Flags", ""].map((h, i) => (
               <div key={i} className={cn(
-                "px-4 py-2 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/35",
-                i === 0 && "pl-5",
+                "text-[10px] font-semibold uppercase tracking-wider text-gray-400",
                 i >= 2 && "text-right",
-                i === 5 && "w-10",
-              )}>
-                {h}
-              </div>
+                i === 5 && "w-9",
+              )}>{h}</div>
             ))}
           </div>
 
           {/* Rows */}
-          {PRS.map((pr) => {
-            const isSelected = selected?.id === pr.id
+          {PRS.map(pr => {
+            const isSel = selected?.id === pr.id
             return (
-              <div
-                key={pr.id}
-                onClick={() => setSelected(pr)}
+              <div key={pr.id} onClick={() => setSelected(pr)}
                 className={cn(
-                  "grid items-center border-b border-border/50 cursor-pointer transition-colors group",
-                  isSelected
-                    ? "bg-primary/[0.06] border-l-2 border-l-primary"
-                    : "hover:bg-white/[0.025] border-l-2 border-l-transparent",
+                  "grid items-center py-3 border-b border-gray-100 cursor-pointer rounded-lg -mx-2 px-2 group transition-colors",
+                  isSel ? "bg-[rgba(93,94,244,0.06)]" : "hover:bg-white/70",
                 )}
-                style={{ gridTemplateColumns: "1fr 140px 130px 110px 80px 40px" }}
-              >
-                {/* Request */}
-                <div className="px-4 py-3 pl-4 min-w-0">
+                style={{ gridTemplateColumns: "1fr 140px 130px 120px 90px 36px" }}>
+
+                {/* Item */}
+                <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-mono text-muted-foreground/30 shrink-0">{pr.id}</span>
-                    <span className="text-[12px] font-medium text-foreground truncate">{pr.title}</span>
+                    <span className="text-[9px] font-mono text-gray-400">{pr.id}</span>
+                    <span className="text-[12px] font-semibold text-gray-800 truncate">{pr.title}</span>
                   </div>
-                  <div className="text-[10px] text-muted-foreground/40 mt-0.5 truncate">{pr.sub}</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5 truncate">{pr.sub}</div>
                 </div>
 
-                {/* Requested by */}
-                <div className="px-4 py-3">
-                  <div className="text-[11px] text-foreground/70">{pr.requester}</div>
-                  <div className="flex items-center gap-1 text-[9px] text-muted-foreground/35 mt-0.5">
+                {/* Requester */}
+                <div>
+                  <div className="text-[12px] text-gray-700">{pr.requester}</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400 mt-0.5">
                     <span>{pr.date}</span>
                     <span>·</span>
                     <span>{pr.dept}</span>
@@ -637,41 +540,35 @@ export default function PurchaseRequestsPage() {
                 </div>
 
                 {/* Amount */}
-                <div className="px-4 py-3 text-right">
-                  <div className="text-[12px] font-mono font-semibold text-foreground tabular-nums">
-                    {pr.amount}
-                  </div>
-                  <div className={cn("text-[9px] mt-0.5 font-mono", pr.overBudget ? "text-warning/70" : "text-muted-foreground/30")}>
+                <div className="text-right">
+                  <div className="text-[12px] font-mono font-semibold text-gray-800 tabular-nums">{pr.amount}</div>
+                  <div className={cn("text-[9px] font-mono mt-0.5",
+                    pr.overBudget ? "text-amber-500" : "text-gray-400")}>
                     {pr.overBudget ? "▲ over budget" : `/ ${pr.budget}`}
                   </div>
                 </div>
 
-                {/* Workflow position */}
-                <div className="px-4 py-3 text-right flex items-center justify-end">
-                  <WorkflowPosition approvers={pr.approvers} status={pr.status} />
+                {/* Status */}
+                <div className="flex justify-end">
+                  <WorkflowDots approvers={pr.approvers} status={pr.status} />
                 </div>
 
                 {/* AI flags */}
-                <div className="px-4 py-3 text-right">
-                  {pr.aiFlags > 0 ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-warning">
-                      <TriangleAlert size={10} />
-                      {pr.aiFlags}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-muted-foreground/20">—</span>
-                  )}
+                <div className="flex justify-end">
+                  {pr.aiFlags > 0
+                    ? <span className="flex items-center gap-1 text-[11px] font-medium text-amber-500">
+                        <TriangleAlert size={11} />{pr.aiFlags}
+                      </span>
+                    : <span className="text-[10px] text-gray-300">—</span>
+                  }
                 </div>
 
                 {/* Arrow */}
-                <div className="flex items-center justify-center">
-                  <ChevronRight
-                    size={13}
-                    className={cn(
-                      "transition-colors",
-                      isSelected ? "text-primary/60" : "text-muted-foreground/20 group-hover:text-muted-foreground/40",
-                    )}
-                  />
+                <div className="flex justify-center">
+                  <ChevronRight size={13} className={cn(
+                    "transition-colors",
+                    isSel ? "text-[#5D5EF4]" : "text-gray-200 group-hover:text-gray-400",
+                  )} />
                 </div>
               </div>
             )
@@ -679,8 +576,14 @@ export default function PurchaseRequestsPage() {
         </div>
       </div>
 
-      {/* Co-pilot panel — permanent, not a sheet */}
-      <CopilotPanel pr={selected} />
+      {/* Side panel — 307px, light bg */}
+      <div
+        className="shrink-0 flex flex-col"
+        style={{ ...panelStyle, width: 307, padding: "24px 20px" }}
+      >
+        <CopilotPanel pr={selected} />
+      </div>
+
     </div>
   )
 }
