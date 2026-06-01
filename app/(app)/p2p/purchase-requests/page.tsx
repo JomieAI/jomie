@@ -1,25 +1,17 @@
 "use client"
 
 import * as React from "react"
+import { cn } from "@/lib/utils"
 import {
-  Table, TableBody, TableCell, TableHead,
-  TableHeader, TableRow,
-} from "@/components/ui/table"
+  TriangleAlert, ShieldCheck, CheckCircle2,
+  Sparkles, Plus, Download, Search,
+  ChevronRight, ArrowUpRight, Clock,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
-import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet"
-import {
-  Download, Plus, Search, TriangleAlert,
-  Star, CheckCircle2, ShieldCheck, MessageCircle, X,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
 
-// ── Types ────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type PRStatus = "pending" | "review" | "approved" | "draft"
 
@@ -28,6 +20,7 @@ interface Approver {
   state: "done" | "pending" | "waiting"
   name: string
   role: string
+  level: number
 }
 
 interface LineItem {
@@ -40,6 +33,7 @@ interface AIInsight {
   type: "info" | "warn" | "ok"
   title: string
   body: string
+  // Signature: structured citation — module:version → regulation:clause
   cite: string
 }
 
@@ -48,6 +42,7 @@ interface PR {
   title: string
   sub: string
   requester: string
+  requesterInitials: string
   date: string
   dept: string
   amount: string
@@ -60,75 +55,78 @@ interface PR {
   aiInsights: AIInsight[]
 }
 
-// ── Sample data ───────────────────────────────────────────────
+// ─── Data ─────────────────────────────────────────────────────────────────────
 
 const PRS: PR[] = [
   {
-    id: "PR-2024-0089",
+    id: "PR-0089",
     title: "IT Equipment — Q3 Upgrade",
-    sub: "14 laptops, 6 monitors · IT Dept",
+    sub: "14 laptops · 6 monitors · 14 docks",
     requester: "Lim Wei Xiang",
+    requesterInitials: "LW",
     date: "28 May",
     dept: "IT",
     amount: "142,800",
     budget: "150,000",
     status: "pending",
     approvers: [
-      { initials: "SA", state: "done",    name: "Siti Aisyah", role: "L1 Dept Head" },
-      { initials: "RA", state: "pending", name: "Razif Abdullah", role: "L2 Finance Mgr" },
-      { initials: "CM", state: "waiting", name: "Chong Mei Ling", role: "L3 CFO" },
+      { initials: "SA", state: "done",    name: "Siti Aisyah",    role: "Dept Head",    level: 1 },
+      { initials: "RA", state: "pending", name: "Razif Abdullah", role: "Finance Mgr",  level: 2 },
+      { initials: "CM", state: "waiting", name: "Chong Mei Ling", role: "CFO",          level: 3 },
     ],
     aiFlags: 1,
     lineItems: [
-      { name: "Dell Latitude 5540 Laptop",  detail: "14 × RM 7,200 · Tech Solutions MY", amount: "RM 100,800" },
-      { name: "LG 27\" 4K Monitor",          detail: "6 × RM 2,500 · Tech Solutions MY",  amount: "RM 15,000" },
-      { name: "Docking Stations",            detail: "14 × RM 1,929 · Tech Solutions MY", amount: "RM 27,000" },
+      { name: "Dell Latitude 5540",  detail: "14 × RM 7,200 · Tech Solutions MY", amount: "100,800" },
+      { name: "LG 27\" UltraFine 4K", detail: "6 × RM 2,500 · Tech Solutions MY",  amount: "15,000"  },
+      { name: "Dell WD22TB4 Dock",   detail: "14 × RM 1,929 · Tech Solutions MY", amount: "27,000"  },
     ],
     aiInsights: [
       {
         type: "info",
-        title: "Capital Allowance Eligible",
-        body: "Laptops and monitors qualify for Initial Allowance (20%) + Annual Allowance (14%) under Schedule 3. Tag as IT Equipment in the asset register before period close.",
-        cite: "capitalAllowance.md v1.4 · ITA 1967, Schedule 3",
+        title: "Capital allowance eligible",
+        body: "Laptops and monitors qualify for IA 20% + AA 14% under Schedule 3. Tag as IT Equipment in asset register before period close.",
+        cite: "capitalAllowance.md:v1.4 → ITA67:Sch3",
       },
       {
         type: "warn",
-        title: "SST Input Tax — Verify Vendor",
-        body: "Tech Solutions MY is not yet registered on MyInvois. SST input tax credit may be disallowed. Request a validated e-invoice before issuing the PO.",
-        cite: "jomie-sst-baseline.md v1.5 · SST Act 2018, S38",
+        title: "Vendor not on MyInvois",
+        body: "Tech Solutions MY has no MyInvois registration. SST input credit may be disallowed. Request validated e-invoice before PO issuance.",
+        cite: "jomie-sst-baseline.md:v1.5 → SST18:S38",
       },
       {
         type: "ok",
-        title: "Within Capex Budget",
-        body: "RM 142,800 is within the approved IT capex budget of RM 150,000. No budget override approval required.",
-        cite: "budgetControl.md v1.2 · approvalMatrix.md v1.0",
+        title: "Within capex budget",
+        body: "RM 142,800 is 95.2% of the approved RM 150,000 IT capex budget. No override approval required.",
+        cite: "budgetControl.md:v1.2 → approvalMatrix.md:v1.0",
       },
     ],
   },
   {
-    id: "PR-2024-0088",
+    id: "PR-0088",
     title: "Office Renovation — Level 3",
-    sub: "Partitioning, furniture · Admin",
+    sub: "Partitioning · furniture · electrical",
     requester: "Nur Aisyah",
+    requesterInitials: "NA",
     date: "27 May",
     dept: "Admin",
     amount: "38,500",
     budget: "40,000",
     status: "review",
     approvers: [
-      { initials: "SA", state: "done",    name: "Siti Aisyah", role: "L1" },
-      { initials: "RA", state: "done",    name: "Razif Abdullah", role: "L2" },
-      { initials: "CM", state: "pending", name: "Chong Mei Ling", role: "L3" },
+      { initials: "SA", state: "done",    name: "Siti Aisyah",    role: "Dept Head",   level: 1 },
+      { initials: "RA", state: "done",    name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
+      { initials: "CM", state: "pending", name: "Chong Mei Ling", role: "CFO",         level: 3 },
     ],
     aiFlags: 0,
     lineItems: [],
     aiInsights: [],
   },
   {
-    id: "PR-2024-0087",
+    id: "PR-0087",
     title: "Raw Materials — Batch #44",
-    sub: "Packaging film, adhesives · Production",
+    sub: "Packaging film · adhesives · labels",
     requester: "Ahmad Firdaus",
+    requesterInitials: "AF",
     date: "26 May",
     dept: "Production",
     amount: "285,000",
@@ -136,55 +134,58 @@ const PRS: PR[] = [
     overBudget: true,
     status: "pending",
     approvers: [
-      { initials: "SA", state: "done",    name: "Siti Aisyah", role: "L1" },
-      { initials: "RA", state: "done",    name: "Razif Abdullah", role: "L2" },
-      { initials: "CM", state: "pending", name: "Chong Mei Ling", role: "L3" },
+      { initials: "SA", state: "done",    name: "Siti Aisyah",    role: "Dept Head",   level: 1 },
+      { initials: "RA", state: "done",    name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
+      { initials: "CM", state: "pending", name: "Chong Mei Ling", role: "CFO",         level: 3 },
     ],
     aiFlags: 2,
     lineItems: [],
     aiInsights: [],
   },
   {
-    id: "PR-2024-0086",
+    id: "PR-0086",
     title: "Marketing — Trade Fair Booth",
-    sub: "KLCC Convention 2024 · Marketing",
+    sub: "KLCC Convention 2024",
     requester: "Priya Nair",
+    requesterInitials: "PN",
     date: "24 May",
     dept: "Marketing",
     amount: "22,000",
     budget: "25,000",
     status: "approved",
     approvers: [
-      { initials: "SA", state: "done", name: "Siti Aisyah", role: "L1" },
-      { initials: "RA", state: "done", name: "Razif Abdullah", role: "L2" },
+      { initials: "SA", state: "done", name: "Siti Aisyah",    role: "Dept Head",   level: 1 },
+      { initials: "RA", state: "done", name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
     ],
     aiFlags: 0,
     lineItems: [],
     aiInsights: [],
   },
   {
-    id: "PR-2024-0085",
+    id: "PR-0085",
     title: "Cleaning Services Contract",
-    sub: "Annual renewal · Facilities",
+    sub: "Annual renewal · 3 locations",
     requester: "Tan Beng Huat",
+    requesterInitials: "TB",
     date: "22 May",
     dept: "Facilities",
     amount: "18,600",
     budget: "20,000",
     status: "approved",
     approvers: [
-      { initials: "SA", state: "done", name: "Siti Aisyah", role: "L1" },
-      { initials: "RA", state: "done", name: "Razif Abdullah", role: "L2" },
+      { initials: "SA", state: "done", name: "Siti Aisyah",    role: "Dept Head",   level: 1 },
+      { initials: "RA", state: "done", name: "Razif Abdullah", role: "Finance Mgr", level: 2 },
     ],
     aiFlags: 0,
     lineItems: [],
     aiInsights: [],
   },
   {
-    id: "PR-2024-0084",
+    id: "PR-0084",
     title: "Software Licences — Adobe CC",
-    sub: "12 seats annual · Creative",
+    sub: "12 seats · annual subscription",
     requester: "Lim Wei Xiang",
+    requesterInitials: "LW",
     date: "Today",
     dept: "Creative",
     amount: "8,400",
@@ -197,218 +198,323 @@ const PRS: PR[] = [
   },
 ]
 
-// ── Sub-components ────────────────────────────────────────────
+// ─── Workflow position indicator ──────────────────────────────────────────────
+// Replaces badge pills — shows approval chain position as a compact visual track
 
-const STATUS_MAP: Record<PRStatus, { label: string; className: string }> = {
-  pending:  { label: "Pending",      className: "bg-warning/12 text-warning border-warning/20" },
-  review:   { label: "Under Review", className: "bg-primary/12 text-primary/80 border-primary/20" },
-  approved: { label: "Approved",     className: "bg-success/12 text-success border-success/20" },
-  draft:    { label: "Draft",        className: "bg-muted text-muted-foreground border-border" },
-}
-
-function StatusBadge({ status }: { status: PRStatus }) {
-  const { label, className } = STATUS_MAP[status]
-  return (
-    <Badge variant="outline" className={cn("text-[10px] font-semibold h-5 px-2 rounded-full", className)}>
-      {label}
-    </Badge>
+function WorkflowPosition({ approvers, status }: { approvers: Approver[]; status: PRStatus }) {
+  if (status === "draft") return (
+    <span className="text-[10px] text-muted-foreground/40 font-mono">draft</span>
   )
-}
+  if (status === "approved") return (
+    <span className="flex items-center gap-1 text-[10px] text-success font-medium">
+      <CheckCircle2 size={10} /> all approved
+    </span>
+  )
+  if (approvers.length === 0) return null
 
-function ApproverStack({ approvers }: { approvers: Approver[] }) {
+  const current = approvers.find(a => a.state === "pending")
+  const done = approvers.filter(a => a.state === "done").length
+
   return (
-    <div className="flex">
-      {approvers.map((a, i) => (
-        <Avatar
-          key={i}
-          className={cn(
-            "size-[22px] border-[1.5px] text-[8px] font-bold",
-            i > 0 && "-ml-1.5",
-            a.state === "done"    && "border-success bg-success/15 text-success",
-            a.state === "pending" && "border-warning bg-warning/10 text-warning",
-            a.state === "waiting" && "border-border bg-muted text-muted-foreground",
-          )}
-          title={`${a.name} — ${a.role}`}
-        >
-          <AvatarFallback className="text-[8px] bg-transparent">
-            {a.state === "done" ? "✓" : a.initials[0]}
-          </AvatarFallback>
-        </Avatar>
-      ))}
+    <div className="flex items-center gap-1.5">
+      {/* Compact dot track */}
+      <div className="flex items-center gap-0.5">
+        {approvers.map((a, i) => (
+          <div
+            key={i}
+            className={cn(
+              "rounded-full transition-colors",
+              a.state === "done"    && "size-1.5 bg-success",
+              a.state === "pending" && "size-2 bg-warning border border-warning/50 animate-pulse",
+              a.state === "waiting" && "size-1.5 bg-muted-foreground/20",
+            )}
+            title={`L${a.level} ${a.role} — ${a.state}`}
+          />
+        ))}
+      </div>
+      {current && (
+        <span className="text-[10px] text-muted-foreground/60 font-mono whitespace-nowrap">
+          L{current.level}
+        </span>
+      )}
     </div>
   )
 }
 
-// ── AI Insight card ───────────────────────────────────────────
+// ─── AI Citation (signature element) ─────────────────────────────────────────
+
+function AICitation({ cite }: { cite: string }) {
+  return (
+    <div className="mt-2 pt-2 border-t border-white/[0.05]">
+      <code className="text-[9px] font-mono text-muted-foreground/40 tracking-tight">
+        {cite}
+      </code>
+    </div>
+  )
+}
+
+// ─── AI Panel insight card ────────────────────────────────────────────────────
 
 function InsightCard({ insight }: { insight: AIInsight }) {
-  const config = {
-    info: { icon: <Star size={12} className="text-primary/80" />, cls: "bg-primary/8 border-primary/18", title: "text-primary/80" },
-    warn: { icon: <TriangleAlert size={12} className="text-warning" />, cls: "bg-warning/8 border-warning/18", title: "text-warning" },
-    ok:   { icon: <CheckCircle2 size={12} className="text-success" />, cls: "bg-success/8 border-success/18", title: "text-success" },
+  const cfg = {
+    info: { dot: "bg-primary", text: "text-primary/80",  border: "border-primary/10",  bg: "bg-primary/[0.05]" },
+    warn: { dot: "bg-warning", text: "text-warning",     border: "border-warning/15",  bg: "bg-warning/[0.05]" },
+    ok:   { dot: "bg-success", text: "text-success",     border: "border-success/12",  bg: "bg-success/[0.04]" },
   }[insight.type]
 
   return (
-    <div className={cn("rounded-lg border p-2.5 mb-1.5 last:mb-0", config.cls)}>
-      <div className="flex items-center gap-1.5 mb-1">
-        {config.icon}
-        <span className={cn("text-[11px] font-semibold", config.title)}>{insight.title}</span>
+    <div className={cn("rounded-lg border p-3", cfg.border, cfg.bg)}>
+      <div className="flex items-start gap-2">
+        <div className={cn("size-1.5 rounded-full mt-1.5 shrink-0", cfg.dot)} />
+        <div className="flex-1 min-w-0">
+          <div className={cn("text-[11px] font-semibold mb-1", cfg.text)}>{insight.title}</div>
+          <p className="text-[11px] text-muted-foreground/70 leading-relaxed">{insight.body}</p>
+          <AICitation cite={insight.cite} />
+        </div>
       </div>
-      <p className="text-[11px] text-muted-foreground leading-relaxed">{insight.body}</p>
-      <p className="text-[10px] text-muted-foreground/60 mt-1.5 pt-1.5 border-t border-white/5 italic">{insight.cite}</p>
     </div>
   )
 }
 
-// ── Detail Sheet ──────────────────────────────────────────────
+// ─── Right co-pilot panel ─────────────────────────────────────────────────────
 
-function PRDetailSheet({
-  pr,
-  open,
-  onClose,
-}: {
-  pr: PR | null
-  open: boolean
-  onClose: () => void
-}) {
-  if (!pr) return null
-
+function CopilotPanel({ pr }: { pr: PR | null }) {
   return (
-    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent
-        side="right"
-        className="w-[360px] sm:w-[360px] p-0 bg-card border-l border-border flex flex-col gap-0"
-      >
-        {/* Header */}
-        <SheetHeader className="px-4 pt-4 pb-3 border-b border-border space-y-1">
-          <div className="font-mono text-[10px] font-semibold text-primary tracking-wide">{pr.id}</div>
-          <SheetTitle className="text-[15px] font-bold leading-snug text-foreground">{pr.title}</SheetTitle>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={pr.status} />
-            <span className="text-[10px] text-muted-foreground">{pr.date} · {pr.dept}</span>
-          </div>
-        </SheetHeader>
+    <aside className="w-[320px] shrink-0 flex flex-col border-l border-border bg-background overflow-hidden">
 
-        {/* Scrollable body */}
+      {/* Panel header */}
+      <div className="flex items-center justify-between px-4 h-11 border-b border-border shrink-0">
+        <div className="flex items-center gap-1.5">
+          <Sparkles size={11} className="text-primary/60" />
+          <span className="text-[11px] font-semibold text-foreground/70">Jomie AI</span>
+          {/* Live indicator */}
+          <div className="flex items-center gap-1 ml-1">
+            <div className="size-1 rounded-full bg-success animate-pulse" />
+            <span className="text-[9px] font-mono text-muted-foreground/30">LIVE</span>
+          </div>
+        </div>
+        {pr && (
+          <span className="text-[9px] font-mono text-muted-foreground/30">{pr.id}</span>
+        )}
+      </div>
+
+      {/* Empty state */}
+      {!pr && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
+          <div className="size-8 rounded-lg bg-primary/8 flex items-center justify-center">
+            <Sparkles size={16} className="text-primary/50" />
+          </div>
+          <div className="text-center">
+            <div className="text-[12px] font-medium text-muted-foreground/50">Select a PR to analyse</div>
+            <div className="text-[10px] text-muted-foreground/30 mt-1">Jomie will surface tax flags, compliance issues, and approval context</div>
+          </div>
+        </div>
+      )}
+
+      {/* PR Detail */}
+      {pr && (
         <div className="flex-1 overflow-y-auto">
+
+          {/* PR header */}
+          <div className="px-4 py-3 border-b border-border">
+            <div className="text-[13px] font-semibold text-foreground leading-tight mb-1">{pr.title}</div>
+            <div className="text-[10px] text-muted-foreground/50">{pr.sub}</div>
+            <div className="flex items-center gap-2 mt-2">
+              <Avatar className="size-4">
+                <AvatarFallback className="text-[7px] bg-muted text-muted-foreground">{pr.requesterInitials}</AvatarFallback>
+              </Avatar>
+              <span className="text-[10px] text-muted-foreground/60">{pr.requester}</span>
+              <span className="text-muted-foreground/20">·</span>
+              <span className="text-[10px] text-muted-foreground/40">{pr.date}</span>
+            </div>
+          </div>
+
           <div className="p-4 flex flex-col gap-5">
 
-            {/* Line items */}
+            {/* Amount */}
+            <div className="flex items-baseline justify-between">
+              <div>
+                <div className="text-[10px] text-muted-foreground/40 uppercase tracking-wider mb-1">Total</div>
+                <div className="text-[22px] font-bold tracking-tight text-foreground font-mono tabular-nums">
+                  RM {pr.amount}
+                </div>
+                <div className={cn("text-[10px] mt-0.5", pr.overBudget ? "text-warning" : "text-muted-foreground/40")}>
+                  {pr.overBudget
+                    ? `▲ over budget by RM ${(+pr.amount.replace(",","") - +pr.budget.replace(",","")).toLocaleString()}`
+                    : `budget RM ${pr.budget}`
+                  }
+                </div>
+              </div>
+              <div className="text-right">
+                <WorkflowPosition approvers={pr.approvers} status={pr.status} />
+              </div>
+            </div>
+
+            {/* Line items — ledger style */}
             {pr.lineItems.length > 0 && (
-              <section>
-                <SectionTitle>Line Items</SectionTitle>
-                <div className="flex flex-col gap-1.5">
+              <div>
+                <div className="text-[9px] uppercase tracking-widest text-muted-foreground/30 mb-2">Line Items</div>
+                <div className="border border-border rounded-lg overflow-hidden">
                   {pr.lineItems.map((item, i) => (
-                    <div key={i} className="flex items-start gap-2 rounded-lg border border-border bg-white/[0.02] p-2.5">
-                      <span className="size-[18px] rounded shrink-0 bg-white/5 flex items-center justify-center text-[9px] font-bold text-muted-foreground mt-0.5">
-                        {i + 1}
-                      </span>
+                    <div
+                      key={i}
+                      className={cn(
+                        "flex items-center justify-between px-3 py-2 gap-2",
+                        i > 0 && "border-t border-border/50",
+                      )}
+                    >
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-semibold text-foreground">{item.name}</div>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">{item.detail}</div>
+                        <div className="text-[11px] font-medium text-foreground truncate">{item.name}</div>
+                        <div className="text-[9px] text-muted-foreground/40 mt-0.5 truncate">{item.detail}</div>
                       </div>
-                      <div className="text-[11px] font-bold text-foreground shrink-0">{item.amount}</div>
+                      <div className="text-[11px] font-mono font-semibold text-foreground tabular-nums shrink-0">
+                        {item.amount}
+                      </div>
                     </div>
                   ))}
                 </div>
-              </section>
+              </div>
             )}
 
             {/* AI Insights */}
             {pr.aiInsights.length > 0 && (
-              <section>
-                <SectionTitle>Jomie AI Insights</SectionTitle>
-                {pr.aiInsights.map((insight, i) => (
-                  <InsightCard key={i} insight={insight} />
-                ))}
-              </section>
+              <div>
+                <div className="text-[9px] uppercase tracking-widest text-muted-foreground/30 mb-2">AI Analysis</div>
+                <div className="flex flex-col gap-2">
+                  {pr.aiInsights.map((insight, i) => (
+                    <InsightCard key={i} insight={insight} />
+                  ))}
+                </div>
+              </div>
             )}
 
-            {/* Approval chain */}
+            {/* Approval chain — vertical track */}
             {pr.approvers.length > 0 && (
-              <section>
-                <SectionTitle>Approval Chain</SectionTitle>
+              <div>
+                <div className="text-[9px] uppercase tracking-widest text-muted-foreground/30 mb-2">Approval Chain</div>
                 <div className="flex flex-col">
                   {pr.approvers.map((a, i) => (
-                    <div key={i} className="flex items-start gap-2.5 pb-3 relative">
-                      {/* Connector line */}
+                    <div key={i} className="flex items-start gap-2.5 relative pb-3 last:pb-0">
+                      {/* Connector */}
                       {i < pr.approvers.length - 1 && (
-                        <div className="absolute left-[11px] top-6 bottom-0 w-px bg-border" />
+                        <div className="absolute left-[10px] top-5 bottom-0 w-px bg-border/50" />
                       )}
-                      {/* Step dot */}
+                      {/* Node */}
                       <div className={cn(
-                        "size-[22px] rounded-full border flex items-center justify-center text-[9px] font-bold shrink-0 z-10",
-                        a.state === "done"    && "bg-success/15 border-success text-success",
-                        a.state === "pending" && "bg-primary/15 border-primary text-primary",
-                        a.state === "waiting" && "bg-muted border-border text-muted-foreground",
+                        "size-5 rounded-full border flex items-center justify-center text-[8px] font-bold shrink-0 z-10 bg-background",
+                        a.state === "done"    && "border-success text-success",
+                        a.state === "pending" && "border-warning text-warning",
+                        a.state === "waiting" && "border-border text-muted-foreground/30",
                       )}>
-                        {a.state === "done" ? "✓" : i + 1}
+                        {a.state === "done" ? "✓" : a.level}
                       </div>
                       <div className="flex-1 pt-0.5">
-                        <div className="text-[11px] font-semibold text-foreground">{a.role}</div>
-                        <div className="text-[10px] text-muted-foreground">{a.name}</div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-[11px] font-medium text-foreground/80">{a.role}</span>
+                          <span className="text-[9px] text-muted-foreground/40">L{a.level}</span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground/40">{a.name}</div>
                         <div className={cn(
-                          "text-[10px] mt-0.5",
-                          a.state === "done"    && "text-success",
-                          a.state === "pending" && "text-warning",
-                          a.state === "waiting" && "text-muted-foreground/60",
+                          "text-[9px] mt-0.5 flex items-center gap-1",
+                          a.state === "done"    && "text-success/70",
+                          a.state === "pending" && "text-warning/70",
+                          a.state === "waiting" && "text-muted-foreground/25",
                         )}>
-                          {a.state === "done"    && "Approved"}
-                          {a.state === "pending" && "Awaiting · 18 hrs pending"}
-                          {a.state === "waiting" && `Required ≥ RM 100K`}
+                          {a.state === "done"    && "✓ Approved"}
+                          {a.state === "pending" && <><Clock size={8} /> Awaiting · 18 hrs</>}
+                          {a.state === "waiting" && "Waiting"}
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                {/* SOD notice */}
-                <div className="flex gap-2 rounded-lg border border-primary/18 bg-primary/8 p-2.5 mt-1">
-                  <ShieldCheck size={13} className="text-primary/70 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-muted-foreground leading-snug">
-                    <strong className="text-primary/80 font-semibold">SOD enforced</strong> — {pr.requester} (requestor) is excluded from all approval steps by system control. This cannot be overridden.
+                {/* SOD notice — structural, not decorative */}
+                <div className="mt-3 flex items-start gap-2 rounded-md border border-border/60 bg-white/[0.02] px-2.5 py-2">
+                  <ShieldCheck size={11} className="text-primary/50 mt-0.5 shrink-0" />
+                  <p className="text-[10px] text-muted-foreground/50 leading-snug">
+                    SOD enforced — {pr.requester} excluded from all approval steps by system control.
                   </p>
                 </div>
-              </section>
+              </div>
             )}
           </div>
         </div>
+      )}
 
-        {/* Footer actions */}
-        <div className="border-t border-border p-4 shrink-0 bg-card">
-          <div className="flex items-baseline justify-between mb-3 pb-3 border-b border-border">
-            <span className="text-[11px] text-muted-foreground">Total amount</span>
-            <span className="text-xl font-bold tracking-tight text-foreground">RM {pr.amount}</span>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" className="flex-1 bg-success hover:bg-success/90 text-success-foreground font-semibold gap-1.5">
-              <CheckCircle2 size={13} />
+      {/* Footer actions */}
+      {pr && (
+        <div className="px-4 py-3 border-t border-border shrink-0 flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              size="sm"
+              className="h-8 text-[11px] font-semibold bg-success/90 hover:bg-success text-white gap-1.5"
+            >
+              <CheckCircle2 size={12} />
               Approve
             </Button>
-            <Button size="sm" variant="outline" className="flex-1 gap-1.5">
-              <MessageCircle size={13} />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-[11px] border-border text-muted-foreground hover:text-foreground gap-1.5"
+            >
               Query
             </Button>
-            <Button size="sm" variant="ghost" className="px-2.5 text-destructive hover:text-destructive hover:bg-destructive/10">
-              <X size={13} />
-            </Button>
           </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-[10px] text-muted-foreground/40 hover:text-destructive hover:bg-destructive/5 gap-1"
+          >
+            Reject this request
+          </Button>
         </div>
-      </SheetContent>
-    </Sheet>
+      )}
+    </aside>
   )
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+// ─── Priority queue (replaces greeting card) ──────────────────────────────────
+
+function PriorityQueue() {
+  const items = [
+    { n: 1, label: "Approve PR-0089", urgent: true },
+    { n: 2, label: "Approve PR-0087", urgent: true },
+    { n: 3, label: "Review AI flag · Raw Materials", urgent: false },
+    { n: 4, label: "8 invoices in AP inbox", urgent: false },
+  ]
   return (
-    <div className="relative pb-1.5 mb-2.5">
-      <span className="text-[11px] font-bold text-foreground">{children}</span>
-      <div className="absolute bottom-0 left-0 h-0.5 w-5 rounded-full bg-primary" />
+    <div className="flex flex-col border-r border-border bg-background shrink-0 w-[200px] overflow-hidden">
+      <div className="px-4 h-11 flex items-center border-b border-border shrink-0">
+        <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-widest">Your queue</span>
+      </div>
+      <div className="flex-1 overflow-y-auto py-2">
+        {items.map((item) => (
+          <div
+            key={item.n}
+            className="flex items-start gap-2.5 px-4 py-2 hover:bg-white/[0.03] cursor-pointer group transition-colors"
+          >
+            <span className={cn(
+              "text-[10px] font-mono mt-0.5 shrink-0 font-bold",
+              item.urgent ? "text-warning/70" : "text-muted-foreground/25",
+            )}>
+              {String(item.n).padStart(2, "0")}
+            </span>
+            <span className="text-[11px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors leading-snug">
+              {item.label}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="px-4 py-2.5 border-t border-border shrink-0">
+        <div className="text-[10px] text-muted-foreground/30">Lim Wei Xiang</div>
+        <div className="text-[9px] text-muted-foreground/20">IT Dept · Finance Manager</div>
+      </div>
     </div>
   )
 }
 
-// ── Filter tabs ───────────────────────────────────────────────
+// ─── Filter tabs ──────────────────────────────────────────────────────────────
 
 const FILTERS = [
   { key: "all",      label: "All",      count: 12 },
@@ -418,217 +524,163 @@ const FILTERS = [
   { key: "draft",    label: "Draft",    count: 1 },
 ]
 
-// ── Main page ─────────────────────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PurchaseRequestsPage() {
-  const [activeFilter, setActiveFilter] = React.useState("all")
-  const [selectedPR, setSelectedPR] = React.useState<PR | null>(PRS[0])
-  const [sheetOpen, setSheetOpen] = React.useState(true)
-
-  const handleRowClick = (pr: PR) => {
-    setSelectedPR(pr)
-    setSheetOpen(true)
-  }
+  const [selected, setSelected] = React.useState<PR>(PRS[0])
+  const [filter, setFilter] = React.useState("all")
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full overflow-hidden">
 
-      {/* Subheader strip: greeting + page title */}
-      <div className="flex shrink-0 border-b border-border bg-sidebar">
-        {/* Greeting card — Payhawk dark anchor pattern */}
-        <div className="w-56 shrink-0 border-r border-primary/12 bg-[oklch(0.145_0.035_255)] px-4 py-3.5">
-          <div className="text-[13px] font-bold text-foreground">Good morning, Lim</div>
-          <div className="text-[11px] text-muted-foreground mb-3">5 items need your attention</div>
-          <div className="flex flex-col">
-            {[
-              { label: "Awaiting your approval",  count: "2" },
-              { label: "PRs pending submission",   count: "1" },
-              { label: "AI flags to review",       count: "1" },
-              { label: "Invoices unmatched",       count: "1" },
-            ].map((t) => (
-              <div key={t.label} className="flex items-center justify-between py-1.5 border-b border-dashed border-white/7 last:border-0">
-                <span className="text-[11px] font-medium text-foreground/65">{t.label}</span>
-                <span className="text-[11px] font-bold text-primary">{t.count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Priority queue sidebar */}
+      <PriorityQueue />
 
-        {/* Page header */}
-        <div className="flex flex-1 items-center justify-between px-5">
-          <div>
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1">
-              <span>P2P</span>
-              <span className="opacity-40">›</span>
-              <span className="text-foreground/60">Purchase Requests</span>
+      {/* Main list */}
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+
+        {/* List header */}
+        <div className="flex items-center justify-between px-5 h-11 border-b border-border shrink-0">
+          <div className="flex items-center gap-4">
+            <h1 className="text-[13px] font-semibold text-foreground">Purchase Requests</h1>
+            {/* Filter tabs */}
+            <div className="flex items-center gap-0.5">
+              {FILTERS.map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1 rounded text-[11px] transition-colors",
+                    filter === f.key
+                      ? "bg-white/[0.06] text-foreground font-medium"
+                      : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-white/[0.03]",
+                  )}
+                >
+                  {f.label}
+                  <span className={cn(
+                    "text-[9px] rounded px-1 font-mono",
+                    filter === f.key ? "text-muted-foreground/60" : "text-muted-foreground/30",
+                  )}>
+                    {f.count}
+                  </span>
+                </button>
+              ))}
             </div>
-            <h1 className="text-[18px] font-bold tracking-tight">Purchase Requests</h1>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5 text-[11px]">
+          <div className="flex items-center gap-2">
+            {/* Search */}
+            <div className="flex items-center gap-1.5 rounded px-2.5 py-1 border border-border/60 bg-white/[0.02] text-muted-foreground/40 hover:border-border hover:text-muted-foreground transition-colors cursor-text">
+              <Search size={11} />
+              <span className="text-[11px]">Search PRs…</span>
+            </div>
+            <Button variant="ghost" size="sm" className="h-7 text-[11px] text-muted-foreground/50 gap-1.5 px-2.5">
               <Download size={12} />
               Export
             </Button>
-            <Button size="sm" className="gap-1.5 text-[11px] font-semibold">
+            <Button size="sm" className="h-7 text-[11px] gap-1.5 px-3 font-semibold">
               <Plus size={12} />
               New PR
             </Button>
           </div>
         </div>
-      </div>
-
-      {/* Table area */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Section heading + filters */}
-        <div className="px-5 pt-4 pb-0">
-          <div className="flex items-end justify-between mb-2.5">
-            <div className="relative pb-1.5">
-              <span className="text-[13px] font-bold text-foreground">All Purchase Requests</span>
-              <div className="absolute bottom-0 left-0 h-0.5 w-6 rounded-full bg-primary" />
-            </div>
-            <a href="#" className="text-[11px] font-medium text-primary hover:underline">View all</a>
-          </div>
-
-          {/* Filters */}
-          <div className="flex items-center gap-1.5 mb-3">
-            {/* Search */}
-            <div className="relative">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              <input
-                type="search"
-                placeholder="Search PRs, vendors…"
-                className="h-8 w-48 rounded-md border border-border bg-card pl-7 pr-3 text-[11px] text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
-              />
-            </div>
-            {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setActiveFilter(f.key)}
-                className={cn(
-                  "flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium border transition-colors",
-                  activeFilter === f.key
-                    ? "bg-primary/8 border-primary/25 text-primary/90"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {f.label}
-                <span className={cn(
-                  "text-[9px] font-bold rounded-full px-1.5 py-0.5",
-                  activeFilter === f.key
-                    ? "bg-primary/20 text-primary/80"
-                    : "bg-white/8 text-muted-foreground",
-                )}>
-                  {f.count}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* Table */}
-        <div className="mx-5 mb-5 rounded-xl border border-border bg-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-border hover:bg-transparent">
-                <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 pl-4 w-[38%]">Item</TableHead>
-                <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-[18%]">Requested by</TableHead>
-                <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-[14%]">Amount (RM)</TableHead>
-                <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-[13%]">Status</TableHead>
-                <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-[10%]">Approvers</TableHead>
-                <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-[5%]">AI</TableHead>
-                <TableHead className="w-9" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {PRS.map((pr) => {
-                const isSelected = selectedPR?.id === pr.id && sheetOpen
-                return (
-                  <TableRow
-                    key={pr.id}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* Column headers */}
+          <div className="grid items-center border-b border-border bg-white/[0.01] sticky top-0 z-10"
+            style={{ gridTemplateColumns: "1fr 140px 130px 110px 80px 40px" }}>
+            {["Request", "Requested by", "Amount (RM)", "Status", "AI", ""].map((h, i) => (
+              <div key={i} className={cn(
+                "px-4 py-2 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/35",
+                i === 0 && "pl-5",
+                i >= 2 && "text-right",
+                i === 5 && "w-10",
+              )}>
+                {h}
+              </div>
+            ))}
+          </div>
+
+          {/* Rows */}
+          {PRS.map((pr) => {
+            const isSelected = selected?.id === pr.id
+            return (
+              <div
+                key={pr.id}
+                onClick={() => setSelected(pr)}
+                className={cn(
+                  "grid items-center border-b border-border/50 cursor-pointer transition-colors group",
+                  isSelected
+                    ? "bg-primary/[0.06] border-l-2 border-l-primary"
+                    : "hover:bg-white/[0.025] border-l-2 border-l-transparent",
+                )}
+                style={{ gridTemplateColumns: "1fr 140px 130px 110px 80px 40px" }}
+              >
+                {/* Request */}
+                <div className="px-4 py-3 pl-4 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-mono text-muted-foreground/30 shrink-0">{pr.id}</span>
+                    <span className="text-[12px] font-medium text-foreground truncate">{pr.title}</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/40 mt-0.5 truncate">{pr.sub}</div>
+                </div>
+
+                {/* Requested by */}
+                <div className="px-4 py-3">
+                  <div className="text-[11px] text-foreground/70">{pr.requester}</div>
+                  <div className="flex items-center gap-1 text-[9px] text-muted-foreground/35 mt-0.5">
+                    <span>{pr.date}</span>
+                    <span>·</span>
+                    <span>{pr.dept}</span>
+                  </div>
+                </div>
+
+                {/* Amount */}
+                <div className="px-4 py-3 text-right">
+                  <div className="text-[12px] font-mono font-semibold text-foreground tabular-nums">
+                    {pr.amount}
+                  </div>
+                  <div className={cn("text-[9px] mt-0.5 font-mono", pr.overBudget ? "text-warning/70" : "text-muted-foreground/30")}>
+                    {pr.overBudget ? "▲ over budget" : `/ ${pr.budget}`}
+                  </div>
+                </div>
+
+                {/* Workflow position */}
+                <div className="px-4 py-3 text-right flex items-center justify-end">
+                  <WorkflowPosition approvers={pr.approvers} status={pr.status} />
+                </div>
+
+                {/* AI flags */}
+                <div className="px-4 py-3 text-right">
+                  {pr.aiFlags > 0 ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-warning">
+                      <TriangleAlert size={10} />
+                      {pr.aiFlags}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground/20">—</span>
+                  )}
+                </div>
+
+                {/* Arrow */}
+                <div className="flex items-center justify-center">
+                  <ChevronRight
+                    size={13}
                     className={cn(
-                      "cursor-pointer border-b border-border transition-colors",
-                      isSelected
-                        ? "bg-primary/8"
-                        : "hover:bg-white/[0.02]",
+                      "transition-colors",
+                      isSelected ? "text-primary/60" : "text-muted-foreground/20 group-hover:text-muted-foreground/40",
                     )}
-                    onClick={() => handleRowClick(pr)}
-                  >
-                    {/* Item */}
-                    <TableCell className="pl-4 py-2.5">
-                      <div className="text-[12px] font-semibold text-foreground leading-tight">{pr.title}</div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">{pr.id} · {pr.sub}</div>
-                    </TableCell>
-
-                    {/* Requester */}
-                    <TableCell className="py-2.5">
-                      <div className="text-[12px] font-medium text-foreground/80">{pr.requester}</div>
-                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5">
-                        <span>{pr.date}</span>
-                        <span className="size-[3px] rounded-full bg-muted-foreground/40 inline-block" />
-                        <span>{pr.dept}</span>
-                      </div>
-                    </TableCell>
-
-                    {/* Amount */}
-                    <TableCell className="py-2.5">
-                      <div className="text-[12px] font-semibold text-foreground">{pr.amount}</div>
-                      <div className={cn("text-[10px] mt-0.5", pr.overBudget ? "text-warning" : "text-muted-foreground")}>
-                        {pr.overBudget ? `Over budget +${(Number(pr.amount.replace(",","")) - Number(pr.budget.replace(",",""))).toLocaleString()}` : `Budget: ${pr.budget}`}
-                      </div>
-                    </TableCell>
-
-                    {/* Status */}
-                    <TableCell className="py-2.5">
-                      <StatusBadge status={pr.status} />
-                    </TableCell>
-
-                    {/* Approvers */}
-                    <TableCell className="py-2.5">
-                      {pr.approvers.length > 0
-                        ? <ApproverStack approvers={pr.approvers} />
-                        : <span className="text-[10px] text-muted-foreground/40">—</span>
-                      }
-                    </TableCell>
-
-                    {/* AI flags */}
-                    <TableCell className="py-2.5">
-                      {pr.aiFlags > 0
-                        ? (
-                          <span className="flex items-center gap-1 text-[10px] font-semibold text-warning">
-                            <TriangleAlert size={11} />
-                            {pr.aiFlags}
-                          </span>
-                        )
-                        : <span className="text-[10px] text-muted-foreground/40">—</span>
-                      }
-                    </TableCell>
-
-                    {/* More */}
-                    <TableCell className="py-2.5 pr-3">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 text-muted-foreground/40 hover:text-foreground"
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label="More options"
-                      >
-                        <span className="text-sm leading-none">⋯</span>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+                  />
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      {/* Detail sheet */}
-      <PRDetailSheet
-        pr={selectedPR}
-        open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-      />
+      {/* Co-pilot panel — permanent, not a sheet */}
+      <CopilotPanel pr={selected} />
     </div>
   )
 }
