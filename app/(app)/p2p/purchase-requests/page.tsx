@@ -430,9 +430,9 @@ export default function PurchaseRequestsPage() {
   const [selected, setSelected] = React.useState<PR>(PRS[0])
   const [filter, setFilter] = React.useState("all")
 
-  // Panel styles — #F9FAFB light, 10px radius, matching Figma spec
+  // Panel styles — #F7F7FE primary-25, 10px radius, matching Figma v2 spec
   const panelStyle: React.CSSProperties = {
-    background: "#F9FAFB",
+    background: "#F7F7FE",
     borderRadius: 10,
     overflow: "hidden",
   }
@@ -576,10 +576,10 @@ export default function PurchaseRequestsPage() {
         </div>
       </div>
 
-      {/* Side panel — 307px, light bg */}
+      {/* Side panel — 339px per Figma v2 spec */}
       <div
         className="shrink-0 flex flex-col"
-        style={{ ...panelStyle, width: 307, padding: "24px 20px" }}
+        style={{ ...panelStyle, width: 339, padding: "24px 20px" }}
       >
         <CopilotPanel pr={selected} />
       </div>

@@ -4,18 +4,18 @@ import { AppSidebar } from "@/components/app-sidebar"
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen relative">
-      {/* Fixed header — 64px */}
       <AppTopbar />
-
-      {/* Fixed sidebar — 280px, starts below header */}
       <AppSidebar />
-
-      {/* Content area — offset for header + sidebar */}
+      {/* Content area: 248px left offset (56px icon rail + 192px sub-nav) */}
       <div
-        className="ml-[280px] pt-[64px] h-screen overflow-hidden"
-        style={{ padding: "0 10px 10px", paddingTop: "74px" }}
+        className="overflow-hidden"
+        style={{
+          marginLeft: 248,
+          paddingTop: 74,   // 64px header + 10px gap
+          height: "100vh",
+          padding: "74px 10px 10px 10px",
+        }}
       >
-        {/* Children manage their own panel layout */}
         {children}
       </div>
     </div>
