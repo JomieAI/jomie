@@ -1,5 +1,20 @@
 # Jomie Interface Design System
 
+## Palette — v2 (locked production, updated from brand assets)
+
+| Token | Hex | CSS var | Role |
+|---|---|---|---|
+| primary-500 | `#5D5EF4` | `--primary` | CTA, active states, icon container |
+| primary-600 | `#5556DE` | — | Hover on primary-500 |
+| secondary-800 | `#0f0d2b` | `--background` | Page background |
+| secondary-600 | `#191647` | `--sidebar` / `--secondary` | Navbar, sidebar |
+| secondary-500 | `#1C184E` | `--card` | Card bg, wordmark on light |
+| secondary-400 | `#494671` | `--border` (at 30%) | Borders, dividers |
+| tertiary-500 | `#9EACFE` | `--accent-foreground` | Wordmark on dark, tertiary accent |
+| tertiary-700 | `#707AB4` | `--muted-foreground` | Body text on dark (5.8:1 AA) |
+| success | `#10B981` | `--success` | Positive data (was #22C55E) |
+| warning | `#F59E0B` | `--warning` | Flags, cost alerts (unchanged) |
+
 ## Direction & Feel
 Financial control room with an AI co-pilot. Dense like Bloomberg, readable like Linear.
 The interface disappears into the task — the AI surface is ambient, not loud.

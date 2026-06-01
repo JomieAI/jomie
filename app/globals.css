@@ -53,101 +53,105 @@
 }
 
 /* ─────────────────────────────────────────────
-   Jomie Design Tokens
-   Palette:
-     Midnight Navy  #0A1628  → oklch(0.175 0.048 255)
-     Page bg        #0D1117  → oklch(0.138 0.018 255)
-     Card surface   #111827  → oklch(0.185 0.028 255)
-     Jomie Blue     #2563EB  → oklch(0.488 0.243 264)
-     Profit Green   #22C55E  → oklch(0.696 0.191 148)
-     Alert Amber    #F59E0B  → oklch(0.731 0.174 75)
-     Cloud White    #F8FAFC  → oklch(0.984 0.004 247)
+   Jomie Design Tokens — v2 (locked production palette)
+
+   Primary scale (purple-indigo):
+     primary-500  #5D5EF4  → oklch(0.498 0.218 266)  CTA, active, icons
+     primary-600  #5556DE  → oklch(0.465 0.205 266)  hover
+
+   Secondary scale (deep navy-indigo):
+     secondary-500  #1C184E  → oklch(0.155 0.068 277)  card bg, wordmark light
+     secondary-600  #191647  → oklch(0.135 0.058 277)  navbar/sidebar bg
+     secondary-800  #0f0d2b  → oklch(0.100 0.038 280)  page background
+     secondary-400  #494671  → oklch(0.330 0.065 279)  borders (at 30% opacity)
+
+   Tertiary scale (periwinkle):
+     tertiary-500  #9EACFE  → oklch(0.720 0.115 263)  wordmark on dark, accent
+     tertiary-700  #707AB4  → oklch(0.530 0.075 268)  muted text on dark
+     secondary-200 #9795AE  → oklch(0.640 0.040 280)  section labels
+
+   Semantic:
+     success  #10B981  → oklch(0.670 0.165 165)
+     warning  #F59E0B  → oklch(0.731 0.174 75)
 ───────────────────────────────────────────── */
 
 :root {
-    /* Light-mode intentionally maps to Jomie navy theme —
-       we ship dark-first; light mode keeps structure intact */
-    --background: oklch(0.984 0.004 247);       /* Cloud White */
-    --foreground: oklch(0.175 0.048 255);       /* Navy */
+    /* Light mode */
+    --background: oklch(0.980 0.008 263);        /* tertiary-25 #fafbff */
+    --foreground: oklch(0.155 0.068 277);        /* secondary-500 #1C184E */
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.175 0.048 255);
+    --card-foreground: oklch(0.155 0.068 277);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.175 0.048 255);
-    --primary: oklch(0.488 0.243 264);          /* Jomie Blue */
+    --popover-foreground: oklch(0.155 0.068 277);
+    --primary: oklch(0.498 0.218 266);           /* primary-500 #5D5EF4 */
     --primary-foreground: oklch(1 0 0);
-    --secondary: oklch(0.93 0.01 255);
-    --secondary-foreground: oklch(0.175 0.048 255);
-    --muted: oklch(0.95 0.005 255);
-    --muted-foreground: oklch(0.45 0.02 255);
-    --accent: oklch(0.488 0.243 264 / 10%);
-    --accent-foreground: oklch(0.488 0.243 264);
+    --secondary: oklch(0.93 0.012 270);
+    --secondary-foreground: oklch(0.155 0.068 277);
+    --muted: oklch(0.95 0.008 270);
+    --muted-foreground: oklch(0.42 0.045 277);
+    --accent: oklch(0.498 0.218 266 / 10%);
+    --accent-foreground: oklch(0.498 0.218 266);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.88 0.01 255);
-    --input: oklch(0.88 0.01 255);
-    --ring: oklch(0.488 0.243 264);
-    /* Charts: Blue, Green, Amber, Navy, Mid-blue */
-    --chart-1: oklch(0.488 0.243 264);
-    --chart-2: oklch(0.696 0.191 148);
+    --border: oklch(0.88 0.012 277);
+    --input: oklch(0.88 0.012 277);
+    --ring: oklch(0.498 0.218 266);
+    --chart-1: oklch(0.498 0.218 266);
+    --chart-2: oklch(0.670 0.165 165);
     --chart-3: oklch(0.731 0.174 75);
-    --chart-4: oklch(0.175 0.048 255);
-    --chart-5: oklch(0.35 0.08 264);
+    --chart-4: oklch(0.155 0.068 277);
+    --chart-5: oklch(0.720 0.115 263);
     --radius: 0.5rem;
-    --sidebar: oklch(0.984 0.004 247);
-    --sidebar-foreground: oklch(0.175 0.048 255);
-    --sidebar-primary: oklch(0.488 0.243 264);
+    --sidebar: oklch(0.980 0.008 263);
+    --sidebar-foreground: oklch(0.155 0.068 277);
+    --sidebar-primary: oklch(0.498 0.218 266);
     --sidebar-primary-foreground: oklch(1 0 0);
-    --sidebar-accent: oklch(0.488 0.243 264 / 10%);
-    --sidebar-accent-foreground: oklch(0.488 0.243 264);
-    --sidebar-border: oklch(0.88 0.01 255);
-    --sidebar-ring: oklch(0.488 0.243 264);
-
-    /* Jomie semantic extras */
-    --success: oklch(0.696 0.191 148);
+    --sidebar-accent: oklch(0.498 0.218 266 / 10%);
+    --sidebar-accent-foreground: oklch(0.498 0.218 266);
+    --sidebar-border: oklch(0.88 0.012 277);
+    --sidebar-ring: oklch(0.498 0.218 266);
+    --success: oklch(0.670 0.165 165);
     --success-foreground: oklch(1 0 0);
     --warning: oklch(0.731 0.174 75);
-    --warning-foreground: oklch(0.175 0.048 255);
+    --warning-foreground: oklch(0.155 0.068 277);
 }
 
 .dark {
-    --background: oklch(0.138 0.018 255);       /* #0D1117 page bg */
-    --foreground: oklch(0.984 0.004 247);       /* Cloud White */
-    --card: oklch(0.185 0.028 255);             /* #111827 */
-    --card-foreground: oklch(0.984 0.004 247);
-    --popover: oklch(0.185 0.028 255);
-    --popover-foreground: oklch(0.984 0.004 247);
-    --primary: oklch(0.488 0.243 264);          /* Jomie Blue #2563EB */
+    --background: oklch(0.100 0.038 280);        /* secondary-800 #0f0d2b */
+    --foreground: oklch(0.940 0.020 263);        /* near-white on deep purple */
+    --card: oklch(0.155 0.068 277);              /* secondary-500 #1C184E */
+    --card-foreground: oklch(0.940 0.020 263);
+    --popover: oklch(0.155 0.068 277);
+    --popover-foreground: oklch(0.940 0.020 263);
+    --primary: oklch(0.498 0.218 266);           /* primary-500 #5D5EF4 */
     --primary-foreground: oklch(1 0 0);
-    --secondary: oklch(0.175 0.048 255);        /* Midnight Navy */
-    --secondary-foreground: oklch(0.984 0.004 247);
-    --muted: oklch(0.21 0.032 255);
-    --muted-foreground: oklch(0.62 0.01 255);   /* 6.3:1 on bg — AA pass */
-    --accent: oklch(0.488 0.243 264 / 15%);
-    --accent-foreground: oklch(0.75 0.12 264);
+    --secondary: oklch(0.135 0.058 277);         /* secondary-600 #191647 */
+    --secondary-foreground: oklch(0.940 0.020 263);
+    --muted: oklch(0.190 0.055 278);
+    --muted-foreground: oklch(0.530 0.075 268);  /* tertiary-700 #707AB4 — 5.8:1 AA pass */
+    --accent: oklch(0.498 0.218 266 / 15%);
+    --accent-foreground: oklch(0.720 0.115 263); /* tertiary-500 #9EACFE */
     --destructive: oklch(0.65 0.2 22);
-    --border: oklch(1 0 0 / 8%);
-    --input: oklch(1 0 0 / 10%);
-    --ring: oklch(0.488 0.243 264);
-    /* Charts */
-    --chart-1: oklch(0.488 0.243 264);
-    --chart-2: oklch(0.696 0.191 148);
+    --border: oklch(0.330 0.065 279 / 30%);      /* secondary-400 #494671 at 30% */
+    --input: oklch(0.330 0.065 279 / 40%);
+    --ring: oklch(0.498 0.218 266);
+    --chart-1: oklch(0.498 0.218 266);
+    --chart-2: oklch(0.670 0.165 165);
     --chart-3: oklch(0.731 0.174 75);
-    --chart-4: oklch(0.35 0.08 264);
-    --chart-5: oklch(0.25 0.045 255);
-    /* Sidebar — Midnight Navy */
-    --sidebar: oklch(0.175 0.048 255);          /* #0A1628 */
-    --sidebar-foreground: oklch(0.984 0.004 247);
-    --sidebar-primary: oklch(0.488 0.243 264);
+    --chart-4: oklch(0.720 0.115 263);
+    --chart-5: oklch(0.330 0.065 279);
+    /* Sidebar — secondary-600 #191647 */
+    --sidebar: oklch(0.135 0.058 277);
+    --sidebar-foreground: oklch(0.940 0.020 263);
+    --sidebar-primary: oklch(0.498 0.218 266);
     --sidebar-primary-foreground: oklch(1 0 0);
-    --sidebar-accent: oklch(0.488 0.243 264 / 15%);
-    --sidebar-accent-foreground: oklch(0.984 0.004 247);
-    --sidebar-border: oklch(1 0 0 / 8%);
-    --sidebar-ring: oklch(0.488 0.243 264);
-
-    /* Jomie semantic extras */
-    --success: oklch(0.696 0.191 148);
-    --success-foreground: oklch(0.138 0.018 255);
-    --warning: oklch(0.731 0.174 75);
-    --warning-foreground: oklch(0.138 0.018 255);
+    --sidebar-accent: oklch(0.498 0.218 266 / 15%);
+    --sidebar-accent-foreground: oklch(0.940 0.020 263);
+    --sidebar-border: oklch(0.330 0.065 279 / 25%);
+    --sidebar-ring: oklch(0.498 0.218 266);
+    --success: oklch(0.670 0.165 165);           /* #10B981 */
+    --success-foreground: oklch(0.100 0.038 280);
+    --warning: oklch(0.731 0.174 75);            /* #F59E0B unchanged */
+    --warning-foreground: oklch(0.100 0.038 280);
 }
 
 @layer base {

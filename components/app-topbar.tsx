@@ -8,13 +8,13 @@ import { cn } from "@/lib/utils"
 function JomieFavicon() {
   return (
     <a href="/" className="select-none" aria-label="Jomie home">
-      {/* Favicon / app icon variant — navy rounded square + blue J mark */}
-      <svg width="28" height="28" viewBox="0 0 99 99" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path d="M79.0457 99H19.8168C8.85666 99 0 90.0302 0 79.0671V19.8221C0 8.85906 8.85666 0 19.8168 0H79.0457C90.0059 0 98.8625 8.85906 98.8625 19.8221V79.0671C98.9732 90.0302 90.0059 99 79.0457 99Z" fill="#0A1628"/>
-        <path d="M50.1508 26.0235C48.7116 27.4631 47.6046 29.1242 46.7189 30.896C44.9476 27.2416 41.9584 24.2517 38.3051 22.4799C40.0764 21.594 41.737 20.4866 43.1762 19.047C44.6154 17.6074 45.8332 15.9463 46.7189 14.1745C47.6046 15.9463 48.7116 17.4966 50.1508 19.047C51.5901 20.4866 53.2507 21.7047 55.022 22.5906C53.2507 23.3658 51.5901 24.5839 50.1508 26.0235Z" fill="#2563EB"/>
-        <path d="M48.9331 81.0604V47.2852C48.9331 38.094 56.3505 30.5638 65.65 30.5638V64.3389C65.65 73.5302 58.1219 81.0604 48.9331 81.0604Z" fill="#2563EB"/>
-        <path d="M36.5337 80.7282C31.884 80.7282 28.1199 76.9631 28.1199 72.3121C28.1199 67.6611 31.884 63.896 36.5337 63.896C41.1835 63.896 44.9476 67.6611 44.9476 72.3121C44.9476 77.0738 41.1835 80.7282 36.5337 80.7282Z" fill="#2563EB"/>
-        <path d="M68.0856 30.5638H65.65V31.3389H68.0856V30.5638Z" fill="#2563EB"/>
+      {/* jomie-favicon.svg — primary-500 #5D5EF4 rounded square, white J paths */}
+      <svg width="28" height="28" viewBox="0 0 74 74" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="4.625" y="4.625" width="64.75" height="64.75" rx="20.0417" fill="#5D5EF4"/>
+        <path d="M38.8849 21.522C37.9561 22.451 37.2416 23.5231 36.67 24.6665C35.5268 22.3081 33.5977 20.3785 31.2399 19.235C32.3831 18.6632 33.4548 17.9486 34.3837 17.0195C35.3125 16.0904 36.0984 15.0184 36.67 13.8749C37.2416 15.0184 37.9561 16.0189 38.8849 17.0195C39.8138 17.9486 40.8855 18.7347 42.0287 19.3064C40.8855 19.8067 39.8138 20.5929 38.8849 21.522Z" fill="#1C184E"/>
+        <path d="M38.0991 57.0417V35.2439C38.0991 29.3121 42.8861 24.4523 48.8878 24.4523V46.25C48.8878 52.1818 44.0293 57.0417 38.0991 57.0417Z" fill="white"/>
+        <path d="M30.0968 56.8269C27.0959 56.8269 24.6667 54.397 24.6667 51.3953C24.6667 48.3937 27.0959 45.9637 30.0968 45.9637C33.0976 45.9637 35.5269 48.3937 35.5269 51.3953C35.5269 54.4684 33.0976 56.8269 30.0968 56.8269Z" fill="white"/>
+        <path d="M50.4596 24.4523H48.8877V24.9525H50.4596V24.4523Z" fill="white"/>
       </svg>
     </a>
   )
@@ -30,8 +30,8 @@ export function AppTopbar() {
 
         {/* Entity */}
         <button className="flex items-center gap-2 rounded px-2 py-1 text-left hover:bg-white/[0.04] transition-colors group">
-          <div className="size-4 rounded-sm bg-primary/15 flex items-center justify-center flex-shrink-0">
-            <span className="text-[7px] font-bold text-primary">BR</span>
+          <div className="size-4 rounded-sm bg-primary/20 flex items-center justify-center flex-shrink-0">
+            <span className="text-[7px] font-bold text-accent-foreground">BR</span>
           </div>
           <div>
             <div className="text-[11px] font-semibold text-foreground/80 leading-none">Berjaya Retail</div>
