@@ -1,4 +1,4 @@
-import { Inter, Plus_Jakarta_Sans, Fredoka } from "next/font/google"
+import { Inter, Plus_Jakarta_Sans } from "next/font/google"
 import "./globals.css"
 import { cn } from "@/lib/utils"
 
@@ -7,13 +7,6 @@ const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
   weight: ["300", "400", "500", "600", "700"],
-})
-
-// Fredoka — wordmark ONLY, never for UI
-const fredoka = Fredoka({
-  subsets: ["latin"],
-  variable: "--font-fredoka",
-  weight: ["700"],
 })
 
 // Plus Jakarta Sans — content headings, brand moments
@@ -36,7 +29,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("dark antialiased", inter.variable, plusJakartaSans.variable, fredoka.variable)}
+      className={cn("dark antialiased", inter.variable, plusJakartaSans.variable)}
       suppressHydrationWarning
     >
       <body className="font-inter text-foreground" style={{
