@@ -1,6 +1,14 @@
 "use client"
 
-import { LayoutGrid, ChevronDown, Search, Headphones } from "lucide-react"
+import { PanelLeft, ChevronDown, Search, Headphones, User, RefreshCcw, LogOut, Settings } from "lucide-react"
+import { useSidebar } from "@/components/sidebar-context"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 // jomie-primary-logo-white-text.svg — production asset, exact paths from H:\My Drive\Jomie\Product\
 // 318×76px source, scaled to 40px height in header (width ~166px)
@@ -40,15 +48,20 @@ function JomieLogo() {
 }
 
 // Ghost button — no background fill (header actions spec)
-function GhostBtn({ icon: Icon, label, size = 40 }: {
+function GhostBtn({ icon: Icon, label, size = 40, onClick, active = false }: {
   icon: React.ElementType; label: string; size?: number
+  onClick?: () => void; active?: boolean
 }) {
   return (
     <button
       aria-label={label}
-      className="flex items-center justify-center shrink-0 rounded-lg hover:bg-white/5 transition-colors"
-      style={{ width: size, height: size, padding: 10,
-        filter: "drop-shadow(0px 1px 2px rgba(16,24,40,0.05))" }}
+      onClick={onClick}
+      className="flex items-center justify-center shrink-0 rounded-lg transition-colors hover:bg-white/5 active:bg-white/10"
+      style={{
+        width: size, height: size, padding: 10, border: "none", cursor: "pointer",
+        background: active ? "rgba(255,255,255,0.08)" : "transparent",
+        filter: "drop-shadow(0px 1px 2px rgba(16,24,40,0.05))",
+      }}
     >
       <Icon size={20} color="white" strokeWidth={1.67} />
     </button>
@@ -56,6 +69,8 @@ function GhostBtn({ icon: Icon, label, size = 40 }: {
 }
 
 export function AppTopbar() {
+  const { l2Open, toggleL2 } = useSidebar()
+
   return (
     <header
       className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between"
@@ -65,8 +80,8 @@ export function AppTopbar() {
       <div className="flex items-center gap-4" style={{ height: 40 }}>
         <JomieLogo />
 
-        {/* Sidebar toggle — ghost, 40×40 */}
-        <GhostBtn icon={LayoutGrid} label="Toggle sidebar" />
+        {/* L2 collapse/expand — same GhostBtn style, active when L2 is closed */}
+        <GhostBtn icon={PanelLeft} label="Toggle navigation panel" onClick={toggleL2} active={!l2Open} />
 
         {/* Entity / company switcher */}
         <div
@@ -93,24 +108,83 @@ export function AppTopbar() {
         </div>
       </div>
 
-      {/* RIGHT — ghost icons + user photo avatar */}
+      {/* RIGHT — ghost icons + user avatar with dropdown */}
       <div className="flex items-center gap-1" style={{ height: 40 }}>
         <GhostBtn icon={Search} label="Search" />
         <GhostBtn icon={Headphones} label="Support" />
-        {/* User photo avatar — 40×40 circle with violet shadow */}
-        <div
-          className="rounded-full shrink-0 overflow-hidden cursor-pointer"
-          style={{
-            width: 40, height: 40,
-            background: "#F7F7FE",
-            boxShadow: "0px 12px 16px -4px rgba(99,86,228,0.08), 0px 4px 6px -2px rgba(99,86,228,0.03)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "var(--font-inter)", fontSize: 14, fontWeight: 700, color: "#5D5EF4",
-          }}
-          aria-label="User menu"
-        >
-          T
-        </div>
+
+        <DropdownMenu>
+          {/* Trigger — avatar button rendered directly by the primitive */}
+          <DropdownMenuTrigger
+            aria-label="User menu"
+            className="flex items-center justify-center rounded-full shrink-0 transition-all hover:ring-2 hover:ring-white/20 focus:outline-none"
+            style={{
+              width: 32, height: 32, marginLeft: 4,
+              background: "#F7F7FE", border: "none", cursor: "pointer",
+              fontFamily: "var(--font-inter)", fontSize: 12, fontWeight: 700, color: "#5D5EF4",
+              boxShadow: "0px 4px 8px -2px rgba(99,86,228,0.15)",
+            }}
+          >
+            T
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent
+            align="end"
+            className="w-52 p-0 overflow-hidden"
+            style={{
+              background: "#101828",
+              border: "0.5px solid rgba(255,255,255,0.1)",
+              borderRadius: 10,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
+            }}
+          >
+            {/* User info header — plain div, not a menu item */}
+            <div style={{ padding: "10px 12px 8px", borderBottom: "0.5px solid rgba(255,255,255,0.08)" }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#fff", fontFamily: "var(--font-inter)" }}>Thony</p>
+              <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-inter)" }}>thony@jurifytepro.com</p>
+            </div>
+
+            <div style={{ padding: "4px" }}>
+              <DropdownMenuItem
+                className="flex items-center gap-2 rounded-lg cursor-pointer"
+                style={{ padding: "8px 10px", fontSize: 13, fontWeight: 500, color: "#fff", fontFamily: "var(--font-inter)" }}
+                onClick={() => { window.location.href = "/settings/profile" }}
+              >
+                <User size={14} strokeWidth={1.6} />
+                Profile
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                className="flex items-center gap-2 rounded-lg cursor-pointer"
+                style={{ padding: "8px 10px", fontSize: 13, fontWeight: 500, color: "#fff", fontFamily: "var(--font-inter)" }}
+                onClick={() => { window.location.href = "/settings/company" }}
+              >
+                <RefreshCcw size={14} strokeWidth={1.6} />
+                Switch Entity
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                className="flex items-center gap-2 rounded-lg cursor-pointer"
+                style={{ padding: "8px 10px", fontSize: 13, fontWeight: 500, color: "#fff", fontFamily: "var(--font-inter)" }}
+                onClick={() => { window.location.href = "/settings" }}
+              >
+                <Settings size={14} strokeWidth={1.6} />
+                Settings
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+
+              <DropdownMenuItem
+                className="flex items-center gap-2 rounded-lg cursor-pointer"
+                style={{ padding: "8px 10px", fontSize: 13, fontWeight: 500, color: "#F87171", fontFamily: "var(--font-inter)" }}
+                onClick={() => { window.location.href = "/logout" }}
+              >
+                <LogOut size={14} strokeWidth={1.6} />
+                Sign Out
+              </DropdownMenuItem>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )
