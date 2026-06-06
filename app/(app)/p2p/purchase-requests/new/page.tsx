@@ -3,13 +3,13 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { savePR, buildNextPRId, getSavedPRs } from "@/lib/pr-store"
 import {
   Sparkles, ChevronLeft, ChevronRight, Send, Plus, Check, CheckCircle2,
   Building2, TriangleAlert, ArrowRight, Loader2, ShieldCheck,
   CircleDot, Package, Briefcase, RefreshCw, ChevronDown,
-  PanelRight,
+  Pencil,
 } from "lucide-react"
+import { savePR, buildNextPRId, getSavedPRs } from "@/lib/pr-store"
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -68,7 +68,41 @@ const SUB_PRS = [
   },
 ]
 
-type ChatState = "idle" | "processing" | "initial" | "confirmed" | "submitting" | "a2-pass"
+const DELIVERY_OPTIONS = ["ASAP (< 2 weeks)", "End of June 2026", "End of July 2026", "End of Q3 2026", "Flexible"]
+const BUDGET_OPTIONS   = ["IT-CAPEX-2024", "IT-OPEX-2024", "CORP-CAPEX-2024", "Other"]
+
+type ChatState = "idle" | "questioning" | "processing" | "initial" | "confirmed" | "submitting" | "a2-pass"
+
+interface FollowUpAnswers {
+  delivery:   string
+  budgetCode: string
+  budgetCustom: string
+}
+
+// ─── Auto-generate project name from description ──────────────────────────────
+
+function autoGenerateName(desc: string): string {
+  const d = desc.toLowerCase()
+  if (/laptop|desktop|computer|server|workstation|monitor|dock|hardware|printer|scanner/.test(d))
+    return "IT Equipment"
+  if (/software|licence|license|subscription|saas|cloud|app/.test(d))
+    return "Software License"
+  if (/renovation|partition|furniture|flooring|office fit|fitting/.test(d))
+    return "Office Renovation"
+  if (/vehicle|car|van|truck|lorry/.test(d))
+    return "Fleet Purchase"
+  if (/training|course|workshop|seminar|conference/.test(d))
+    return "Training & Development"
+  if (/marketing|booth|banner|trade fair|brochure|print/.test(d))
+    return "Marketing Materials"
+  if (/cleaning|maintenance|repair|servic/.test(d))
+    return "Maintenance Services"
+  if (/stationery|supplies|paper|toner|consumable/.test(d))
+    return "Office Supplies"
+  // Fallback: first 3 words title-cased
+  const words = desc.trim().split(/\s+/).slice(0, 3)
+  return words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")
+}
 
 // ─── Sub-PR card (right panel) ─────────────────────────────────────────────────
 
@@ -139,22 +173,49 @@ export default function NewPRPage() {
   const [chatState, setChatState] = React.useState<ChatState>("idle")
   const [inputValue, setInputValue] = React.useState("")
   const [projectName, setProjectName] = React.useState("")
-  const [processStep, setProcessStep] = React.useState(-1)   // -1 = not started; 0-4 = step index
+  const [isNameAutoGen, setIsNameAutoGen] = React.useState(false)
+  const [isEditingName, setIsEditingName] = React.useState(false)
+  const [processStep, setProcessStep] = React.useState(-1)
   const [submittedMessage, setSubmittedMessage] = React.useState("")
   const [submittedProject, setSubmittedProject] = React.useState("")
   const [activeTab, setActiveTab] = React.useState("ai")
   const [savedPRId, setSavedPRId] = React.useState("")
+  const [followUp, setFollowUp] = React.useState<FollowUpAnswers>({
+    delivery: "", budgetCode: "", budgetCustom: "",
+  })
+
   // null = fill remaining space | 0 = closed | >0 = fixed px width
   const [rightWidth, setRightWidth] = React.useState<number | null>(null)
   const endRef     = React.useRef<HTMLDivElement>(null)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
+  const nameInputRef = React.useRef<HTMLInputElement>(null)
   const dragging   = React.useRef(false)
 
   const rightOpen = rightWidth !== 0
 
+  // ── Auto-generate project name with debounce ──
+  React.useEffect(() => {
+    if (projectName && !isNameAutoGen) return          // user typed a name — don't override
+    if (inputValue.trim().length < 20) {
+      if (isNameAutoGen) { setProjectName(""); setIsNameAutoGen(false) }
+      return
+    }
+    const timer = setTimeout(() => {
+      const generated = autoGenerateName(inputValue)
+      setProjectName(generated)
+      setIsNameAutoGen(true)
+    }, 700)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputValue])
+
+  // When user manually edits the name field, stop auto-gen
+  const handleNameChange = (v: string) => {
+    setProjectName(v)
+    setIsNameAutoGen(false)
+  }
+
   // ── Drag: width = distance from cursor to wrapper's right edge ──
-  // Drag LEFT  → cursor moves left  → distance grows  → panel wider  ✓
-  // Drag RIGHT → cursor moves right → distance shrinks → panel narrower → closes ✓
   const onDragMouseDown = (e: React.MouseEvent) => {
     dragging.current = true
     e.preventDefault()
@@ -164,7 +225,6 @@ export default function NewPRPage() {
     const onMove = (e: MouseEvent) => {
       if (!dragging.current || !wrapperRef.current) return
       const rect = wrapperRef.current.getBoundingClientRect()
-      // right panel width = distance from cursor to container's right edge
       const newW = Math.max(0, Math.min(rect.width - 16 - 500, rect.right - e.clientX))
       setRightWidth(newW)
     }
@@ -173,8 +233,8 @@ export default function NewPRPage() {
       dragging.current = false
       setRightWidth(w => {
         if (w === null) return w
-        if (w < 160) return 0    // snap closed
-        if (w < 280) return 280  // snap to comfortable minimum
+        if (w < 160) return 0
+        if (w < 280) return 280
         return w
       })
     }
@@ -189,9 +249,24 @@ export default function NewPRPage() {
   const totalBlocks   = SUB_PRS.reduce((n, s) => n + s.blocks.length, 0)
   const totalWarnings = SUB_PRS.reduce((n, s) => n + s.warnings.length, 0)
 
+  const resolvedBudgetCode = followUp.budgetCode === "Other" ? followUp.budgetCustom : followUp.budgetCode
+  const allQuestionsAnswered = !!followUp.delivery && !!resolvedBudgetCode
+
+  // ── Kick off the processing animation (called from questioning state) ──
+  const startProcessing = () => {
+    setChatState("processing")
+    setProcessStep(-1)
+    PROCESSING_STEPS.forEach((_, i) => {
+      setTimeout(() => setProcessStep(i), 400 + i * 400)
+    })
+    setTimeout(() => {
+      setChatState("confirmed")
+      setProcessStep(-1)
+    }, 400 + PROCESSING_STEPS.length * 400 + 500)
+  }
+
   const handleSubmit = () => {
     if (chatState !== "confirmed") return
-    // Build + save the new PR to localStorage before switching state
     const saved = getSavedPRs()
     const newId = buildNextPRId(saved.length)
     savePR({
@@ -218,26 +293,17 @@ export default function NewPRPage() {
 
   const handleCreate = () => {
     if (!inputValue.trim()) return
-    // Capture values before clearing
     setSubmittedMessage(inputValue)
-    setSubmittedProject(projectName || "New Purchase Request")
-    // Enter processing state
-    setChatState("processing")
-    setProcessStep(-1)
-    // Reveal steps sequentially, one every 380ms
-    PROCESSING_STEPS.forEach((_, i) => {
-      setTimeout(() => setProcessStep(i), 400 + i * 400)
-    })
-    // After all steps done, transition to confirmed
-    setTimeout(() => {
-      setChatState("confirmed")
-      setProcessStep(-1)
-    }, 400 + PROCESSING_STEPS.length * 400 + 500)
+    const finalProject = projectName.trim() || autoGenerateName(inputValue) || "New Purchase Request"
+    setSubmittedProject(finalProject)
+    // Reset follow-up answers
+    setFollowUp({ delivery: "", budgetCode: "", budgetCustom: "" })
+    setChatState("questioning")
   }
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior:"smooth" })
-  }, [chatState])
+  }, [chatState, processStep])
 
   const tabs = [
     { key:"ai",      label:"AI Chat" },
@@ -246,9 +312,6 @@ export default function NewPRPage() {
     { key:"reorder", label:"Auto Reorder" },
   ]
 
-  // Right panel: flex: 0 0 Xpx — sits at the right edge naturally as last flex child.
-  // As Xpx shrinks, its LEFT edge moves right → closes left-to-right ✓
-  // Chat (flex:1) fills all remaining space; content inside is max-w-600 centered.
   const rightPanelStyle: React.CSSProperties = {
     background:"#F7F7FE", borderRadius:10, overflow:"hidden",
     display: rightWidth === 0 ? "none" : "flex",
@@ -262,16 +325,15 @@ export default function NewPRPage() {
 
       {/* ── Chat — flex:1, content centered at max 600px ── */}
       <div className="flex flex-col min-h-0 flex-1 min-w-[500px]">
-        {/* Inner content centered */}
         <div className="flex flex-col min-h-0 h-full w-full max-w-[600px] mx-auto"
           style={{ padding: chatState === "idle" ? "0 16px 16px" : "24px 16px 16px", gap:0 }}>
 
         {/* ══ IDLE: Starter screen ══ */}
-        {chatState === "idle" || chatState === "processing" ? (
+        {chatState === "idle" ? (
           <div className="flex-1 overflow-y-auto flex flex-col items-center min-h-0"
             style={{ paddingTop:100, paddingBottom:24, gap:24 }}>
 
-            {/* Jomie logomark — jomie-favicon.svg (production paths) */}
+            {/* Jomie logomark */}
             <div className="shrink-0" style={{ width:52, height:52 }}>
               <svg width="52" height="52" viewBox="0 0 74 74" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="4.625" y="4.625" width="64.75" height="64.75" rx="20.0417" fill="#5D5EF4"/>
@@ -288,138 +350,108 @@ export default function NewPRPage() {
               What do you want to purchase today?
             </h1>
 
-            {/* Glass card — idle input OR processing steps */}
+            {/* Glass card */}
             <div className="w-full flex flex-col gap-2">
               <div className="w-full flex flex-col gap-2 p-4"
                 style={{ background:"rgba(255,255,255,0.05)", borderRadius:20 }}>
 
-                {chatState === "idle" ? (<>
-                  {/* Card header */}
-                  <div className="pb-1">
-                    <span className="text-[14px] font-semibold text-white leading-5"
-                      style={{ fontFamily:"Inter, sans-serif" }}>New Request</span>
-                  </div>
+                {/* Card header */}
+                <div className="pb-1">
+                  <span className="text-[14px] font-semibold text-white leading-5"
+                    style={{ fontFamily:"Inter, sans-serif" }}>New Request</span>
+                </div>
 
-                  {/* Project Name input */}
-                  <input
-                    type="text"
-                    value={projectName}
-                    onChange={e => setProjectName(e.target.value)}
-                    placeholder="Project Name"
-                    className="w-full text-[14px] leading-5 placeholder-gray-400 text-gray-700 focus:outline-none bg-white px-4"
-                    style={{
-                      height:56, border:`2px solid ${T.border}`, borderRadius:15,
-                      boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
-                      fontFamily:"Inter, sans-serif",
-                    }}
-                  />
-
-                  {/* Textarea + action row */}
-                  <div className="w-full flex flex-col"
-                    style={{
-                      background:"#FFFFFF", border:`2px solid ${T.border}`,
-                      borderRadius:15, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
-                    }}>
-                    <textarea
-                      value={inputValue}
-                      onChange={e => setInputValue(e.target.value)}
-                      placeholder="Write a message..."
-                      className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
-                      style={{ height:111, fontFamily:"Inter, sans-serif" }}
+                {/* Project Name input with auto-gen badge */}
+                <div className="relative">
+                  {isEditingName ? (
+                    <input
+                      ref={nameInputRef}
+                      type="text"
+                      value={projectName}
+                      onChange={e => handleNameChange(e.target.value)}
+                      onBlur={() => setIsEditingName(false)}
+                      placeholder="Project Name"
+                      autoFocus
+                      className="w-full text-[14px] leading-5 placeholder-gray-400 text-gray-700 focus:outline-none bg-white px-4"
+                      style={{
+                        height:56, border:`2px solid ${T.purple}`, borderRadius:15,
+                        boxShadow:"0px 0px 0px 3px rgba(93,94,244,0.12)",
+                        fontFamily:"Inter, sans-serif",
+                      }}
                     />
-                    {/* Action row */}
-                    <div className="flex items-center justify-between px-4 pb-3.5 pt-1">
-                      <button className="size-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50"
-                        style={{ background:"#FFFFFF", border:"1px solid #D0D5DD", boxShadow:"0px 1px 2px rgba(16,24,40,0.05)" }}>
-                        <Plus size={16} style={{ color:"#344054" }}/>
-                      </button>
-                      <div className="flex items-center gap-2">
-                        <button className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[14px] cursor-pointer transition-opacity hover:opacity-80"
-                          style={{ color: T.purpleDark }}>
-                          Claude Opus 4.8
-                          <ChevronDown size={16} style={{ color: T.purpleDark }}/>
-                        </button>
-                        <button
-                          onClick={handleCreate}
-                          disabled={!inputValue.trim()}
-                          className="flex items-center justify-center gap-2 px-4 h-10 rounded-[10px] text-[14px] text-white transition-all"
-                          style={{
-                            background: inputValue.trim() ? T.purple : "rgba(93,94,244,0.4)",
-                            border:`1px solid ${inputValue.trim() ? T.purple : "transparent"}`,
-                            boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
-                            cursor: inputValue.trim() ? "pointer" : "not-allowed",
-                          }}>
-                          Create
-                          <Send size={16} color="#FFFFFF"/>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </>) : (
-                  /* ── Processing view ── */
-                  <div className="flex flex-col gap-3 py-2" style={{ animation:"fadeInUp 0.3s ease-out" }}>
-                    {/* Header with spinner */}
-                    <div className="flex items-center gap-3">
-                      <div className="relative shrink-0" style={{ width:32, height:32 }}>
-                        {/* Pulsing glow ring */}
-                        <div className="absolute inset-0 rounded-full"
-                          style={{
-                            background:`radial-gradient(circle, rgba(93,94,244,0.3) 0%, transparent 70%)`,
-                            animation:"pulseGlow 1.4s ease-in-out infinite",
-                            transform:"scale(1.8)",
-                          }}/>
-                        <svg width="32" height="32" viewBox="0 0 74 74" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position:"relative", zIndex:1 }}>
-                          <rect x="4.625" y="4.625" width="64.75" height="64.75" rx="20.0417" fill="#5D5EF4"/>
-                          <path d="M38.8849 21.522C37.9561 22.451 37.2416 23.5231 36.67 24.6665C35.5268 22.3081 33.5977 20.3785 31.2399 19.235C32.3831 18.6632 33.4548 17.9486 34.3837 17.0195C35.3125 16.0904 36.0984 15.0184 36.67 13.8749C37.2416 15.0184 37.9561 16.0189 38.8849 17.0195C39.8138 17.9486 40.8855 18.7347 42.0287 19.3064C40.8855 19.8067 39.8138 20.5929 38.8849 21.522Z" fill="#1C184E"/>
-                          <path d="M38.0991 57.0417V35.2439C38.0991 29.3121 42.8861 24.4523 48.8878 24.4523V46.25C48.8878 52.1818 44.0293 57.0417 38.0991 57.0417Z" fill="white"/>
-                          <path d="M30.0968 56.8269C27.0959 56.8269 24.6667 54.397 24.6667 51.3953C24.6667 48.3937 27.0959 45.9637 30.0968 45.9637C33.0976 45.9637 35.5269 48.3937 35.5269 51.3953C35.5269 54.4684 33.0976 56.8269 30.0968 56.8269Z" fill="white"/>
-                          <path d="M50.4596 24.4523H48.8877V24.9525H50.4596V24.4523Z" fill="white"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <div className="text-[14px] font-semibold text-white" style={{ fontFamily:"Inter, sans-serif" }}>
-                          Analysing your request…
-                        </div>
-                        <div className="text-[12px] mt-0.5" style={{ color: T.dimText }}>
-                          {submittedProject}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Sequential steps */}
-                    <div className="flex flex-col gap-2 pl-1">
-                      {PROCESSING_STEPS.map((step, i) => (
-                        <div key={i}
-                          className={cn("flex items-start gap-2.5 transition-all duration-300",
-                            processStep >= i ? "opacity-100" : "opacity-0"
+                  ) : (
+                    <div
+                      onClick={() => { setIsEditingName(true); setIsNameAutoGen(false) }}
+                      className="w-full flex items-center cursor-text"
+                      style={{
+                        height:56, border:`2px solid ${T.border}`, borderRadius:15,
+                        background:"white", padding:"0 16px",
+                        boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
+                      }}>
+                      {projectName ? (
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-[14px] text-gray-700 truncate flex-1"
+                            style={{ fontFamily:"Inter, sans-serif" }}>
+                            {projectName}
+                          </span>
+                          {isNameAutoGen && (
+                            <span className="flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-medium"
+                              style={{ background:"rgba(93,94,244,0.08)", color: T.purple }}>
+                              <Sparkles size={9} strokeWidth={2}/> AI suggested
+                            </span>
                           )}
-                          style={{
-                            transform: processStep >= i ? "translateY(0)" : "translateY(8px)",
-                            animation: processStep >= i ? "fadeInUp 0.3s ease-out" : "none",
-                          }}>
-                          {/* Icon: spinner while "current", check when done */}
-                          <div className="shrink-0 mt-0.5">
-                            {processStep === i && processStep < PROCESSING_STEPS.length - 1 ? (
-                              <Loader2 size={14} className="animate-spin" style={{ color: T.purple }}/>
-                            ) : processStep > i || processStep === PROCESSING_STEPS.length - 1 ? (
-                              <div className="size-3.5 rounded-full flex items-center justify-center"
-                                style={{ background: T.teal }}>
-                                <Check size={8} color="#fff" strokeWidth={3}/>
-                              </div>
-                            ) : (
-                              <div className="size-3.5 rounded-full" style={{ background:"rgba(255,255,255,0.1)" }}/>
-                            )}
-                          </div>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[13px] font-semibold text-white leading-4">{step.label}</span>
-                            <span className="text-[12px] leading-4" style={{ color: T.dimText }}>{step.detail}</span>
-                          </div>
+                          <Pencil size={12} style={{ color: T.dimText, flexShrink:0 }} strokeWidth={1.8}/>
                         </div>
-                      ))}
+                      ) : (
+                        <span className="text-[14px]" style={{ color:"#9CA3AF", fontFamily:"Inter, sans-serif" }}>
+                          Project Name
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Textarea + action row */}
+                <div className="w-full flex flex-col"
+                  style={{
+                    background:"#FFFFFF", border:`2px solid ${T.border}`,
+                    borderRadius:15, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
+                  }}>
+                  <textarea
+                    value={inputValue}
+                    onChange={e => setInputValue(e.target.value)}
+                    placeholder="Describe what you need — items, quantities, purpose…"
+                    className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
+                    style={{ height:111, fontFamily:"Inter, sans-serif" }}
+                  />
+                  {/* Action row */}
+                  <div className="flex items-center justify-between px-4 pb-3.5 pt-1">
+                    <button className="size-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50"
+                      style={{ background:"#FFFFFF", border:"1px solid #D0D5DD", boxShadow:"0px 1px 2px rgba(16,24,40,0.05)" }}>
+                      <Plus size={16} style={{ color:"#344054" }}/>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <button className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[14px] cursor-pointer transition-opacity hover:opacity-80"
+                        style={{ color: T.purpleDark }}>
+                        Claude Opus 4.8
+                        <ChevronDown size={16} style={{ color: T.purpleDark }}/>
+                      </button>
+                      <button
+                        onClick={handleCreate}
+                        disabled={!inputValue.trim()}
+                        className="flex items-center justify-center gap-2 px-4 h-10 rounded-[10px] text-[14px] text-white transition-all"
+                        style={{
+                          background: inputValue.trim() ? T.purple : "rgba(93,94,244,0.4)",
+                          border:`1px solid ${inputValue.trim() ? T.purple : "transparent"}`,
+                          boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
+                          cursor: inputValue.trim() ? "pointer" : "not-allowed",
+                        }}>
+                        Create
+                        <Send size={16} color="#FFFFFF"/>
+                      </button>
                     </div>
                   </div>
-                )}
-
+                </div>
               </div>
 
               {/* Tab pill bar */}
@@ -449,12 +481,10 @@ export default function NewPRPage() {
 
         {/* ── Header ── */}
         <div className="shrink-0 pb-6" style={{ borderBottom:`1px solid ${T.border}` }}>
-          {/* Back + badge row */}
           <div className="flex items-center justify-between mb-1.5">
             <button onClick={() => router.push("/p2p/purchase-requests")}
               className="flex items-center gap-1.5 cursor-pointer transition-opacity hover:opacity-70">
-              <div className="size-6 rounded-lg flex items-center justify-center"
-                style={{ filter:"drop-shadow(0px 1px 2px rgba(16,24,40,0.05))" }}>
+              <div className="size-6 rounded-lg flex items-center justify-center">
                 <ChevronLeft size={16} color="#FFFFFF" strokeWidth={1.67}/>
               </div>
               <span className="text-[12px] font-light text-white">Purchase Request / New Request</span>
@@ -464,7 +494,6 @@ export default function NewPRPage() {
               {savedPRId ? `${savedPRId} · Pending` : "PR-2026-NEW · Draft"}
             </span>
           </div>
-          {/* Title */}
           <h1 className="text-[18px] font-semibold text-white leading-7"
             style={{ fontFamily:"var(--font-lora), Lora, serif" }}>
             {submittedProject || "New Purchase Request"}
@@ -472,7 +501,7 @@ export default function NewPRPage() {
         </div>
 
         {/* ── Chat scroll area ── */}
-        <div className="flex-1 overflow-y-auto min-h-0 py-4" style={{ display:"flex", flexDirection:"column", gap:16 }}>
+        <div className="flex-1 overflow-y-auto min-h-0 py-4" style={{ display:"flex", flexDirection:"column", gap:20 }}>
 
           {/* Jomie greeting */}
           <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.4s ease-out" }}>
@@ -488,28 +517,198 @@ export default function NewPRPage() {
           </div>
 
           {/* User message */}
-          {chatState !== "initial" && (
-            <div className="flex flex-col items-end gap-1.5" style={{ animation:"fadeInUp 0.4s ease-out 0.15s both" }}>
+          <div className="flex flex-col items-end gap-1.5" style={{ animation:"fadeInUp 0.4s ease-out 0.15s both" }}>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
+              <span className="text-[14px] font-bold text-white">Lim Wei Xiang</span>
+            </div>
+            <div className="w-full px-3.5 py-2.5 text-[14px] text-white leading-5"
+              style={{ background:"rgba(255,255,255,0.05)", borderRadius:12 }}>
+              {submittedMessage}
+            </div>
+          </div>
+
+          {/* ── QUESTIONING: Jomie asks follow-up questions ── */}
+          {(chatState === "questioning" || chatState === "processing" ||
+            chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
+            <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.5s ease-out 0.3s both" }}>
               <div className="flex items-center gap-2">
+                <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                 <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
-                <span className="text-[14px] font-bold text-white">Lim Wei Xiang</span>
               </div>
-              <div className="w-full px-3.5 py-2.5 text-[14px] text-white leading-5"
-                style={{ background:"rgba(255,255,255,0.05)", borderRadius:12, animation:"fadeInUp 0.4s ease-out" }}>
-                {submittedMessage || "I need 14 Dell Latitude 5540 laptops, 6 LG 27\" UltraFine 4K monitors, and 14 Dell WD22TB4 docks for the IT team Q3 upgrade. Budget code IT-CAPEX-2024. Delivery by end of July."}
+
+              {chatState === "questioning" ? (
+                /* ── Live questions UI ── */
+                <div className="flex flex-col gap-4 p-4 rounded-xl"
+                  style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
+
+                  <p className="text-[14px] text-white leading-5">
+                    Got it — <strong>{submittedProject}</strong>. Before I prepare the sub-PRs,
+                    I need to confirm two quick details.
+                  </p>
+
+                  {/* Q1: Delivery timeline */}
+                  <div className="space-y-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider"
+                      style={{ color: T.dimText }}>
+                      1 · When is delivery needed?
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {DELIVERY_OPTIONS.map(opt => (
+                        <button key={opt}
+                          onClick={() => setFollowUp(f => ({ ...f, delivery: opt }))}
+                          className="px-3 py-1.5 rounded-lg text-[12px] transition-all cursor-pointer"
+                          style={{
+                            background: followUp.delivery === opt ? T.purple : "rgba(255,255,255,0.06)",
+                            color:      followUp.delivery === opt ? "#fff"    : T.dimText,
+                            border:    `1px solid ${followUp.delivery === opt ? T.purple : "rgba(103,100,136,0.3)"}`,
+                            fontFamily: "Inter, sans-serif",
+                          }}>
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                    {followUp.delivery && (
+                      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: T.teal }}>
+                        <Check size={11} strokeWidth={2.5}/> {followUp.delivery}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Q2: Budget code */}
+                  <div className="space-y-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider"
+                      style={{ color: T.dimText }}>
+                      2 · Which budget code applies?
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {BUDGET_OPTIONS.map(opt => (
+                        <button key={opt}
+                          onClick={() => setFollowUp(f => ({ ...f, budgetCode: opt }))}
+                          className="px-3 py-1.5 rounded-lg text-[12px] font-mono transition-all cursor-pointer"
+                          style={{
+                            background: followUp.budgetCode === opt ? T.purple : "rgba(255,255,255,0.06)",
+                            color:      followUp.budgetCode === opt ? "#fff"    : T.dimText,
+                            border:    `1px solid ${followUp.budgetCode === opt ? T.purple : "rgba(103,100,136,0.3)"}`,
+                          }}>
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Custom budget code input */}
+                    {followUp.budgetCode === "Other" && (
+                      <input
+                        type="text"
+                        value={followUp.budgetCustom}
+                        onChange={e => setFollowUp(f => ({ ...f, budgetCustom: e.target.value }))}
+                        placeholder="e.g. MKTG-OPEX-2024"
+                        autoFocus
+                        className="w-full h-9 px-3 rounded-lg text-[12px] font-mono focus:outline-none"
+                        style={{
+                          background: "rgba(255,255,255,0.07)",
+                          border: `1px solid ${T.border}`,
+                          color: "white",
+                        }}
+                      />
+                    )}
+                    {followUp.budgetCode && followUp.budgetCode !== "Other" && (
+                      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: T.teal }}>
+                        <Check size={11} strokeWidth={2.5}/> {followUp.budgetCode}
+                      </div>
+                    )}
+                    {followUp.budgetCode === "Other" && followUp.budgetCustom && (
+                      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: T.teal }}>
+                        <Check size={11} strokeWidth={2.5}/> {followUp.budgetCustom}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Continue button — appears when both answered */}
+                  <div className={cn("transition-all duration-300", allQuestionsAnswered ? "opacity-100" : "opacity-40 pointer-events-none")}>
+                    <button
+                      onClick={allQuestionsAnswered ? startProcessing : undefined}
+                      className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-semibold text-white transition-all"
+                      style={{
+                        background: allQuestionsAnswered ? T.teal : "rgba(29,158,117,0.3)",
+                        cursor: allQuestionsAnswered ? "pointer" : "default",
+                      }}>
+                      <Sparkles size={14} strokeWidth={2}/>
+                      Analyse request
+                      <ArrowRight size={14} strokeWidth={2}/>
+                    </button>
+                  </div>
+
+                </div>
+              ) : (
+                /* ── Collapsed summary of answers (shown after questioning) ── */
+                <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl"
+                  style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.3)" }}>
+                  <Check size={13} style={{ color: T.teal, flexShrink:0 }} strokeWidth={2.5}/>
+                  <span className="text-[12px]" style={{ color: T.dimText }}>
+                    Delivery: <span className="text-white">{followUp.delivery}</span>
+                    <span className="mx-2" style={{ color:"rgba(255,255,255,0.2)" }}>·</span>
+                    Budget: <span className="text-white font-mono">{resolvedBudgetCode}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── PROCESSING: Jomie analysing ── */}
+          {(chatState === "processing" || chatState === "confirmed" ||
+            chatState === "submitting" || chatState === "a2-pass") && (
+            <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.4s ease-out 0.2s both" }}>
+              <div className="flex items-center gap-2">
+                <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+                <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
+              </div>
+              <div className="flex flex-col gap-3 px-3.5 py-3 rounded-xl"
+                style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.3)" }}>
+                <div className="flex items-center gap-2">
+                  {chatState === "processing"
+                    ? <Loader2 size={13} className="animate-spin shrink-0" style={{ color: T.purple }}/>
+                    : <div className="size-3.5 rounded-full flex items-center justify-center shrink-0" style={{ background: T.teal }}>
+                        <Check size={8} color="#fff" strokeWidth={3}/>
+                      </div>
+                  }
+                  <span className="text-[13px] font-semibold text-white">
+                    {chatState === "processing" ? "Analysing your request…" : "Analysis complete"}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5 pl-1">
+                  {PROCESSING_STEPS.map((step, i) => (
+                    <div key={i}
+                      className={cn("flex items-start gap-2 transition-all duration-300",
+                        (chatState !== "processing" || processStep >= i) ? "opacity-100" : "opacity-0"
+                      )}>
+                      <div className="shrink-0 mt-0.5">
+                        {chatState === "processing" && processStep === i && i < PROCESSING_STEPS.length - 1
+                          ? <Loader2 size={12} className="animate-spin" style={{ color: T.purple }}/>
+                          : <div className="size-3 rounded-full flex items-center justify-center"
+                              style={{ background: T.teal }}>
+                              <Check size={7} color="#fff" strokeWidth={3}/>
+                            </div>
+                        }
+                      </div>
+                      <div className="flex flex-wrap gap-x-1.5 gap-y-0">
+                        <span className="text-[12px] font-semibold text-white">{step.label}</span>
+                        <span className="text-[12px]" style={{ color: T.dimText }}>{step.detail}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
-          {/* Jomie analysis response */}
-          {chatState !== "initial" && (
-            <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.5s ease-out 0.35s both" }}>
+          {/* ── CONFIRMED: Jomie analysis response ── */}
+          {(chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
+            <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.5s ease-out 0.15s both" }}>
               <div className="flex items-center gap-2">
                 <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                 <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
               </div>
               <div className="text-[14px] text-white leading-5 space-y-3">
-                {/* Step trace */}
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-wider mb-2"
                     style={{ color: T.dimText }}>
@@ -529,13 +728,11 @@ export default function NewPRPage() {
                   </div>
                 </div>
 
-                {/* Jomie summary text */}
                 <p className="text-[14px] text-white leading-5">
                   I've prepared <strong>2 sub-PRs</strong> from your request. All 3 items matched to the item master. Preferred vendor:{" "}
                   <strong>Tech Solutions MY</strong> (last price: Dell L5540 RM 7,200/unit, Feb 2026).
                 </p>
 
-                {/* Confirm chips */}
                 <div className="flex flex-wrap gap-2">
                   <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium border"
                     style={{ background: T.tealLight, borderColor: T.teal+"55", color: T.tealText }}>
@@ -554,14 +751,13 @@ export default function NewPRPage() {
             </div>
           )}
 
-          {/* A2 typing indicator / result */}
+          {/* ── SUBMITTING: typing dots ── */}
           {chatState === "submitting" && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
               </div>
-              <div className="inline-flex items-center px-2.5 py-1.5 gap-1.5"
-                style={{ borderRadius:"0 8px 8px 8px" }}>
+              <div className="inline-flex items-center px-2.5 py-1.5 gap-1.5">
                 {[0,1,2].map(i => (
                   <span key={i} className="size-1.5 rounded-full bg-white animate-bounce"
                     style={{ animationDelay:`${i*150}ms` }}/>
@@ -570,6 +766,7 @@ export default function NewPRPage() {
             </div>
           )}
 
+          {/* ── A2 PASS ── */}
           {chatState === "a2-pass" && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
@@ -611,10 +808,9 @@ export default function NewPRPage() {
           <div ref={endRef}/>
         </div>
 
-        {/* ── Bottom sticky: input + tabs ── */}
+        {/* ── Bottom sticky: input + tabs (hidden during questioning) ── */}
+        {chatState !== "questioning" && (
         <div className="shrink-0 pt-4 flex flex-col gap-2">
-
-          {/* Textarea input card */}
           <div className="flex flex-col" style={{
             background:"#FFFFFF", border:`2px solid ${T.border}`,
             borderRadius:20, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
@@ -627,14 +823,11 @@ export default function NewPRPage() {
               className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
               style={{ fontFamily:"var(--font-pjs)" }}
             />
-            {/* Action row */}
             <div className="flex items-center justify-between px-4 pb-3.5 pt-1">
-              {/* + attach */}
               <button className="size-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50"
                 style={{ background:"#FFFFFF", border:"1px solid #D0D5DD", boxShadow:"0px 1px 2px rgba(16,24,40,0.05)" }}>
                 <Plus size={16} style={{ color:"#344054" }}/>
               </button>
-              {/* Right: model + send */}
               <div className="flex items-center gap-2">
                 <button className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[14px] cursor-pointer transition-opacity hover:opacity-80"
                   style={{ color: T.purpleDark }}>
@@ -642,7 +835,6 @@ export default function NewPRPage() {
                   <ChevronDown size={16} style={{ color: T.purpleDark }}/>
                 </button>
                 <button
-                  onClick={() => inputValue.trim() && null}
                   className="flex items-center justify-center px-3.5 h-8 rounded-lg text-[14px] font-medium text-white cursor-pointer transition-opacity hover:opacity-90"
                   style={{ background: T.purple, border:`1px solid ${T.purple}`, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)" }}>
                   Send
@@ -651,14 +843,9 @@ export default function NewPRPage() {
             </div>
           </div>
 
-          {/* Tab pill bar — hug content, centered */}
           <div className="flex justify-center">
           <div className="inline-flex items-center p-1 gap-2"
-            style={{
-              background:"rgba(255,255,255,0.05)",
-              border:`2px solid ${T.border}`,
-              borderRadius:24,
-            }}>
+            style={{ background:"rgba(255,255,255,0.05)", border:`2px solid ${T.border}`, borderRadius:24 }}>
             {tabs.map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                 className={cn(
@@ -668,17 +855,16 @@ export default function NewPRPage() {
                 style={{
                   borderRadius: activeTab===tab.key ? 20 : 6,
                   background: activeTab===tab.key ? T.activeBg : "transparent",
-                  boxShadow: activeTab===tab.key
-                    ? "0px 1px 3px rgba(16,24,40,0.1), 0px 1px 2px rgba(16,24,40,0.06)"
-                    : "none",
+                  boxShadow: activeTab===tab.key ? "0px 1px 3px rgba(16,24,40,0.1), 0px 1px 2px rgba(16,24,40,0.06)" : "none",
                 }}>
                 {tab.label}
               </button>
             ))}
           </div>
           </div>
-
         </div>
+        )}
+
         </React.Fragment>
         )}{/* end idle / chat conditional */}
         </div>{/* inner centered */}
@@ -718,7 +904,7 @@ export default function NewPRPage() {
               <span className="text-[12px] font-semibold text-gray-700" style={{ fontFamily:"var(--font-pjs)" }}>
                 PR preview
               </span>
-              {chatState !== "initial" && chatState !== "idle" && (
+              {chatState !== "idle" && chatState !== "questioning" && (
                 <div className="flex items-center gap-1">
                   <div className="size-1.5 rounded-full animate-pulse" style={{ background: T.purple }}/>
                   <span className="text-[9px] font-mono font-semibold tracking-wider" style={{ color: T.purple }}>LIVE</span>
@@ -730,16 +916,21 @@ export default function NewPRPage() {
             </span>
           </div>
 
-          {/* Empty state */}
-          {(chatState === "idle" || chatState === "initial") ? (
+          {/* Empty / waiting state */}
+          {(chatState === "idle" || chatState === "questioning") ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
               <div className="size-12 rounded-xl flex items-center justify-center" style={{ background: T.purpleLight }}>
                 <Sparkles size={22} style={{ color: T.purple, opacity:0.4 }}/>
               </div>
               <div className="text-center">
-                <div className="text-[13px] font-semibold text-gray-400 mb-1">Start typing in the chat</div>
+                <div className="text-[13px] font-semibold text-gray-400 mb-1">
+                  {chatState === "questioning" ? "Confirming details…" : "Start typing in the chat"}
+                </div>
                 <div className="text-[11px] text-gray-300 leading-relaxed max-w-[200px]">
-                  Your PR will take shape here in real time as Jomie processes your request
+                  {chatState === "questioning"
+                    ? "Your PR preview will appear once Jomie has everything it needs"
+                    : "Your PR will take shape here in real time as Jomie processes your request"
+                  }
                 </div>
               </div>
             </div>
@@ -805,7 +996,6 @@ export default function NewPRPage() {
                 </div>
               </div>
 
-              {/* Citation */}
               <div className="px-1">
                 <code className="text-[9px] font-mono text-gray-300 leading-relaxed block">
                   itemMaster.md:v2.1 · procurementPolicy.md:v1.3 · approvalMatrix.md:v1.2
@@ -815,8 +1005,8 @@ export default function NewPRPage() {
             </div>
           )}
 
-          {/* Confirm & Submit — only in active chat states */}
-          {chatState !== "idle" && chatState !== "initial" && (
+          {/* Confirm & Submit */}
+          {chatState !== "idle" && chatState !== "questioning" && (
             <div className="px-4 pb-5 pt-3 border-t border-gray-100 shrink-0 space-y-2.5">
               {totalBlocks === 0 && (
                 <div className="flex items-center gap-2 text-[11px]" style={{ color: T.teal }}>
@@ -830,21 +1020,20 @@ export default function NewPRPage() {
                 </div>
               )}
               <button
-                disabled={chatState==="submitting"}
+                disabled={chatState==="submitting" || chatState==="processing"}
                 onClick={handleSubmit}
                 className={cn(
                   "w-full h-10 rounded-lg text-[13px] font-semibold flex items-center justify-center gap-2 transition-all",
-                  chatState==="submitting" && "opacity-70 cursor-not-allowed",
+                  (chatState==="submitting" || chatState==="processing") && "opacity-70 cursor-not-allowed",
                 )}
                 style={{
-                  background: chatState==="a2-pass" ? T.teal
-                    : chatState==="submitting" ? T.purple
-                    : T.teal,
+                  background: chatState==="a2-pass" ? T.teal : T.teal,
                   color:"#fff",
                 }}>
-                {chatState==="confirmed"  && <><CheckCircle2 size={13}/> Confirm and submit →</>}
-                {chatState==="submitting" && <><Loader2 size={13} className="animate-spin"/> Running checks…</>}
-                {chatState==="a2-pass"    && <><CheckCircle2 size={13}/> Submitted — View PRs</>}
+                {chatState==="processing"  && <><Loader2 size={13} className="animate-spin"/> Analysing…</>}
+                {chatState==="confirmed"   && <><CheckCircle2 size={13}/> Confirm and submit →</>}
+                {chatState==="submitting"  && <><Loader2 size={13} className="animate-spin"/> Running checks…</>}
+                {chatState==="a2-pass"     && <><CheckCircle2 size={13}/> Submitted — View PRs</>}
               </button>
               <p className="text-center text-[10px] text-gray-300 leading-relaxed">
                 A2 duplicate and split-PR checks run automatically on submit.
