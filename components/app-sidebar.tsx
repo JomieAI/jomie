@@ -6,6 +6,7 @@ import { useSidebar } from "@/components/sidebar-context"
 import {
   PanelLeft,
   ChevronDown,
+  Plus,
   LayoutDashboard,
   ShoppingCart,
   Receipt,
@@ -53,6 +54,8 @@ interface SubNavItem {
   href: string
   badge?: number
   badgeVariant?: "red" | "amber"
+  icon?: React.ElementType
+  exact?: boolean  // if true, only active on exact path match (not startsWith)
 }
 
 interface SubNavGroup {
@@ -107,6 +110,7 @@ const SUB_NAV: SubNavGroup[] = [
     moduleKey: "procurement",
     sectionLabel: "Procurement",
     items: [
+      { label: "New Request",        href: "/p2p/purchase-requests/new", icon: Plus, exact: true },
       { label: "Purchase Requests",  href: "/p2p/purchase-requests" },
       { label: "Purchase Orders",    href: "/p2p/purchase-orders" },
       { label: "GRN",                href: "/p2p/grn" },
@@ -350,7 +354,7 @@ function NavIcon({ item, isActive }: { item: MainNavItem; isActive: boolean }) {
           transition: "background 0.15s ease",
         }}
       >
-        <item.icon size={17} strokeWidth={1.6}
+        <item.icon size={17} strokeWidth={2}
           color={isActive ? "#A5B4FC" : "rgba(255,255,255,0.55)"} />
         {item.badge !== undefined && item.badge > 0 && (
           <span className="absolute flex items-center justify-center" style={{
@@ -399,7 +403,10 @@ function SubNavItem({ item, isActive }: { item: SubNavItem; isActive: boolean })
         transition: "background 0.15s ease",
       }}
     >
-      <span>{item.label}</span>
+      <span className="flex items-center gap-2">
+        {item.icon && <item.icon size={16} strokeWidth={2} />}
+        {item.label}
+      </span>
       {item.badge !== undefined && item.badge > 0 && (
         <span style={{
           minWidth: 18, height: 18, borderRadius: 9,
@@ -439,7 +446,7 @@ function BottomNavItem({
         transition: "background 0.15s ease",
       }}
     >
-      <Icon size={16} strokeWidth={1.6} />
+      <Icon size={16} strokeWidth={2} />
       {label}
     </a>
   )
@@ -480,7 +487,7 @@ export function AppSidebar() {
               className="flex items-center justify-center rounded-lg transition-colors hover:bg-white/5 active:bg-white/10 flex-shrink-0"
               style={{ width: 32, height: 32, border: "none", background: "transparent", cursor: "pointer" }}
             >
-              <PanelLeft size={16} color="rgba(255,255,255,0.7)" strokeWidth={1.67} />
+              <PanelLeft size={16} color="rgba(255,255,255,0.7)" strokeWidth={2} />
             </button>
           </div>
 
@@ -518,7 +525,7 @@ export function AppSidebar() {
                 14 Entities · MYR
               </span>
             </div>
-            <ChevronDown size={16} color="white" strokeWidth={1.67} style={{ flexShrink: 0 }} />
+            <ChevronDown size={16} color="white" strokeWidth={2} style={{ flexShrink: 0 }} />
           </div>
         </div>
       ) : (
@@ -536,7 +543,7 @@ export function AppSidebar() {
             className="flex items-center justify-center rounded-lg transition-colors hover:bg-white/5 active:bg-white/10"
             style={{ width: 40, height: 40, border: "none", background: "transparent", cursor: "pointer" }}
           >
-            <PanelLeft size={16} color="rgba(255,255,255,0.55)" strokeWidth={1.67} />
+            <PanelLeft size={16} color="rgba(255,255,255,0.55)" strokeWidth={2} />
           </button>
         </div>
       )}
@@ -587,8 +594,10 @@ export function AppSidebar() {
             </div>
 
             {subGroup.items.map(item => {
-              const isActive = pathname === item.href ||
-                (item.href !== "/" && pathname.startsWith(item.href + "/"))
+              const p = pathname.replace(/\/$/, "")  // strip trailing slash
+              const isActive = p === item.href ||
+                (!item.exact && item.href !== "/" && p.startsWith(item.href + "/") &&
+                  !subGroup.items.some(other => other.href !== item.href && p === other.href))
               return <SubNavItem key={item.href} item={item} isActive={isActive} />
             })}
           </div>
@@ -663,14 +672,14 @@ export function AppSidebar() {
                       style={{ padding: "8px 10px", fontSize: 13, fontWeight: 500, color: "#fff", fontFamily: "var(--font-inter)" }}
                       onClick={() => { window.location.href = "/settings/profile" }}
                     >
-                      <User size={14} strokeWidth={1.6} /> Profile
+                      <User size={14} strokeWidth={2} /> Profile
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="flex items-center gap-2 rounded-lg cursor-pointer"
                       style={{ padding: "8px 10px", fontSize: 13, fontWeight: 500, color: "#fff", fontFamily: "var(--font-inter)" }}
                       onClick={() => { window.location.href = "/settings/entities" }}
                     >
-                      <RefreshCcw size={14} strokeWidth={1.6} /> Switch Entity
+                      <RefreshCcw size={14} strokeWidth={2} /> Switch Entity
                     </DropdownMenuItem>
                     <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
                     <DropdownMenuItem
@@ -678,7 +687,7 @@ export function AppSidebar() {
                       style={{ padding: "8px 10px", fontSize: 13, fontWeight: 500, color: "#F87171", fontFamily: "var(--font-inter)" }}
                       onClick={() => { window.location.href = "/logout" }}
                     >
-                      <LogOut size={14} strokeWidth={1.6} /> Sign Out
+                      <LogOut size={14} strokeWidth={2} /> Sign Out
                     </DropdownMenuItem>
                   </div>
                 </DropdownMenuContent>
@@ -695,12 +704,12 @@ export function AppSidebar() {
             <a href="/settings/company" title="Settings"
               className="flex items-center justify-center rounded-lg no-underline hover:bg-white/5 transition-colors"
               style={{ width: 40, height: 40 }}>
-              <Settings size={16} color="rgba(255,255,255,0.5)" strokeWidth={1.6} />
+              <Settings size={16} color="rgba(255,255,255,0.5)" strokeWidth={2} />
             </a>
             <a href="/logout" title="Logout"
               className="flex items-center justify-center rounded-lg no-underline hover:bg-white/5 transition-colors"
               style={{ width: 40, height: 40 }}>
-              <LogOut size={16} color="rgba(255,255,255,0.35)" strokeWidth={1.6} />
+              <LogOut size={16} color="rgba(255,255,255,0.35)" strokeWidth={2} />
             </a>
           </div>
         )}
