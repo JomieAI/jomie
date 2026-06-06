@@ -903,8 +903,8 @@ export default function NewPRPage() {
           <div ref={endRef}/>
         </div>
 
-        {/* ── Bottom sticky: input + tabs (hidden during questioning) ── */}
-        {chatState !== "questioning" && (
+        {/* ── Bottom sticky: visible once PR is confirmed/submitted ── */}
+        {(chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
         <div className="shrink-0 pt-4 flex flex-col gap-2">
           <div className="flex flex-col" style={{
             background:"#FFFFFF", border:`2px solid ${T.border}`,
@@ -932,15 +932,14 @@ export default function NewPRPage() {
                 </button>
                 <button
                   onClick={handleSend}
-                  disabled={!inputValue.trim() || isChatThinking}
-                  className="flex items-center justify-center px-3.5 h-8 rounded-lg text-[14px] font-medium text-white transition-all"
+                  className="flex items-center justify-center px-3.5 h-8 rounded-lg text-[14px] font-medium text-white transition-all cursor-pointer"
                   style={{
                     background: inputValue.trim() && !isChatThinking ? T.purple : "rgba(93,94,244,0.35)",
                     border:`1px solid ${inputValue.trim() && !isChatThinking ? T.purple : "transparent"}`,
                     boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
-                    cursor: inputValue.trim() && !isChatThinking ? "pointer" : "not-allowed",
+                    opacity: isChatThinking ? 0.5 : 1,
                   }}>
-                  Send
+                  {isChatThinking ? "…" : "Send"}
                 </button>
               </div>
             </div>
