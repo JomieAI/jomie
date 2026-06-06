@@ -3,19 +3,18 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { getSavedPRs, StoredPR } from "@/lib/pr-store"
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
-  Sparkles, ChevronRight, Download, Plus, Search,
+  Sparkles, ChevronLeft, ChevronRight, Download, Plus, Search,
   CheckCircle2, ShieldCheck, Clock, Package, Building2,
   Briefcase, RefreshCw, ShoppingBag, Star, Globe,
   TriangleAlert, Check, ArrowRight, X,
 } from "lucide-react"
 
-// ─── Design tokens (brief v1 + Jomie brand reconciled) ───────────────────────
+// ─── Design tokens ─────────────────────────────────────────────────────────────
 
 const T = {
   // AI bar
@@ -47,6 +46,9 @@ const T = {
   // Selected row
   selectedBg:   "#F0FAF6",
   selectedBorder: "#1D9E75",
+  // Dark shell
+  border:       "#676488",
+  dimText:      "#98A2B3",
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -117,10 +119,10 @@ const PRS: PR[] = [
         cite:"budgetControl.md:v1.2 → approvalMatrix.md:v1.0" },
     ],
     vendors: [
-      { rank:1, name:"Tech Solutions MY",  price:"7,200",  unit:"/unit", type:"approved",     isRecommended:true },
-      { rank:2, name:"Digital Hub Malaysia",price:"7,450", unit:"/unit", type:"approved" },
-      { rank:1, name:"TechGear (Shopee)",  price:"6,890",  unit:"/unit", type:"marketplace" },
-      { rank:2, name:"Lenovo (1688.com)",  price:"~5,900", unit:"/unit", type:"marketplace",  isImport:true },
+      { rank:1, name:"Tech Solutions MY",   price:"7,200",  unit:"/unit", type:"approved",   isRecommended:true },
+      { rank:2, name:"Digital Hub Malaysia", price:"7,450", unit:"/unit", type:"approved" },
+      { rank:1, name:"TechGear (Shopee)",   price:"6,890",  unit:"/unit", type:"marketplace" },
+      { rank:2, name:"Lenovo (1688.com)",   price:"~5,900", unit:"/unit", type:"marketplace", isImport:true },
     ],
   },
   {
@@ -192,6 +194,44 @@ const PRS: PR[] = [
   },
 ]
 
+// ─── Convert localStorage StoredPR → list-view PR shape ──────────────────────
+
+function storedToPR(s: StoredPR): PR {
+  return {
+    id: s.id, title: s.title, sub: s.sub,
+    requester: s.requester, requesterInitials: s.requesterInitials,
+    date: s.date, dept: s.dept,
+    amount: s.amount, budget: s.budget,
+    status: s.status, phase: s.phase, purchaseType: s.purchaseType,
+    aiFlags: s.aiFlags,
+    subPRs: [
+      { id:`${s.id}-A`, type:"capex", vendor:"Tech Solutions MY", amount:"127,806", approvalTier:"FM + CFO",  phase:"B", status:"pending" },
+      { id:`${s.id}-B`, type:"capex", vendor:"Tech Solutions MY", amount:"15,000",  approvalTier:"Dept Head", phase:"B", status:"review"  },
+    ],
+    approvers: [
+      { initials:"SA", state:"done",    name:"Siti Aisyah",    role:"Dept Head",   level:1 },
+      { initials:"RA", state:"pending", name:"Razif Abdullah", role:"Finance Mgr", level:2 },
+      { initials:"CM", state:"waiting", name:"Chong Mei Ling", role:"CFO",         level:3 },
+    ],
+    lineItems: [
+      { name:"Dell Latitude 5540",    detail:"14 × RM 7,200 · Tech Solutions MY", amount:"100,800" },
+      { name:'LG 27" UltraFine 4K',   detail:"6 × RM 2,500 · Tech Solutions MY",  amount:"15,000"  },
+      { name:"Dell WD22TB4 Dock",     detail:"14 × RM 1,929 · Tech Solutions MY", amount:"27,000"  },
+    ],
+    aiInsights: [
+      { type:"warn", title:"Vendor not on MyInvois",
+        body:"Tech Solutions MY has no MyInvois registration. SST input credit may be disallowed.",
+        cite:"jomie-sst-baseline.md:v1.5 → SST18:S38" },
+      { type:"ok", title:"Within capex budget",
+        body:`RM ${s.amount} committed against RM ${s.budget} IT capex budget.`,
+        cite:"budgetControl.md:v1.2" },
+    ],
+    vendors: [
+      { rank:1, name:"Tech Solutions MY", price:"7,200", unit:"/unit", type:"approved", isRecommended:true },
+    ],
+  }
+}
+
 // ─── Purchase type config ─────────────────────────────────────────────────────
 
 const PTYPE_CONFIG: Record<PurchaseType, { icon: React.ElementType; color: string; label: string }> = {
@@ -211,29 +251,9 @@ function rowBorderColor(pr: PR): string {
   return "transparent"
 }
 
-// ─── Jomie AI Bar ─────────────────────────────────────────────────────────────
-
-function JomieAIBar({ message }: { message: string }) {
-  return (
-    <div className="flex items-center gap-2.5 rounded-lg px-3.5 py-2.5 mb-3"
-      style={{
-        background: T.aiBarBg,
-        border: `0.5px solid ${T.aiBarBorder}`,
-        borderRadius: 8,
-      }}>
-      <Sparkles size={15} style={{ color: T.aiBarIcon, flexShrink: 0 }} />
-      <span className="flex-1 text-[12px] leading-snug" style={{ color: T.aiBarText }}>
-        {message}
-      </span>
-      <kbd className="shrink-0 text-[11px] font-mono select-none" style={{ color: T.aiBarHint }}>⌘K</kbd>
-    </div>
-  )
-}
-
 // ─── 4-dot journey strip (table STATUS column) ────────────────────────────────
 
 function JourneyDotsMini({ pr }: { pr: PR }) {
-  // Map phase/status to 4-dot state: PR created → Approved → Quotation → PO
   const phaseToStep: Record<Phase, number> = { A1:0, A2:1, B:1, C:2, D:3, F:3, G:4 }
   const currentStep = pr.status === "draft" ? 0 : phaseToStep[pr.phase] ?? 1
   const allDone = pr.status === "approved" && (pr.phase === "G" || pr.phase === "F")
@@ -262,22 +282,22 @@ function JourneyDotsMini({ pr }: { pr: PR }) {
         )
       })}
       {pr.status === "draft" && (
-        <span className="text-[9px] text-gray-400 italic ml-1">draft</span>
+        <span className="text-[9px] italic ml-1" style={{ color: "rgba(255,255,255,0.3)" }}>draft</span>
       )}
     </div>
   )
 }
 
-// ─── 7-phase journey strip (drawer) ──────────────────────────────────────────
+// ─── 7-phase journey strip (right panel) ─────────────────────────────────────
 
 const JOURNEY_PHASES = [
-  { key:"pr",      label:"PR",     fullLabel:"PR Created"   },
-  { key:"a2",      label:"A2",     fullLabel:"A2 Check"     },
-  { key:"appvl",   label:"Appvl",  fullLabel:"Approval"     },
-  { key:"quote",   label:"Quote",  fullLabel:"Quotation"    },
-  { key:"po",      label:"PO",     fullLabel:"PO"           },
-  { key:"grn",     label:"GRN",    fullLabel:"GRN"          },
-  { key:"ap",      label:"AP",     fullLabel:"AP Payment"   },
+  { key:"pr",    label:"PR",    fullLabel:"PR Created" },
+  { key:"a2",    label:"A2",    fullLabel:"A2 Check"   },
+  { key:"appvl", label:"Appvl", fullLabel:"Approval"   },
+  { key:"quote", label:"Quote", fullLabel:"Quotation"  },
+  { key:"po",    label:"PO",    fullLabel:"PO"         },
+  { key:"grn",   label:"GRN",   fullLabel:"GRN"        },
+  { key:"ap",    label:"AP",    fullLabel:"AP Payment" },
 ]
 
 function phaseToJourneyIndex(phase: Phase, status: PRStatus): number {
@@ -292,8 +312,8 @@ function JourneyStrip({ pr, compact = false }: { pr: PR; compact?: boolean }) {
   return (
     <div className={cn("flex items-center", compact ? "gap-0" : "gap-0")}>
       {JOURNEY_PHASES.map((phase, i) => {
-        const done   = i < activeIdx
-        const active = i === activeIdx
+        const done    = i < activeIdx
+        const active  = i === activeIdx
         const pending = i > activeIdx
 
         return (
@@ -320,13 +340,11 @@ function JourneyStrip({ pr, compact = false }: { pr: PR; compact?: boolean }) {
                     compact ? "text-[8px]" : "text-[9px]",
                     done ? "text-teal-600" : active ? "text-[#3C3489]" : "text-gray-400"
                   )} style={{ color: done ? T.teal : active ? T.purple : undefined }}>
-                    {compact ? phase.label : phase.label}
+                    {phase.label}
                   </span>
                 </div>
               </TooltipTrigger>
-              <TooltipContent side="top">
-                <span>{phase.fullLabel}</span>
-              </TooltipContent>
+              <TooltipContent side="top"><span>{phase.fullLabel}</span></TooltipContent>
             </Tooltip>
           </React.Fragment>
         )
@@ -339,9 +357,9 @@ function JourneyStrip({ pr, compact = false }: { pr: PR; compact?: boolean }) {
 
 function InsightCard({ insight }: { insight: AIInsight }) {
   const cfg = {
-    info: { bg: "rgba(93,94,244,0.05)", border: "rgba(93,94,244,0.12)", dot: T.purple,       title: "#4338CA" },
-    warn: { bg: T.amberLight + "88",    border: T.amber + "55",          dot: T.amber,        title: T.amber   },
-    ok:   { bg: T.tealLight + "88",     border: T.teal  + "55",          dot: T.teal,         title: T.teal    },
+    info: { bg: "rgba(93,94,244,0.05)", border: "rgba(93,94,244,0.12)", dot: T.purple,  title: "#4338CA" },
+    warn: { bg: T.amberLight + "88",    border: T.amber + "55",          dot: T.amber,   title: T.amber   },
+    ok:   { bg: T.tealLight + "88",     border: T.teal  + "55",          dot: T.teal,    title: T.teal    },
   }[insight.type]
 
   return (
@@ -361,11 +379,11 @@ function InsightCard({ insight }: { insight: AIInsight }) {
   )
 }
 
-// ─── Sourcing section (drawer) ────────────────────────────────────────────────
+// ─── Sourcing section ─────────────────────────────────────────────────────────
 
 function SourcingSection({ vendors }: { vendors: VendorOption[] }) {
-  const approved     = vendors.filter(v => v.type === "approved")
-  const marketplace  = vendors.filter(v => v.type === "marketplace")
+  const approved    = vendors.filter(v => v.type === "approved")
+  const marketplace = vendors.filter(v => v.type === "marketplace")
 
   return (
     <div className="mb-4">
@@ -374,7 +392,6 @@ function SourcingSection({ vendors }: { vendors: VendorOption[] }) {
         <span className="text-[9px] text-gray-400 font-mono">· fetched 2 min ago</span>
       </div>
 
-      {/* Approved vendors */}
       <div className="rounded-lg overflow-hidden mb-2"
         style={{ border: `0.5px solid ${T.teal}55` }}>
         <div className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider"
@@ -396,7 +413,6 @@ function SourcingSection({ vendors }: { vendors: VendorOption[] }) {
         ))}
       </div>
 
-      {/* Marketplace */}
       {marketplace.length > 0 && (
         <div className="rounded-lg overflow-hidden"
           style={{ border: `0.5px solid ${T.amber}55` }}>
@@ -407,16 +423,12 @@ function SourcingSection({ vendors }: { vendors: VendorOption[] }) {
           <div className="px-2.5 py-1.5 flex items-start gap-1.5"
             style={{ background: T.amberLight + "88", borderBottom:`0.5px solid ${T.amber}22` }}>
             <TriangleAlert size={10} style={{ color: T.amber, marginTop:1, flexShrink:0 }} />
-            <span className="text-[9px]" style={{ color: T.amberText }}>
-              Requires vendor onboarding before PO
-            </span>
+            <span className="text-[9px]" style={{ color: T.amberText }}>Requires vendor onboarding before PO</span>
           </div>
           {marketplace.map((v, i) => (
             <div key={i} className="flex items-center gap-2 px-2.5 py-2 hover:bg-[#FAEEDA] transition-colors"
               style={{ borderTop: i > 0 ? `0.5px solid ${T.amber}22` : undefined }}>
-              <span className="text-[10px] font-bold w-4 shrink-0 text-gray-400">
-                {["①","②","③"][i]}
-              </span>
+              <span className="text-[10px] font-bold w-4 shrink-0 text-gray-400">{["①","②","③"][i]}</span>
               <span className="flex-1 text-[11px] font-medium text-gray-700 truncate">{v.name}</span>
               <span className="text-[11px] font-mono text-gray-600 shrink-0">RM {v.price}{v.unit}</span>
               <div className="flex items-center gap-1 shrink-0">
@@ -435,13 +447,12 @@ function SourcingSection({ vendors }: { vendors: VendorOption[] }) {
   )
 }
 
-// ─── Copilot drawer ───────────────────────────────────────────────────────────
+// ─── Copilot / right panel ────────────────────────────────────────────────────
 
 function CopilotPanel({ pr }: { pr: PR | null }) {
   const router = useRouter()
   const showSourcing = pr && (pr.status === "pending" || pr.status === "review")
 
-  // Footer state
   const footerType: "requestor" | "approver" | "done" | null = pr
     ? pr.status === "approved" ? "done"
     : pr.status === "pending" || pr.status === "review" ? "approver"
@@ -453,11 +464,12 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
     <div className="flex flex-col h-full">
 
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100 shrink-0">
+      <div className="flex items-center justify-between pb-3 mb-3 shrink-0"
+        style={{ borderBottom: "1px solid #E5E7EB" }}>
         <div className="flex items-center gap-2">
           <div className="size-5 rounded-md flex items-center justify-center"
             style={{ background: T.purpleLight }}>
-            <Sparkles size={11} style={{ color: T.purple }} />
+            <Sparkles size={11} style={{ color: T.purple }} strokeWidth={2}/>
           </div>
           <span className="text-[12px] font-semibold text-gray-700" style={{ fontFamily:"var(--font-pjs)" }}>
             Jomie AI
@@ -471,7 +483,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
           <button onClick={() => router.push(`/p2p/purchase-requests/${pr.id}`)}
             className="flex items-center gap-0.5 text-[10px] font-medium transition-colors cursor-pointer"
             style={{ color: T.purple }}>
-            {pr.id}<ChevronRight size={10} />
+            {pr.id}<ChevronRight size={10} strokeWidth={2}/>
           </button>
         )}
       </div>
@@ -481,7 +493,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
         <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
           <div className="size-10 rounded-xl flex items-center justify-center"
             style={{ background: T.purpleLight }}>
-            <Sparkles size={18} style={{ color: T.purple }} />
+            <Sparkles size={18} style={{ color: T.purple }} strokeWidth={2}/>
           </div>
           <div className="text-center">
             <div className="text-[13px] font-semibold text-gray-500 mb-1">Select a PR to analyse</div>
@@ -502,8 +514,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
               <div>
                 <div className="text-[9px] font-semibold uppercase tracking-wider mb-0.5 text-gray-400">Total</div>
                 <div className="text-[22px] font-bold text-gray-900 tabular-nums font-mono">RM {pr.amount}</div>
-                <div className={cn("text-[10px] font-mono mt-0.5",
-                  pr.overBudget ? "text-red-500" : "text-gray-400")}>
+                <div className={cn("text-[10px] font-mono mt-0.5", pr.overBudget ? "text-red-500" : "text-gray-400")}>
                   {pr.overBudget
                     ? `▲ over by RM ${(+pr.amount.replace(/,/g,"") - +pr.budget.replace(/,/g,"")).toLocaleString()}`
                     : `/ ${pr.budget}`}
@@ -522,7 +533,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
               </span>
             </div>
 
-            {/* Journey strip in drawer (compact) */}
+            {/* Journey strip */}
             <div className="rounded-lg px-3 py-2.5 bg-white border border-gray-100">
               <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Journey</div>
               <JourneyStrip pr={pr} compact={true} />
@@ -555,7 +566,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
             </div>
           )}
 
-          {/* Sourcing (only for pending/review) */}
+          {/* Sourcing */}
           {showSourcing && pr.vendors && pr.vendors.length > 0 && (
             <SourcingSection vendors={pr.vendors} />
           )}
@@ -597,7 +608,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
                 ))}
               </div>
               <div className="mt-2 flex items-start gap-1.5 rounded-lg p-2.5 border border-gray-100 bg-gray-50/50">
-                <ShieldCheck size={11} className="shrink-0 mt-0.5" style={{ color:T.purple }} />
+                <ShieldCheck size={11} className="shrink-0 mt-0.5" style={{ color:T.purple }} strokeWidth={2}/>
                 <p className="text-[10px] text-gray-500 leading-snug">
                   SOD enforced — {pr.requester} excluded from all approval steps by system.
                 </p>
@@ -609,7 +620,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
 
       {/* Context-aware footer */}
       {pr && footerType && (
-        <div className="pt-3 mt-3 border-t border-gray-100 shrink-0">
+        <div className="pt-3 mt-3 shrink-0" style={{ borderTop: "1px solid #E5E7EB" }}>
           {footerType === "approver" && (
             <>
               <div className="flex items-center justify-between mb-2">
@@ -617,42 +628,42 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
               </div>
               <div className="text-[18px] font-bold text-gray-900 tabular-nums font-mono mb-3">RM {pr.amount}</div>
               <div className="flex gap-2">
-                <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[11px] font-semibold shrink-0"
+                <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[11px] font-semibold shrink-0 cursor-pointer"
                   style={{ background: T.purpleLight, color: T.purpleText }}>
                   Select sourcing <ArrowRight size={11}/>
                 </button>
-                <button className="flex-1 flex items-center justify-center h-8 rounded-lg text-[12px] font-semibold text-white"
+                <button className="flex-1 flex items-center justify-center h-8 rounded-lg text-[12px] font-semibold text-white cursor-pointer"
                   style={{ background: T.teal }}>
-                  <CheckCircle2 size={13} className="mr-1.5"/> Approve
+                  <CheckCircle2 size={13} className="mr-1.5" strokeWidth={2}/> Approve
                 </button>
-                <button className="flex-1 flex items-center justify-center h-8 rounded-lg text-[12px] font-medium border border-gray-200 text-gray-600 bg-white hover:bg-gray-50">
+                <button className="flex-1 flex items-center justify-center h-8 rounded-lg text-[12px] font-medium border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 cursor-pointer">
                   Query
                 </button>
-                <button className="size-8 rounded-lg flex items-center justify-center border border-gray-200 text-gray-400 hover:text-red-400 hover:border-red-200">
-                  <X size={13}/>
+                <button className="size-8 rounded-lg flex items-center justify-center border border-gray-200 text-gray-400 hover:text-red-400 hover:border-red-200 cursor-pointer">
+                  <X size={13} strokeWidth={2}/>
                 </button>
               </div>
             </>
           )}
           {footerType === "done" && (
             <div className="flex gap-2">
-              <button className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-[12px] font-semibold border"
+              <button className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-[12px] font-semibold border cursor-pointer"
                 style={{ borderColor: T.teal+"66", color: T.teal }}
                 onClick={() => router.push(`/p2p/purchase-requests/${pr.id}`)}>
-                View PO <ArrowRight size={12}/>
+                View PO <ArrowRight size={12} strokeWidth={2}/>
               </button>
-              <button className="size-9 rounded-lg flex items-center justify-center border border-gray-200 text-gray-400">
-                <X size={13}/>
+              <button className="size-9 rounded-lg flex items-center justify-center border border-gray-200 text-gray-400 cursor-pointer">
+                <X size={13} strokeWidth={2}/>
               </button>
             </div>
           )}
           {footerType === "requestor" && (
             <div className="flex gap-2">
-              <button className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-[12px] font-semibold border border-gray-200 text-gray-600">
+              <button className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-[12px] font-semibold border border-gray-200 text-gray-600 cursor-pointer">
                 Track progress
               </button>
-              <button className="size-9 rounded-lg flex items-center justify-center border border-gray-200 text-gray-400">
-                <X size={13}/>
+              <button className="size-9 rounded-lg flex items-center justify-center border border-gray-200 text-gray-400 cursor-pointer">
+                <X size={13} strokeWidth={2}/>
               </button>
             </div>
           )}
@@ -675,10 +686,16 @@ const FILTERS = [
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PurchaseRequestsPage() {
-  const router  = useRouter()
+  const router   = useRouter()
+  const [allPRs,   setAllPRs]   = React.useState<PR[]>(PRS)
   const [selected, setSelected] = React.useState<PR>(PRS[0])
   const [filter,   setFilter]   = React.useState("all")
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
+  const [rightWidth, setRightWidth] = React.useState<number | null>(null)
+  const wrapperRef = React.useRef<HTMLDivElement>(null)
+  const dragging   = React.useRef(false)
+
+  const rightOpen = rightWidth !== 0
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -689,208 +706,341 @@ export default function PurchaseRequestsPage() {
     })
   }
 
-  const panelStyle: React.CSSProperties = { background:"#F7F7FE", borderRadius:10, overflow:"hidden" }
+  // ── Load saved PRs from localStorage on mount ──
+  React.useEffect(() => {
+    const saved = getSavedPRs()
+    if (saved.length > 0) {
+      const merged = [...saved.map(storedToPR), ...PRS]
+      setAllPRs(merged)
+      setSelected(merged[0]) // auto-select newest
+    }
+  }, [])
+
+  // ── Drag ──
+  const onDragMouseDown = (e: React.MouseEvent) => {
+    dragging.current = true
+    e.preventDefault()
+  }
+
+  React.useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current || !wrapperRef.current) return
+      const rect = wrapperRef.current.getBoundingClientRect()
+      const newW = Math.max(0, Math.min(rect.width - 16 - 500, rect.right - e.clientX))
+      setRightWidth(newW)
+    }
+    const onUp = () => {
+      if (!dragging.current) return
+      dragging.current = false
+      setRightWidth(w => {
+        if (w === null) return w
+        if (w < 160) return 0
+        if (w < 280) return 280
+        return w
+      })
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup",   onUp)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup",   onUp)
+    }
+  }, [])
+
+  const rightPanelStyle: React.CSSProperties = {
+    background:     "#F7F7FE",
+    borderRadius:   10,
+    overflow:       "hidden",
+    display:        rightWidth === 0 ? "none" : "flex",
+    flexDirection:  "column",
+    flex:           rightWidth ? `0 0 ${rightWidth}px` : "0 0 320px",
+    minWidth:       0,
+  }
+
+  const filteredPRS = filter === "all" ? allPRs : allPRs.filter(pr => pr.status === filter)
 
   return (
     <TooltipProvider>
-      <div className="flex gap-[10px] h-full">
+      <div ref={wrapperRef} className="flex min-h-0" style={{ height: "calc(100vh - 20px)" }}>
 
-        {/* ── Main panel ── */}
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden" style={panelStyle}>
+        {/* ── Middle body — transparent dark bg ── */}
+        <div className="flex flex-col min-h-0 flex-1 min-w-[500px]"
+          style={{ padding: 16, gap: 16 }}>
 
-          {/* Breadcrumb + AI bar + title row */}
-          <div className="px-8 pt-6 pb-3 shrink-0">
+          {/* ── Page header ── */}
+          <div className="shrink-0 pb-4" style={{ borderBottom: `1px solid ${T.border}` }}>
             {/* Breadcrumb */}
-            <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-3">
-              <span>P2P</span>
-              <ChevronRight size={10} className="text-gray-300"/>
-              <span className="text-gray-600 font-medium">Purchase Requests</span>
+            <div className="flex items-center gap-1 mb-1.5">
+              <span className="text-[12px] font-light" style={{ color: "rgba(255,255,255,0.5)", fontFamily: "Inter, sans-serif" }}>
+                P2P
+              </span>
+              <ChevronRight size={10} color="rgba(255,255,255,0.35)" strokeWidth={2}/>
+              <span className="text-[12px] font-light text-white" style={{ fontFamily: "Inter, sans-serif" }}>
+                Purchase Requests
+              </span>
             </div>
-
-            {/* AI assistant bar — between breadcrumb and title */}
-            <JomieAIBar message="3 PRs pending your approval — PR-0087 (Raw Materials) is over budget. Quotation required for PR-0089 (IT Equipment). 1 new vendor onboarding pending." />
-
-            {/* Title + actions */}
+            {/* Title row */}
             <div className="flex items-center justify-between">
-              <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily:"var(--font-pjs)" }}>
+              <h1 className="text-[18px] font-semibold text-white leading-7"
+                style={{ fontFamily: "var(--font-lora), Lora, serif" }}>
                 Purchase Requests
               </h1>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5 text-gray-600">
-                  <Download size={12}/> Export
-                </Button>
-                <Button size="sm" className="gap-1.5 text-white border-0"
-                  style={{ background: T.purple }}
+                <button className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-medium text-white cursor-pointer transition-all"
+                  style={{
+                    background: "rgba(255,255,255,0.07)",
+                    border: `1px solid ${T.border}`,
+                    fontFamily: "Inter, sans-serif",
+                  }}>
+                  <Download size={13} color="#fff" strokeWidth={2}/> Export
+                </button>
+                <button
+                  className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-semibold text-white cursor-pointer transition-all"
+                  style={{
+                    background: T.purple,
+                    border: `1px solid ${T.purple}`,
+                    fontFamily: "Inter, sans-serif",
+                  }}
                   onClick={() => router.push("/p2p/purchase-requests/new")}>
-                  <Plus size={12}/> New PR
-                </Button>
+                  <Plus size={13} color="#fff" strokeWidth={2}/> New PR
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Search + filter */}
-          <div className="flex items-center gap-2 px-8 pb-3 shrink-0">
+          {/* ── AI bar — dark glass variant ── */}
+          <div className="shrink-0 flex items-center gap-2.5 px-3.5 py-2.5"
+            style={{
+              background: "rgba(93,94,244,0.12)",
+              border: "0.5px solid rgba(93,94,244,0.3)",
+              borderRadius: 8,
+            }}>
+            <Sparkles size={15} style={{ color: "#9EACFE", flexShrink: 0 }} strokeWidth={2}/>
+            <span className="flex-1 text-[12px] leading-snug"
+              style={{ color: "#C4C9FF", fontFamily: "Inter, sans-serif" }}>
+              3 PRs pending your approval — PR-0087 (Raw Materials) is over budget.
+              Quotation required for PR-0089 (IT Equipment). 1 new vendor onboarding pending.
+            </span>
+            <kbd className="shrink-0 text-[11px] font-mono select-none"
+              style={{ color: "rgba(255,255,255,0.3)" }}>⌘K</kbd>
+          </div>
+
+          {/* ── Search + filter tabs ── */}
+          <div className="shrink-0 flex items-center gap-2">
+            {/* Search */}
             <div className="relative">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none"/>
-              <Input placeholder="Search PRs…"
-                className="h-8 pl-7 w-48 text-[12px] bg-white border-gray-200"/>
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ color: T.border }} strokeWidth={2}/>
+              <input
+                placeholder="Search PRs…"
+                className="h-8 pl-7 w-48 text-[12px] focus:outline-none rounded-lg"
+                style={{
+                  background: "rgba(255,255,255,0.05)",
+                  border: `1px solid ${T.border}`,
+                  color: "white",
+                  fontFamily: "Inter, sans-serif",
+                }}
+              />
             </div>
+            {/* Filter tabs */}
             <div className="flex items-center gap-0.5">
               {FILTERS.map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)}
-                  className={cn(
-                    "flex items-center gap-1 h-8 px-3 rounded-md text-[12px] transition-colors cursor-pointer",
-                    filter===f.key
-                      ? "bg-white border border-gray-200 font-semibold text-gray-800 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700 hover:bg-white/60",
-                  )}>
+                  className="flex items-center gap-1 h-8 px-3 rounded-lg text-[12px] transition-colors cursor-pointer"
+                  style={{
+                    background:  filter === f.key ? "#1C184E" : "transparent",
+                    color:       filter === f.key ? "#FFFFFF" : T.dimText,
+                    fontWeight:  filter === f.key ? 600 : 500,
+                    fontFamily:  "Inter, sans-serif",
+                  }}>
                   {f.label}
-                  <span className="text-[10px] text-gray-400 tabular-nums">{f.count}</span>
+                  <span className="text-[10px] tabular-nums"
+                    style={{ color: filter === f.key ? "rgba(255,255,255,0.4)" : T.border }}>
+                    {f.count}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Table */}
-          <div className="flex-1 overflow-y-auto px-8 pb-8">
-            {/* Header */}
-            <div className="grid border-b border-gray-200 pb-2 mb-1 pl-1"
-              style={{ gridTemplateColumns:"1fr 140px 130px 120px 28px" }}>
-              {["REQUEST","REQUESTED BY","AMOUNT (RM)","STATUS",""].map((h, i) => (
-                <div key={i} className={cn(
-                  "text-[10px] font-semibold uppercase tracking-wider text-gray-400",
-                  i===2 && "text-right", i===3 && "text-center",
-                )}>{h}</div>
-              ))}
+          {/* ── Table — two floating #F7F7FE panels ── */}
+          <div className="flex-1 min-h-0 flex flex-col gap-2">
+
+            {/* Column headers — no bg, dark-themed */}
+            <div className="shrink-0 px-4 py-2">
+              <div className="grid pl-1"
+                style={{ gridTemplateColumns: "1fr 140px 130px 120px 28px" }}>
+                {["REQUEST", "REQUESTED BY", "AMOUNT (RM)", "STATUS", ""].map((h, i) => (
+                  <div key={i} className={cn(
+                    "text-[10px] font-semibold uppercase tracking-wider",
+                    i === 2 && "text-right",
+                    i === 3 && "text-center",
+                  )} style={{ color: "#667085", fontFamily: "Inter, sans-serif" }}>{h}</div>
+                ))}
+              </div>
             </div>
 
-            {/* Rows */}
-            {PRS.map(pr => {
-              const isSel    = selected?.id === pr.id
-              const isExp    = expanded.has(pr.id)
-              const hasSubPRs = pr.subPRs && pr.subPRs.length > 0
-              const PTypeIcon = PTYPE_CONFIG[pr.purchaseType].icon
-              const ptColor   = PTYPE_CONFIG[pr.purchaseType].color
-              const borderColor = rowBorderColor(pr)
+            {/* Rows panel — transparent, scrollable, flex-1 */}
+            <div className="flex-1 min-h-0 overflow-y-auto pb-2">
+              {filteredPRS.map(pr => {
+                const isSel     = selected?.id === pr.id
+                const isExp     = expanded.has(pr.id)
+                const hasSubPRs = pr.subPRs && pr.subPRs.length > 0
+                const PTypeIcon = PTYPE_CONFIG[pr.purchaseType].icon
+                const ptColor   = PTYPE_CONFIG[pr.purchaseType].color
+                const borderColor = rowBorderColor(pr)
 
-              return (
-                <React.Fragment key={pr.id}>
-                  <div
-                    onClick={() => setSelected(pr)}
-                    className={cn(
-                      "grid items-center py-2.5 border-b border-gray-100 cursor-pointer group transition-all duration-150 rounded-r-lg",
-                    )}
-                    style={{
-                      gridTemplateColumns:"1fr 140px 130px 120px 28px",
-                      borderLeft: `3px solid ${isSel ? T.selectedBorder : borderColor}`,
-                      background: isSel ? T.selectedBg : "transparent",
-                      paddingLeft: 8,
-                    }}>
+                return (
+                  <React.Fragment key={pr.id}>
+                    <div
+                      onClick={() => setSelected(pr)}
+                      className={cn(
+                        "grid items-center py-2.5 border-b cursor-pointer group transition-all duration-150 rounded-r-lg",
+                      )}
+                      style={{
+                        gridTemplateColumns: "1fr 140px 130px 120px 28px",
+                        borderColor: "rgba(103,100,136,0.2)",
+                        background: isSel ? "rgba(29,158,117,0.08)" : "transparent",
+                        paddingLeft: 8,
+                        paddingRight: 8,
+                      }}>
 
-                    {/* Request */}
-                    <div className="flex items-start gap-2 min-w-0 pr-2">
-                      {/* Purchase type icon */}
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <div className="size-6 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-                            style={{ background: ptColor+"18" }}>
-                            <PTypeIcon size={13} style={{ color: ptColor }} strokeWidth={1.6}/>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                          {PTYPE_CONFIG[pr.purchaseType].label}
-                        </TooltipContent>
-                      </Tooltip>
-
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className="text-[9px] font-mono text-gray-300">{pr.id}</span>
-                          {hasSubPRs && (
-                            <button onClick={e => toggleExpand(pr.id, e)}
-                              className="text-[9px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 hover:border-gray-300 cursor-pointer transition-colors">
-                              {pr.subPRs!.length} sub-PRs
-                            </button>
-                          )}
-                          {pr.aiFlags > 0 && (
-                            <span className="flex items-center gap-0.5 text-[10px] font-medium"
-                              style={{ color: T.amber }}>
-                              <TriangleAlert size={10}/>{pr.aiFlags}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[12px] font-semibold text-gray-800 truncate">{pr.title}</div>
-                        <div className="text-[10px] text-gray-400 truncate">{pr.sub}</div>
-                      </div>
-                    </div>
-
-                    {/* Requester */}
-                    <div>
-                      <div className="text-[12px] font-medium text-gray-700">{pr.requester}</div>
-                      <div className="flex items-center gap-1 text-[10px] text-gray-400 mt-0.5">
-                        <span>{pr.date}</span><span className="text-gray-200">·</span><span>{pr.dept}</span>
-                      </div>
-                    </div>
-
-                    {/* Amount */}
-                    <div className="text-right">
-                      <div className="text-[12px] font-mono font-semibold text-gray-800 tabular-nums">{pr.amount}</div>
-                      <div className={cn("text-[9px] font-mono mt-0.5",
-                        pr.overBudget ? "font-semibold" : "text-gray-400")}
-                        style={{ color: pr.overBudget ? T.borderCritical : undefined }}>
-                        {pr.overBudget ? "▲ over budget" : `/ ${pr.budget}`}
-                      </div>
-                    </div>
-
-                    {/* Status — 4-dot journey */}
-                    <div className="flex justify-center">
-                      <JourneyDotsMini pr={pr}/>
-                    </div>
-
-                    {/* Arrow */}
-                    <div className="flex justify-center">
-                      <button onClick={e => { e.stopPropagation(); router.push(`/p2p/purchase-requests/${pr.id}`) }}
-                        className="cursor-pointer rounded p-0.5 hover:bg-gray-100 transition-colors"
-                        title={`Open ${pr.id}`}>
-                        <ChevronRight size={12} className={cn("transition-colors",
-                          isSel ? "text-[#5D5EF4]" : "text-gray-200 group-hover:text-gray-400")}/>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Sub-PR rows */}
-                  {isExp && hasSubPRs && (
-                    <div className="border-b border-gray-100 pl-10 pr-2 py-1.5 bg-gray-50/50">
-                      <div className="space-y-1">
-                        {pr.subPRs!.map(sub => {
-                          const SubIcon = PTYPE_CONFIG[sub.type]?.icon ?? Package
-                          const subColor = PTYPE_CONFIG[sub.type]?.color ?? T.purple
-                          return (
-                            <div key={sub.id} className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-white border border-gray-100 hover:border-gray-200 transition-colors cursor-pointer text-[11px]">
-                              <ArrowRight size={10} className="text-gray-300 shrink-0"/>
-                              <span className="font-mono text-[9px] text-gray-300 shrink-0">{sub.id}</span>
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                                style={{ background: subColor+"18", color: subColor }}>
-                                {PTYPE_CONFIG[sub.type]?.label}
-                              </span>
-                              <span className="flex-1 text-gray-600 truncate">{sub.vendor}</span>
-                              <span className="font-mono font-semibold text-gray-700 shrink-0">RM {sub.amount}</span>
-                              <span className="text-[9px] text-gray-400 shrink-0">{sub.approvalTier}</span>
+                      {/* Request */}
+                      <div className="flex items-start gap-2 min-w-0 pr-2">
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <div className="size-6 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                              style={{ background: ptColor + "18" }}>
+                              <PTypeIcon size={13} style={{ color: ptColor }} strokeWidth={1.6}/>
                             </div>
-                          )
-                        })}
+                          </TooltipTrigger>
+                          <TooltipContent side="right">
+                            {PTYPE_CONFIG[pr.purchaseType].label}
+                          </TooltipContent>
+                        </Tooltip>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="text-[9px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>{pr.id}</span>
+                            {hasSubPRs && (
+                              <button onClick={e => toggleExpand(pr.id, e)}
+                                className="text-[9px] rounded px-1 py-0.5 cursor-pointer transition-colors"
+                                style={{ border: "1px solid rgba(103,100,136,0.4)", color: T.dimText, background: "rgba(255,255,255,0.05)" }}>
+                                {pr.subPRs!.length} sub-PRs
+                              </button>
+                            )}
+                            {pr.aiFlags > 0 && (
+                              <span className="flex items-center gap-0.5 text-[10px] font-medium"
+                                style={{ color: T.amber }}>
+                                <TriangleAlert size={10} strokeWidth={2}/>{pr.aiFlags}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[12px] font-semibold text-white truncate">{pr.title}</div>
+                          <div className="text-[10px] truncate" style={{ color: T.dimText }}>{pr.sub}</div>
+                        </div>
+                      </div>
+
+                      {/* Requester */}
+                      <div>
+                        <div className="text-[12px] font-medium text-white">{pr.requester}</div>
+                        <div className="flex items-center gap-1 text-[10px] mt-0.5" style={{ color: T.dimText }}>
+                          <span>{pr.date}</span>
+                          <span style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
+                          <span>{pr.dept}</span>
+                        </div>
+                      </div>
+
+                      {/* Amount */}
+                      <div className="text-right">
+                        <div className="text-[12px] font-mono font-semibold text-white tabular-nums">{pr.amount}</div>
+                        <div className={cn("text-[9px] font-mono mt-0.5", pr.overBudget && "font-semibold")}
+                          style={{ color: pr.overBudget ? T.borderCritical : T.dimText }}>
+                          {pr.overBudget ? "▲ over budget" : `/ ${pr.budget}`}
+                        </div>
+                      </div>
+
+                      {/* Status — 4-dot journey */}
+                      <div className="flex justify-center">
+                        <JourneyDotsMini pr={pr}/>
+                      </div>
+
+                      {/* Arrow */}
+                      <div className="flex justify-center">
+                        <button
+                          onClick={e => { e.stopPropagation(); router.push(`/p2p/purchase-requests/${pr.id}`) }}
+                          className="cursor-pointer rounded p-0.5 transition-colors"
+                          style={{ background: "transparent" }}
+                          title={`Open ${pr.id}`}>
+                          <ChevronRight size={12} strokeWidth={2}
+                            color={isSel ? T.purple : "rgba(255,255,255,0.25)"}/>
+                        </button>
                       </div>
                     </div>
-                  )}
-                </React.Fragment>
-              )
-            })}
+
+                    {/* Sub-PR expansion rows */}
+                    {isExp && hasSubPRs && (
+                      <div className="pl-10 pr-2 py-1.5"
+                        style={{ borderBottom: "1px solid rgba(103,100,136,0.2)", background: "rgba(0,0,0,0.08)" }}>
+                        <div className="space-y-1">
+                          {pr.subPRs!.map(sub => {
+                            const subColor = PTYPE_CONFIG[sub.type]?.color ?? T.purple
+                            return (
+                              <div key={sub.id}
+                                className="flex items-center gap-2 py-1.5 px-2 rounded-lg transition-colors cursor-pointer text-[11px]"
+                                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(103,100,136,0.25)" }}>
+                                <ArrowRight size={10} strokeWidth={2} style={{ color: "rgba(255,255,255,0.25)", flexShrink:0 }}/>
+                                <span className="font-mono text-[9px] shrink-0" style={{ color: "rgba(255,255,255,0.25)" }}>{sub.id}</span>
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{ background: subColor + "22", color: subColor }}>
+                                  {PTYPE_CONFIG[sub.type]?.label}
+                                </span>
+                                <span className="flex-1 truncate" style={{ color: "rgba(255,255,255,0.7)" }}>{sub.vendor}</span>
+                                <span className="font-mono font-semibold shrink-0 text-white">RM {sub.amount}</span>
+                                <span className="text-[9px] shrink-0" style={{ color: T.dimText }}>{sub.approvalTier}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+            </div>
+
           </div>
         </div>
 
-        {/* ── Right panel — 320px ── */}
-        <div className="shrink-0 flex flex-col" style={{ ...panelStyle, width:320, padding:"20px 18px" }}>
-          <CopilotPanel pr={selected}/>
+        {/* ── Drag handle + toggle ── */}
+        <div
+          className="flex items-center justify-center shrink-0"
+          style={{ width: 16, alignSelf: "stretch", position: "relative", cursor: "col-resize" }}
+          onMouseDown={onDragMouseDown}>
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px"
+            style={{ background: "rgba(103,100,136,0.25)" }}/>
+          <button
+            onClick={() => setRightWidth(w => w === 0 ? null : 0)}
+            onMouseDown={e => e.stopPropagation()}
+            className="relative z-10 flex items-center justify-center size-7 rounded-lg transition-all cursor-pointer"
+            style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(103,100,136,0.35)" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.14)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.07)")}
+            title={rightOpen ? "Hide panel" : "Show panel"}>
+            {rightOpen
+              ? <ChevronRight size={13} color="rgba(255,255,255,0.6)" strokeWidth={2}/>
+              : <ChevronLeft  size={13} color="rgba(255,255,255,0.6)" strokeWidth={2}/>
+            }
+          </button>
         </div>
+
+        {/* ── Right panel — #F7F7FE floating, draggable ── */}
+        <div style={rightPanelStyle}>
+          <div className="flex flex-col h-full" style={{ padding: "20px 18px" }}>
+            <CopilotPanel pr={selected}/>
+          </div>
+        </div>
+
       </div>
     </TooltipProvider>
   )

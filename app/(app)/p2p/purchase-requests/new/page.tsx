@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { savePR, buildNextPRId, getSavedPRs } from "@/lib/pr-store"
 import {
   Sparkles, ChevronLeft, ChevronRight, Send, Plus, Check, CheckCircle2,
   Building2, TriangleAlert, ArrowRight, Loader2, ShieldCheck,
@@ -142,6 +143,7 @@ export default function NewPRPage() {
   const [submittedMessage, setSubmittedMessage] = React.useState("")
   const [submittedProject, setSubmittedProject] = React.useState("")
   const [activeTab, setActiveTab] = React.useState("ai")
+  const [savedPRId, setSavedPRId] = React.useState("")
   // null = fill remaining space | 0 = closed | >0 = fixed px width
   const [rightWidth, setRightWidth] = React.useState<number | null>(null)
   const endRef     = React.useRef<HTMLDivElement>(null)
@@ -189,6 +191,27 @@ export default function NewPRPage() {
 
   const handleSubmit = () => {
     if (chatState !== "confirmed") return
+    // Build + save the new PR to localStorage before switching state
+    const saved = getSavedPRs()
+    const newId = buildNextPRId(saved.length)
+    savePR({
+      id:                newId,
+      title:             submittedProject || "New Purchase Request",
+      sub:               (submittedMessage.slice(0, 70) + (submittedMessage.length > 70 ? "…" : "")).trim(),
+      message:           submittedMessage,
+      requester:         "Lim Wei Xiang",
+      requesterInitials: "LW",
+      date:              "Today",
+      dept:              "IT",
+      amount:            "142,806",
+      budget:            "150,000",
+      status:            "pending",
+      phase:             "B",
+      purchaseType:      "capex",
+      aiFlags:           1,
+      createdAt:         Date.now(),
+    })
+    setSavedPRId(newId)
     setChatState("submitting")
     setTimeout(() => setChatState("a2-pass"), 2200)
   }
@@ -438,7 +461,7 @@ export default function NewPRPage() {
             </button>
             <span className="px-2 py-0.5 rounded-md text-[12px]"
               style={{ background: T.indigoBadgeBg, color: T.indigoBadgeFg }}>
-              PR-2026-NEW · Draft
+              {savedPRId ? `${savedPRId} · Pending` : "PR-2026-NEW · Draft"}
             </span>
           </div>
           {/* Title */}
@@ -573,14 +596,14 @@ export default function NewPRPage() {
                 <div className="flex items-center gap-2 pt-1 border-t" style={{ borderColor: T.teal+"33" }}>
                   <ArrowRight size={11} style={{ color: T.teal }}/>
                   <span className="text-[11px] font-medium" style={{ color: T.tealText }}>
-                    2 sub-PRs sent · PR-DRAFT-A → Razif Abdullah (FM) · PR-DRAFT-B → Siti Aisyah
+                    2 sub-PRs sent · {savedPRId}-A → Razif Abdullah (FM) · {savedPRId}-B → Siti Aisyah
                   </span>
                 </div>
               </div>
-              <button onClick={() => router.push("/p2p/purchase-requests")}
+              <button onClick={() => router.push(savedPRId ? `/p2p/purchase-requests/${savedPRId}` : "/p2p/purchase-requests")}
                 className="flex items-center gap-1 text-[12px] font-medium mt-1 cursor-pointer transition-opacity hover:opacity-70"
                 style={{ color: T.purple }}>
-                <ArrowRight size={13}/> View in Purchase Requests
+                <ArrowRight size={13}/> View {savedPRId || "in Purchase Requests"}
               </button>
             </div>
           )}

@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
+import { getSavedPRs, SEED_IDS } from "@/lib/pr-store"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -38,7 +39,7 @@ const T = {
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
-const PR = {
+const PR_TEMPLATE = {
   id:"PR-0089", title:"IT Equipment — Q3 Upgrade", sub:"14 laptops · 6 monitors · 14 docks",
   requester:"Lim Wei Xiang", requesterInitials:"LW", dept:"Information Technology",
   submittedDate:"28 May 2026, 09:14 AM", deliveryDate:"31 July 2026",
@@ -68,6 +69,9 @@ const PR = {
   ],
   sodNote:"Lim Wei Xiang (requestor) is excluded from all approval steps by system.",
 }
+
+type PRData = typeof PR_TEMPLATE
+const PRContext = React.createContext<PRData>(PR_TEMPLATE)
 
 // Per-item sourcing data
 const ITEM_SOURCING: Record<string, { code:string; name:string; approved:{rank:number;name:string;price:string;unit:string;recommended?:boolean}[]; marketplace:{rank:number;name:string;price:string;unit:string;isImport?:boolean}[] }> = {
@@ -166,6 +170,7 @@ function JourneyStrip({ activeIdx }: { activeIdx: number }) {
 // ─── Left column sections ─────────────────────────────────────────────────────
 
 function RequestDetails() {
+  const PR = React.useContext(PRContext)
   return (
     <div className="pb-5 border-b" style={{ borderColor:T.border }}>
       <div className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color:"#888780" }}>
@@ -203,6 +208,7 @@ function RequestDetails() {
 }
 
 function LineItemsSection() {
+  const PR = React.useContext(PRContext)
   const total = PR.lineItems.reduce((n, i) => n + parseFloat(i.total.replace(/,/g,"")), 0)
   return (
     <div className="py-5 border-b" style={{ borderColor:T.border }}>
@@ -243,6 +249,7 @@ function LineItemsSection() {
 }
 
 function CostAllocationSection() {
+  const PR = React.useContext(PRContext)
   const { costAllocation: ca } = PR
   const pct = (ca.committed / ca.total) * 100
   const isLow = ((ca.total - ca.committed) / ca.total) < 0.1
@@ -291,6 +298,7 @@ function CostAllocationSection() {
 }
 
 function SubPRBreakdown() {
+  const PR = React.useContext(PRContext)
   return (
     <div className="py-5 border-b" style={{ borderColor:T.border }}>
       <div className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color:"#888780" }}>
@@ -333,6 +341,7 @@ function SubPRBreakdown() {
 }
 
 function A2SectionLeft() {
+  const PR = React.useContext(PRContext)
   const warns = PR.a2Results.filter(r => r.result==="warn")
   return (
     <div className="py-5 border-b" style={{ borderColor:T.border }}>
@@ -365,6 +374,7 @@ function A2SectionLeft() {
 }
 
 function ApprovalChainSection() {
+  const PR = React.useContext(PRContext)
   return (
     <div className="py-5">
       <div className="text-[10px] font-semibold uppercase tracking-wider mb-4" style={{ color:"#888780" }}>
@@ -492,8 +502,27 @@ function ItemSourcingBlock({ itemCode }: { itemCode: string }) {
 
 export default function PRDetailView() {
   const router = useRouter()
+  const params = useParams()
   const [sourcingChoice, setSourcingChoice] = React.useState<"approved"|"marketplace"|"defer"|null>(null)
   const [approved, setApproved] = React.useState(false)
+  const [prData, setPrData] = React.useState<PRData>(PR_TEMPLATE)
+
+  // On mount: if this is a localStorage PR (not a seed ID), load its data
+  React.useEffect(() => {
+    const id = params?.id as string | undefined
+    if (!id || SEED_IDS.includes(id)) return
+    const saved = getSavedPRs()
+    const found = saved.find(p => p.id === id)
+    if (found) {
+      setPrData({
+        ...PR_TEMPLATE,
+        id:            found.id,
+        title:         found.title,
+        sub:           found.sub,
+        justification: found.message,
+      })
+    }
+  }, [params?.id])
 
   const panelStyle: React.CSSProperties = { background:"#F7F7FE", borderRadius:10, overflow:"hidden" }
 
@@ -501,6 +530,7 @@ export default function PRDetailView() {
   const journeyIdx = 2
 
   return (
+    <PRContext.Provider value={prData}>
     <TooltipProvider>
       <div className="flex flex-col h-full gap-0">
 
@@ -511,7 +541,7 @@ export default function PRDetailView() {
             className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 transition-colors cursor-pointer shrink-0">
             <ChevronLeft size={14}/> Purchase Requests
           </button>
-          <span className="text-[13px] font-semibold text-gray-900">{PR.id}</span>
+          <span className="text-[13px] font-semibold text-gray-900">{prData.id}</span>
           <span className="text-[11px] font-medium px-2 py-0.5 rounded-full"
             style={{ background:"#FEF3C7", color:"#92400E" }}>● Pending approval</span>
           <div className="flex-1"/>
@@ -540,7 +570,7 @@ export default function PRDetailView() {
 
         {/* ── AI bar ── */}
         <div className="px-6 py-2.5 shrink-0" style={{ background:"#F7F7FE" }}>
-          <JomieAIBar message={`PR-0089 is pending your approval. Jomie has pre-fetched sourcing options from 5 channels. Capital allowance eligible — tag as IT asset before period close.`}/>
+          <JomieAIBar message={`${prData.id} is pending your approval. Jomie has pre-fetched sourcing options from 5 channels. Capital allowance eligible — tag as IT asset before period close.`}/>
         </div>
 
         {/* ── Body: two columns ── */}
@@ -572,12 +602,12 @@ export default function PRDetailView() {
                 </span>
                 <span className="text-[9px] font-mono text-gray-400">· fetched 4 min ago</span>
               </div>
-              <span className="text-[9px] font-mono text-gray-300">{PR.id}</span>
+              <span className="text-[9px] font-mono text-gray-300">{prData.id}</span>
             </div>
 
             {/* Per-item sourcing */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-              {PR.lineItems.map(item => (
+              {prData.lineItems.map(item => (
                 <ItemSourcingBlock key={item.code} itemCode={item.code}/>
               ))}
 
@@ -663,5 +693,6 @@ export default function PRDetailView() {
         </div>
       </div>
     </TooltipProvider>
+    </PRContext.Provider>
   )
 }
