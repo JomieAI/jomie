@@ -346,7 +346,8 @@ export default function NewPRPage() {
   }
 
   const handleChatKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    // Enter alone → send. Shift+Enter → new line (default textarea behaviour).
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
     }
@@ -914,7 +915,7 @@ export default function NewPRPage() {
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={handleChatKeyDown}
-              placeholder="Ask Jomie anything about this PR… (⌘↵ to send)"
+              placeholder="Ask Jomie anything about this PR… (↵ to send, ⇧↵ for new line)"
               rows={3}
               className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
               style={{ fontFamily:"var(--font-pjs)" }}
