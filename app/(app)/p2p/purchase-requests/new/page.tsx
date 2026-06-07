@@ -7,6 +7,7 @@ import {
   Sparkles, ChevronLeft, ChevronRight, Send, Plus, Check, CheckCircle2,
   Building2, TriangleAlert, ArrowRight, Loader2, ShieldCheck,
   CircleDot, Package, Briefcase, RefreshCw, ChevronDown, Pencil,
+  Search, X, Minus, AlertCircle, Link2, Warehouse, ChevronUp,
 } from "lucide-react"
 import { InlineEditableTitle } from "@/components/ui/inline-editable-title"
 import { savePR, buildNextPRId, getSavedPRs } from "@/lib/pr-store"
@@ -72,12 +73,48 @@ const SUB_PRS = [
 const DELIVERY_OPTIONS = ["ASAP (< 2 weeks)", "End of June 2026", "End of July 2026", "End of Q3 2026", "Flexible"]
 const BUDGET_OPTIONS   = ["IT-CAPEX-2024", "IT-OPEX-2024", "CORP-CAPEX-2024", "Other"]
 
+// ─── Item Master & Vendor Master (mock) ──────────────────────────────────────
+
+interface ItemMasterEntry {
+  code: string; name: string; spec: string; uom: string
+  unitPrice: number; purchaseType: "capex" | "opex"
+  glCode: string; vendorCode: string; moq: number
+}
+
+const ITEM_MASTER: ItemMasterEntry[] = [
+  { code:"NXG-IT-001", name:"Dell Latitude 5540 Laptop",       spec:"Intel Core i7-13th Gen, 16GB RAM, 512GB SSD, 15.6\" FHD",   uom:"unit",    unitPrice:7200,  purchaseType:"capex", glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
+  { code:"NXG-IT-002", name:"LG 27\" UltraFine 4K Monitor",    spec:"3840×2160, USB-C 96W PD, 60Hz, IPS panel",                  uom:"unit",    unitPrice:2500,  purchaseType:"capex", glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
+  { code:"NXG-IT-003", name:"Dell WD22TB4 Thunderbolt Dock",   spec:"TB4, 130W PD, 5× USB-A, 2× Display out",                    uom:"unit",    unitPrice:1929,  purchaseType:"capex", glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
+  { code:"NXG-IT-004", name:"Logitech MX Keys Keyboard",       spec:"Wireless, Multi-device, Bluetooth + USB receiver",           uom:"unit",    unitPrice:380,   purchaseType:"opex",  glCode:"GL-6100-OPEX",  vendorCode:"V006", moq:1 },
+  { code:"NXG-OFF-001", name:"HP LaserJet Pro M404dn Printer", spec:"Monochrome, 40ppm, duplex, LAN",                             uom:"unit",    unitPrice:1200,  purchaseType:"capex", glCode:"GL-7200-CAPEX", vendorCode:"V002", moq:1 },
+  { code:"NXG-OFF-002", name:"Ergonomic Office Chair",         spec:"Adjustable lumbar support, mesh back, armrests",             uom:"unit",    unitPrice:850,   purchaseType:"opex",  glCode:"GL-6100-OPEX",  vendorCode:"V003", moq:1 },
+  { code:"NXG-CONS-001", name:"A4 Copy Paper (Box)",           spec:"80gsm, 500 sheets/ream, 5 reams/box",                        uom:"box",     unitPrice:45,    purchaseType:"opex",  glCode:"GL-6100-OPEX",  vendorCode:"V004", moq:5 },
+  { code:"NXG-SW-001", name:"Microsoft 365 Business Premium",  spec:"Per user/year, Cloud, Teams + Office apps",                  uom:"license", unitPrice:1500,  purchaseType:"opex",  glCode:"GL-6200-OPEX",  vendorCode:"V005", moq:1 },
+]
+
+const VENDOR_MASTER = [
+  { code:"V001", name:"Tech Solutions MY Sdn Bhd",      approved:true,  myInvois:false, terms:"Net 30",       lastOrder:"Dell L5540 @ RM 7,200 · Feb 2026" },
+  { code:"V002", name:"Digital Hub Malaysia Sdn Bhd",   approved:true,  myInvois:true,  terms:"Net 14",       lastOrder:"HP LaserJet @ RM 1,180 · Jan 2026" },
+  { code:"V003", name:"Office World Trading Sdn Bhd",   approved:true,  myInvois:true,  terms:"Net 30",       lastOrder:"Ergonomic Chair @ RM 820 · Mar 2025" },
+  { code:"V004", name:"Paper Plus Trading",             approved:false, myInvois:false, terms:"COD",          lastOrder:"A4 Paper @ RM 42/box · Dec 2025" },
+  { code:"V005", name:"Microsoft Malaysia Sdn Bhd",     approved:true,  myInvois:true,  terms:"Annual prepay",lastOrder:"M365 @ RM 1,500 · Jan 2026" },
+  { code:"V006", name:"Logitech Authorised Reseller",   approved:true,  myInvois:true,  terms:"Net 14",       lastOrder:"MX Keys @ RM 365 · Oct 2025" },
+]
+
 type ChatState = "idle" | "questioning" | "processing" | "initial" | "confirmed" | "submitting" | "a2-pass"
 
 interface FollowUpAnswers {
   delivery:   string
   budgetCode: string
   budgetCustom: string
+}
+
+interface ConfirmedItem extends ItemMasterEntry {
+  qty: number
+  stockSkipped: boolean
+  isNew?: boolean
+  preferredVendorCode?: string   // user-selected vendor override (per item)
+  preferredVendorName?: string
 }
 
 // ─── Auto-generate project name from description ──────────────────────────────
@@ -220,6 +257,466 @@ function generateReply(msg: string): string {
   return "Noted. Is there anything specific you'd like me to look into — vendor options, budget headroom, approval status, compliance flags, or delivery timeline?"
 }
 
+// ─── Sub-PR grouping (dynamic, from confirmed items) ─────────────────────────
+
+interface SubPRGroup {
+  id: string
+  items: ConfirmedItem[]
+  total: number
+  tier: "Dept Head" | "Finance Manager" | "FM + CFO"
+  vendorCode: string
+  vendorName: string
+  isApproved: boolean
+  myInvois: boolean
+  lastOrder: string
+}
+
+function buildSubPRGroups(items: ConfirmedItem[]): SubPRGroup[] {
+  const groups: SubPRGroup[] = []
+  let letterIdx = 0
+
+  // Effective vendor = user's per-item preference, else item master default
+  const effectiveVendorCode = (i: ConfirmedItem) =>
+    i.preferredVendorCode ?? (i.isNew ? "" : i.vendorCode)
+  const effectiveVendorName = (i: ConfirmedItem) => {
+    if (i.preferredVendorCode) return i.preferredVendorName ?? i.preferredVendorCode
+    const v = VENDOR_MASTER.find(v => v.code === i.vendorCode)
+    return v?.name ?? i.vendorCode
+  }
+
+  // Separate items-with-vendor from new/unassigned items
+  const regular = items.filter(i => !!effectiveVendorCode(i))
+  const newItems = items.filter(i => !effectiveVendorCode(i))
+
+  // Group regular items by effective vendor code
+  const vendorMap = new Map<string, ConfirmedItem[]>()
+  for (const item of regular) {
+    const vc = effectiveVendorCode(item)
+    vendorMap.set(vc, [...(vendorMap.get(vc) || []), item])
+  }
+
+  for (const [vc, vItems] of vendorMap) {
+    // Resolve vendor — first item in group may have a preferredVendorName if it's a custom entry
+    const masterVendor = VENDOR_MASTER.find(v => v.code === vc)
+    const firstItem = vItems[0]
+    const resolvedName = masterVendor?.name ?? firstItem.preferredVendorName ?? vc
+    const vendor = masterVendor ?? {
+      code: vc, name: resolvedName, approved: false, myInvois: false, terms: "", lastOrder: "",
+    }
+    // Split into: items whose individual line total > RM 50k (need higher approval) vs the rest
+    const highValue = vItems.filter(i => i.qty * i.unitPrice > 50000)
+    const standard  = vItems.filter(i => i.qty * i.unitPrice <= 50000)
+
+    if (highValue.length > 0) {
+      const t = highValue.reduce((s, i) => s + i.qty * i.unitPrice, 0)
+      groups.push({
+        id: `PR-DRAFT-${String.fromCharCode(65 + letterIdx++)}`,
+        items: highValue, total: t,
+        tier: t > 100000 ? "FM + CFO" : "Finance Manager",
+        vendorCode: vc, vendorName: vendor.name, isApproved: vendor.approved,
+        myInvois: vendor.myInvois, lastOrder: vendor.lastOrder,
+      })
+    }
+    if (standard.length > 0) {
+      const t = standard.reduce((s, i) => s + i.qty * i.unitPrice, 0)
+      groups.push({
+        id: `PR-DRAFT-${String.fromCharCode(65 + letterIdx++)}`,
+        items: standard, total: t,
+        tier: t > 50000 ? "Finance Manager" : "Dept Head",
+        vendorCode: vc, vendorName: vendor.name, isApproved: vendor.approved,
+        myInvois: vendor.myInvois, lastOrder: vendor.lastOrder,
+      })
+    }
+  }
+
+  // New / unassigned items → "Vendor TBD" group
+  if (newItems.length > 0) {
+    const t = newItems.reduce((s, i) => s + i.qty * i.unitPrice, 0)
+    groups.push({
+      id: `PR-DRAFT-${String.fromCharCode(65 + letterIdx++)}`,
+      items: newItems, total: t,
+      tier: t > 50000 ? "FM + CFO" : "Dept Head",
+      vendorCode: "", vendorName: "Vendor TBD", isApproved: false, myInvois: false, lastOrder: "",
+    })
+  }
+
+  return groups
+}
+
+// ─── Item detection from description ─────────────────────────────────────────
+
+function detectItemsFromDescription(desc: string): ConfirmedItem[] {
+  const lower = desc.toLowerCase()
+  const detected: ConfirmedItem[] = []
+
+  function extractQty(name: string): number {
+    const tokens = desc.replace(/[,]/g, " ").split(/\s+/)
+    const keywords = name.toLowerCase().split(" ").filter(w => w.length > 3)
+    for (let i = 0; i < tokens.length; i++) {
+      const n = parseInt(tokens[i])
+      if (!isNaN(n) && n > 0) {
+        const window = tokens.slice(i + 1, i + 5).join(" ").toLowerCase()
+        if (keywords.some(k => window.includes(k))) return n
+      }
+    }
+    return 1
+  }
+
+  for (const item of ITEM_MASTER) {
+    const keywords = item.name.toLowerCase().split(" ").filter(w => w.length > 3)
+    const hits = keywords.filter(k => lower.includes(k)).length
+    if (hits >= 2) {
+      detected.push({ ...item, qty: extractQty(item.name), stockSkipped: false })
+    }
+  }
+  return detected
+}
+
+// ─── Progress strip ────────────────────────────────────────────────────────────
+
+function ProgressStrip({ roundADone, roundBDone }: { roundADone: boolean; roundBDone: boolean }) {
+  const rounds = [
+    { key:"A", label:"Items",   done:roundADone, active:!roundADone },
+    { key:"B", label:"Vendor",  done:roundBDone, active:roundADone && !roundBDone },
+    { key:"C", label:"Budget",  done:false, active:false },
+    { key:"D", label:"Context", done:false, active:false },
+    { key:"E", label:"Review",  done:false, active:false },
+  ]
+  return (
+    <div className="flex items-center gap-1.5 px-1">
+      {rounds.map((r, i) => (
+        <React.Fragment key={r.key}>
+          <div className="flex items-center gap-1">
+            <div className="size-4 rounded-full flex items-center justify-center"
+              style={{
+                background: r.done ? "#1D9E75" : r.active ? "#5D5EF4" : "rgba(255,255,255,0.08)",
+                border: r.done || r.active ? "none" : "1px solid rgba(103,100,136,0.4)",
+              }}>
+              {r.done
+                ? <Check size={8} color="#fff" strokeWidth={3}/>
+                : <span className="text-[8px] font-bold" style={{ color: r.active ? "#fff" : "rgba(255,255,255,0.3)" }}>{r.key}</span>
+              }
+            </div>
+            <span className="text-[9px] font-semibold"
+              style={{ color: r.done ? "#1D9E75" : r.active ? "#A5A6F6" : "rgba(255,255,255,0.25)" }}>
+              {r.label}
+            </span>
+          </div>
+          {i < rounds.length - 1 && (
+            <div className="flex-1 h-px" style={{ background: i < (roundBDone ? 1 : roundADone ? 0 : -1) + 1 ? "#1D9E75" : "rgba(103,100,136,0.25)", maxWidth:20 }}/>
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+// ─── Item card (Round A) ───────────────────────────────────────────────────────
+
+interface ItemCardProps {
+  item: ConfirmedItem
+  inventorySkipped: boolean
+  onQtyChange: (code: string, qty: number) => void
+  onRemove: (code: string) => void
+  onSkipInventory: () => void
+}
+
+function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInventory }: ItemCardProps) {
+  const moqOk = item.qty >= item.moq
+  const subtotal = item.qty * item.unitPrice
+  const isNew = item.isNew
+
+  return (
+    <div className="rounded-xl overflow-hidden"
+      style={{
+        background: isNew ? "rgba(186,117,23,0.06)" : "rgba(255,255,255,0.05)",
+        border: isNew ? "0.5px solid rgba(186,117,23,0.45)" : "0.5px solid rgba(103,100,136,0.35)",
+      }}>
+      {/* New item warning stripe */}
+      {isNew && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b" style={{ borderColor:"rgba(186,117,23,0.3)", background:"rgba(186,117,23,0.12)" }}>
+          <AlertCircle size={10} style={{ color:"#BA7517", flexShrink:0 }}/>
+          <span className="text-[10px] font-semibold" style={{ color:"#BA7517" }}>
+            New item — pending item master approval · may delay this PR
+          </span>
+        </div>
+      )}
+      {/* Item header */}
+      <div className="flex items-start gap-2.5 px-3 pt-3 pb-2">
+        <div className="size-7 rounded-lg shrink-0 flex items-center justify-center mt-0.5"
+          style={{ background: isNew ? "rgba(186,117,23,0.2)" : item.purchaseType === "capex" ? "#EFF6FF" : "#F0FDF4" }}>
+          <Package size={13} style={{ color: isNew ? "#BA7517" : item.purchaseType === "capex" ? "#1D4ED8" : "#16A34A" }}/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <span className="text-[10px] font-mono" style={{ color:"rgba(255,255,255,0.35)" }}>{item.code}</span>
+            {!isNew && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                style={{ background: item.purchaseType === "capex" ? "#EFF6FF" : "#F0FDF4", color: item.purchaseType === "capex" ? "#1D4ED8" : "#16A34A" }}>
+                {item.purchaseType.toUpperCase()}
+              </span>
+            )}
+            {isNew && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background:"#FAEEDA", color:"#633806" }}>
+                NEW REQUEST
+              </span>
+            )}
+          </div>
+          <div className="text-[12px] font-semibold text-white leading-tight">{item.name}</div>
+          <div className="text-[10px] mt-0.5 leading-snug" style={{ color:"rgba(255,255,255,0.4)" }}>{item.spec || "No spec provided"}</div>
+        </div>
+        <button onClick={() => onRemove(item.code)}
+          className="size-5 rounded flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-colors hover:bg-red-500/20">
+          <X size={11} style={{ color:"rgba(255,255,255,0.4)" }}/>
+        </button>
+      </div>
+
+      {/* Qty + price row */}
+      <div className="flex items-center justify-between px-3 py-2 border-t" style={{ borderColor:"rgba(103,100,136,0.2)" }}>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>Qty</span>
+          <div className="flex items-center gap-0.5 rounded-lg overflow-hidden" style={{ border:"0.5px solid rgba(103,100,136,0.4)" }}>
+            <button onClick={() => onQtyChange(item.code, Math.max(0, item.qty - 1))}
+              className="size-6 flex items-center justify-center cursor-pointer transition-colors hover:bg-white/10">
+              <Minus size={10} color="rgba(255,255,255,0.6)"/>
+            </button>
+            <input
+              type="number"
+              value={item.qty}
+              onChange={e => onQtyChange(item.code, Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-10 text-center text-[12px] font-mono font-semibold text-white bg-transparent border-0 focus:outline-none"
+              style={{ height:24 }}
+            />
+            <button onClick={() => onQtyChange(item.code, item.qty + 1)}
+              className="size-6 flex items-center justify-center cursor-pointer transition-colors hover:bg-white/10">
+              <Plus size={10} color="rgba(255,255,255,0.6)"/>
+            </button>
+          </div>
+          <span className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>{item.uom}</span>
+          {!moqOk && item.qty > 0 && (
+            <span className="text-[9px] font-semibold" style={{ color:"#BA7517" }}>MOQ: {item.moq}</span>
+          )}
+        </div>
+        <div className="text-right">
+          <div className="text-[11px] font-mono font-semibold text-white">RM {subtotal.toLocaleString()}</div>
+          <div className="text-[9px] font-mono" style={{ color:"rgba(255,255,255,0.35)" }}>@ RM {item.unitPrice.toLocaleString()}/{item.uom}</div>
+        </div>
+      </div>
+
+      {/* Stock check */}
+      {!inventorySkipped && (
+        <div className="flex items-center justify-between px-3 py-2 border-t gap-2" style={{ borderColor:"rgba(103,100,136,0.2)", background:"rgba(0,0,0,0.12)" }}>
+          <div className="flex items-center gap-1.5">
+            <Warehouse size={10} style={{ color:"rgba(255,255,255,0.3)" }}/>
+            <span className="text-[10px]" style={{ color:"rgba(255,255,255,0.35)" }}>Inventory not connected</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button onClick={onSkipInventory}
+              className="text-[9px] px-2 py-1 rounded cursor-pointer transition-colors hover:bg-white/10"
+              style={{ color:"rgba(255,255,255,0.4)" }}>
+              Skip for now
+            </button>
+            <button className="flex items-center gap-1 text-[9px] font-semibold px-2 py-1 rounded cursor-pointer transition-colors"
+              style={{ background:"rgba(93,94,244,0.15)", color:"#A5A6F6", border:"0.5px solid rgba(93,94,244,0.35)" }}>
+              <Link2 size={8}/> Connect
+            </button>
+          </div>
+        </div>
+      )}
+      {inventorySkipped && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 border-t" style={{ borderColor:"rgba(103,100,136,0.2)", background:"rgba(0,0,0,0.08)" }}>
+          <Warehouse size={9} style={{ color:"rgba(255,255,255,0.2)" }}/>
+          <span className="text-[9px]" style={{ color:"rgba(255,255,255,0.25)" }}>Stock check skipped</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Item picker popup ─────────────────────────────────────────────────────────
+
+interface NewItemFormData { name: string; spec: string; unitPrice: string; uom: string }
+
+interface ItemPickerProps {
+  query: string
+  onQueryChange: (q: string) => void
+  onSelect: (item: ItemMasterEntry) => void
+  onRequestNew: (data: NewItemFormData) => void
+  onClose: () => void
+  confirmedCodes: Set<string>
+}
+
+function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose, confirmedCodes }: ItemPickerProps) {
+  const [showNewForm, setShowNewForm] = React.useState(false)
+  const [newForm, setNewForm] = React.useState<NewItemFormData>({ name: query, spec: "", unitPrice: "", uom: "unit" })
+
+  React.useEffect(() => {
+    if (showNewForm) setNewForm(f => ({ ...f, name: query }))
+  }, [showNewForm, query])
+
+  const lower = query.toLowerCase()
+  const filtered = ITEM_MASTER.filter(item =>
+    item.name.toLowerCase().includes(lower) ||
+    item.code.toLowerCase().includes(lower) ||
+    item.spec.toLowerCase().includes(lower)
+  )
+
+  return (
+    <div className="rounded-xl overflow-hidden shadow-2xl"
+      style={{ background:"#1A1740", border:"1px solid rgba(103,100,136,0.6)" }}>
+      {/* Search input */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ borderColor:"rgba(103,100,136,0.3)" }}>
+        <Search size={13} style={{ color:"rgba(255,255,255,0.4)", flexShrink:0 }}/>
+        <input
+          autoFocus
+          type="text"
+          value={query}
+          onChange={e => { onQueryChange(e.target.value); setShowNewForm(false) }}
+          placeholder="Search by name or item code…"
+          className="flex-1 bg-transparent text-[13px] text-white placeholder-gray-500 border-0 focus:outline-none"
+        />
+        <button onClick={onClose} className="cursor-pointer hover:opacity-70">
+          <X size={13} style={{ color:"rgba(255,255,255,0.4)" }}/>
+        </button>
+      </div>
+
+      {/* Results list */}
+      {!showNewForm && (
+        <div className="overflow-y-auto" style={{ maxHeight:256 }}>
+          {filtered.length === 0 ? (
+            <div className="px-4 pt-5 pb-4 flex flex-col items-center gap-3">
+              <div className="size-8 rounded-full flex items-center justify-center" style={{ background:"rgba(255,255,255,0.06)" }}>
+                <Search size={14} style={{ color:"rgba(255,255,255,0.3)" }}/>
+              </div>
+              <div className="text-center">
+                <div className="text-[12px] font-medium text-white mb-0.5">
+                  {query ? `No item matching "${query}"` : "Start typing to search items"}
+                </div>
+                <div className="text-[11px]" style={{ color:"rgba(255,255,255,0.35)" }}>
+                  Not in the master list? Request it for addition.
+                </div>
+              </div>
+              {query.length > 0 && (
+                <button
+                  onClick={() => setShowNewForm(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium cursor-pointer transition-colors"
+                  style={{ background:"rgba(186,117,23,0.15)", color:"#BA7517", border:"0.5px solid rgba(186,117,23,0.4)" }}>
+                  <Plus size={12}/> Request new item: "{query}"
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {filtered.map(item => {
+                const already = confirmedCodes.has(item.code)
+                return (
+                  <button key={item.code}
+                    onClick={() => !already && onSelect(item)}
+                    className="w-full flex items-start gap-3 px-3 py-2.5 text-left transition-colors"
+                    style={{ background:"transparent", cursor:already?"default":"pointer", opacity:already?0.4:1 }}
+                    onMouseEnter={e => { if (!already) e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "transparent" }}>
+                    <div className="size-6 rounded-md shrink-0 flex items-center justify-center mt-0.5"
+                      style={{ background: item.purchaseType === "capex" ? "#EFF6FF" : "#F0FDF4" }}>
+                      <Package size={11} style={{ color: item.purchaseType === "capex" ? "#1D4ED8" : "#16A34A" }}/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-medium text-white truncate">{item.name}</span>
+                        {already && <span className="text-[9px] shrink-0" style={{ color:"rgba(255,255,255,0.35)" }}>Added</span>}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[9px] font-mono" style={{ color:"rgba(255,255,255,0.35)" }}>{item.code}</span>
+                        <span className="text-[9px]" style={{ color:"rgba(255,255,255,0.3)" }}>·</span>
+                        <span className="text-[9px] font-mono" style={{ color:"rgba(255,255,255,0.5)" }}>RM {item.unitPrice.toLocaleString()}/{item.uom}</span>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+              {/* Always show "request new" at the bottom */}
+              <div className="border-t px-3 py-2" style={{ borderColor:"rgba(103,100,136,0.2)" }}>
+                <button
+                  onClick={() => setShowNewForm(true)}
+                  className="flex items-center gap-1.5 text-[11px] cursor-pointer transition-opacity hover:opacity-70"
+                  style={{ color:"rgba(255,255,255,0.35)" }}>
+                  <Plus size={10}/> Can{"'"}t find what you need? Request a new item
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* New item form */}
+      {showNewForm && (
+        <div className="flex flex-col gap-3 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-semibold" style={{ color:"#BA7517" }}>Request new item</span>
+            <button onClick={() => setShowNewForm(false)} className="cursor-pointer hover:opacity-70">
+              <ChevronUp size={13} style={{ color:"rgba(255,255,255,0.4)" }}/>
+            </button>
+          </div>
+          <div className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>
+            This will be submitted for item master approval. Your PR may be delayed until approved.
+          </div>
+          {/* Fields */}
+          {[
+            { label:"Item name", key:"name" as const, placeholder:"e.g. Standing Desk 140cm" },
+            { label:"Spec / description", key:"spec" as const, placeholder:"e.g. Electric height adj, 60kg load" },
+          ].map(f => (
+            <div key={f.key} className="flex flex-col gap-1">
+              <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color:"rgba(255,255,255,0.35)" }}>{f.label}</span>
+              <input
+                type="text"
+                value={newForm[f.key]}
+                onChange={e => setNewForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                placeholder={f.placeholder}
+                className="w-full px-3 h-8 rounded-lg text-[12px] text-white focus:outline-none"
+                style={{ background:"rgba(255,255,255,0.07)", border:"0.5px solid rgba(103,100,136,0.4)" }}
+              />
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <div className="flex flex-col gap-1 flex-1">
+              <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color:"rgba(255,255,255,0.35)" }}>Est. unit price (RM)</span>
+              <input
+                type="number"
+                value={newForm.unitPrice}
+                onChange={e => setNewForm(prev => ({ ...prev, unitPrice: e.target.value }))}
+                placeholder="0.00"
+                className="w-full px-3 h-8 rounded-lg text-[12px] font-mono text-white focus:outline-none"
+                style={{ background:"rgba(255,255,255,0.07)", border:"0.5px solid rgba(103,100,136,0.4)" }}
+              />
+            </div>
+            <div className="flex flex-col gap-1 w-24">
+              <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color:"rgba(255,255,255,0.35)" }}>UOM</span>
+              <select
+                value={newForm.uom}
+                onChange={e => setNewForm(prev => ({ ...prev, uom: e.target.value }))}
+                className="w-full px-2 h-8 rounded-lg text-[12px] text-white focus:outline-none cursor-pointer"
+                style={{ background:"rgba(255,255,255,0.07)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
+                {["unit","box","set","kg","litre","license"].map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+          </div>
+          <button
+            onClick={() => newForm.name.trim() && onRequestNew(newForm)}
+            disabled={!newForm.name.trim()}
+            className="w-full flex items-center justify-center gap-1.5 h-9 rounded-lg text-[12px] font-semibold cursor-pointer transition-opacity"
+            style={{
+              background: newForm.name.trim() ? "rgba(186,117,23,0.25)" : "rgba(255,255,255,0.05)",
+              color: newForm.name.trim() ? "#BA7517" : "rgba(255,255,255,0.3)",
+              border: `0.5px solid ${newForm.name.trim() ? "rgba(186,117,23,0.5)" : "rgba(103,100,136,0.3)"}`,
+            }}>
+            <AlertCircle size={12}/> Add to PR — flag for item master approval
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Sub-PR card (right panel) ─────────────────────────────────────────────────
 
 function SubPRCard({ sub }: { sub: typeof SUB_PRS[0] }) {
@@ -302,6 +799,26 @@ export default function NewPRPage() {
   const [followUp, setFollowUp] = React.useState<FollowUpAnswers>({
     delivery: "", budgetCode: "", budgetCustom: "",
   })
+
+  // ── Round A + B state ──
+  const [draftPRId, setDraftPRId]           = React.useState("")
+  const [confirmedItems, setConfirmedItems] = React.useState<ConfirmedItem[]>([])
+  const [roundAComplete, setRoundAComplete] = React.useState(false)
+  const [roundBComplete, setRoundBComplete] = React.useState(false)
+  const [showItemPicker, setShowItemPicker] = React.useState(false)
+  const [itemPickerQuery, setItemPickerQuery] = React.useState("")
+  const [inventorySkipped, setInventorySkipped] = React.useState(false)
+  const [questioningInput, setQuestioningInput] = React.useState("")
+  const [newItemCounter, setNewItemCounter] = React.useState(0)
+  // vendorOverrides: subPRId → { vendorName, isApproved }
+  const [vendorOverrides, setVendorOverrides] = React.useState<Record<string, { name: string; approved: boolean }>>({})
+  const [vendorPickerOpen, setVendorPickerOpen]         = React.useState<string | null>(null)
+  const [vendorSearchQuery, setVendorSearchQuery]         = React.useState("")
+  const [itemVendorPickerOpen, setItemVendorPickerOpen]   = React.useState<string | null>(null)  // item code
+  const [itemVendorSearchQuery, setItemVendorSearchQuery] = React.useState("")
+  const [browseItem, setBrowseItem]                       = React.useState<ConfirmedItem | null>(null)
+  const [browsePlatform, setBrowsePlatform]               = React.useState<"google" | "shopee" | "lazada" | "1688">("shopee")
+  const [browseLoading, setBrowseLoading]                 = React.useState(false)
 
   // null = fill remaining space | 0 = closed | >0 = fixed px width
   const [rightWidth, setRightWidth] = React.useState<number | null>(0)
@@ -390,8 +907,7 @@ export default function NewPRPage() {
 
   const handleSubmit = () => {
     if (chatState !== "confirmed") return
-    const saved = getSavedPRs()
-    const newId = buildNextPRId(saved.length)
+    const newId = draftPRId || buildNextPRId(getSavedPRs().length)
     savePR({
       id:                newId,
       title:             submittedProject || "New Purchase Request",
@@ -410,18 +926,41 @@ export default function NewPRPage() {
       createdAt:         Date.now(),
     })
     setSavedPRId(newId)
+    if (!draftPRId) setDraftPRId(newId)
     setChatState("submitting")
     setTimeout(() => setChatState("a2-pass"), 2200)
   }
 
   const handleCreate = () => {
     if (!inputValue.trim()) return
-    setRightWidth(0)                                       // collapse right panel while questioning
+    // ── Assign draft PR ID immediately ──
+    const saved = getSavedPRs()
+    const newDraftId = buildNextPRId(saved.length)
+    setDraftPRId(newDraftId)
+    savePR({
+      id: newDraftId,
+      title: projectName.trim() || autoGenerateName(inputValue) || "New Purchase Request",
+      sub: inputValue.slice(0, 70).trim(),
+      message: inputValue,
+      requester: "Lim Wei Xiang", requesterInitials: "LW",
+      date: "Today", dept: "IT",
+      amount: "0", budget: "0",
+      status: "draft", phase: "A1",
+      purchaseType: "capex", aiFlags: 0,
+      createdAt: Date.now(),
+    })
+    // ── Detect items from description ──
+    const detected = detectItemsFromDescription(inputValue)
+    setConfirmedItems(detected)
+    setRoundAComplete(false)
+    setRoundBComplete(false)
+    setInventorySkipped(false)
+    setRightWidth(0)
     setSubmittedMessage(inputValue)
     const finalProject = projectName.trim() || autoGenerateName(inputValue) || "New Purchase Request"
     setSubmittedProject(finalProject)
-    setInputValue("")                                       // clear for follow-up chat
-    setChatMessages([])                                    // fresh chat history
+    setInputValue("")
+    setChatMessages([])
     setFollowUp({ delivery: "", budgetCode: "", budgetCustom: "" })
     setChatState("questioning")
   }
@@ -441,10 +980,87 @@ export default function NewPRPage() {
   }
 
   const handleChatKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter alone → send. Shift+Enter → new line (default textarea behaviour).
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    }
+  }
+
+  // ── Round A item handlers ──
+  const handleItemQtyChange = (code: string, qty: number) => {
+    setConfirmedItems(prev => prev.map(item => item.code === code ? { ...item, qty } : item))
+  }
+  const handleItemRemove = (code: string) => {
+    setConfirmedItems(prev => prev.filter(item => item.code !== code))
+  }
+  const handleItemAdd = (master: ItemMasterEntry) => {
+    const already = confirmedItems.some(i => i.code === master.code)
+    if (!already) {
+      setConfirmedItems(prev => [...prev, { ...master, qty: master.moq, stockSkipped: false }])
+    }
+    setShowItemPicker(false)
+    setItemPickerQuery("")
+  }
+  const handleRequestNew = (data: NewItemFormData) => {
+    const counter = newItemCounter + 1
+    setNewItemCounter(counter)
+    const code = `NEW-${String(counter).padStart(3, "0")}`
+    const price = parseFloat(data.unitPrice) || 0
+    const newItem: ConfirmedItem = {
+      code, name: data.name, spec: data.spec,
+      uom: data.uom, unitPrice: price,
+      purchaseType: price >= 1000 ? "capex" : "opex",
+      glCode: price >= 1000 ? "GL-7200-CAPEX" : "GL-6100-OPEX",
+      vendorCode: "",
+      moq: 1, qty: 1, stockSkipped: true, isNew: true,
+    }
+    setConfirmedItems(prev => [...prev, newItem])
+    setShowItemPicker(false)
+    setItemPickerQuery("")
+  }
+  const handleItemVendorOverride = (itemCode: string, vendorCode: string, vendorName: string, approved: boolean) => {
+    setConfirmedItems(prev => prev.map(i => i.code === itemCode
+      ? { ...i, preferredVendorCode: vendorCode || vendorName, preferredVendorName: vendorName }
+      : i
+    ))
+    setItemVendorPickerOpen(null)
+    setItemVendorSearchQuery("")
+    // Reset group-level vendor overrides since grouping has changed
+    setVendorOverrides({})
+  }
+  // Sub-PR level vendor change → propagates preferred vendor to ALL items in that group
+  // so buildSubPRGroups naturally re-evaluates and merges/splits accordingly
+  const handleVendorOverride = (subPRId: string, vendorCode: string, vendorName: string) => {
+    const currentGroups = buildSubPRGroups(confirmedItems)
+    const group = currentGroups.find(g => g.id === subPRId)
+    if (group) {
+      const itemCodesInGroup = new Set(group.items.map(i => i.code))
+      setConfirmedItems(prev => prev.map(i =>
+        itemCodesInGroup.has(i.code)
+          ? { ...i, preferredVendorCode: vendorCode || vendorName, preferredVendorName: vendorName }
+          : i
+      ))
+    }
+    setVendorPickerOpen(null)
+    setVendorSearchQuery("")
+    setVendorOverrides({})
+  }
+  const handleConfirmAllItems = () => {
+    const valid = confirmedItems.filter(i => i.qty >= i.moq)
+    setConfirmedItems(valid)
+    setRoundAComplete(true)
+  }
+  const handleConfirmVendors = () => {
+    setRoundBComplete(true)
+  }
+
+  // ── Questioning input handler (detects /item command) ──
+  const handleQuestioningInput = (val: string) => {
+    setQuestioningInput(val)
+    if (val.endsWith("/item") || val.endsWith("@item")) {
+      setShowItemPicker(true)
+      setItemPickerQuery("")
+      setQuestioningInput("")
     }
   }
 
@@ -459,6 +1075,122 @@ export default function NewPRPage() {
     { key:"reorder", label:"Auto Reorder" },
   ]
 
+  // ── Browse results mock data ──────────────────────────────────────────────
+  type BrowseResult = {
+    id: string; title: string; seller: string; price: string; priceNum: number
+    rating: string; sold: string; delivery: string; badge?: string; url: string
+  }
+
+  const getBrowseResults = (item: ConfirmedItem, platform: "google" | "shopee" | "lazada" | "1688"): BrowseResult[] => {
+    const kw = item.name.toLowerCase()
+    const isLaptop   = /laptop|latitude|thinkpad|macbook/.test(kw)
+    const isMonitor  = /monitor|display|screen/.test(kw)
+    const isDock     = /dock|thunderbolt|hub/.test(kw)
+    const isKeyboard = /keyboard|keys/.test(kw)
+    const isPrinter  = /printer|laserjet/.test(kw)
+    const isChair    = /chair|ergonomic/.test(kw)
+    const isPaper    = /paper|a4/.test(kw)
+    const isSoftware = /microsoft|365|software|license/.test(kw)
+
+    const basePrice = item.unitPrice
+    const vary = (pct: number) => Math.round(basePrice * pct / 100) * 100
+
+    if (platform === "shopee") {
+      if (isLaptop) return [
+        { id:"s1", title:"Dell Latitude 5540 i7-13th 16GB 512GB – Local Set + Warranty",  seller:"TechMall_MY",          price:`RM ${(vary(88)).toLocaleString()}`,  priceNum:vary(88),  rating:"4.9", sold:"312 sold",   delivery:"Shipping from KL · Free",    badge:"Preferred", url:"#" },
+        { id:"s2", title:"Dell Latitude 5540 Laptop i7 16GB SSD Business – Sealed Box",    seller:"BizTech_Official",     price:`RM ${(vary(92)).toLocaleString()}`,  priceNum:vary(92),  rating:"4.8", sold:"88 sold",    delivery:"Shipping from Selangor",     badge:"Mall",      url:"#" },
+        { id:"s3", title:"Dell L5540 13th Gen Laptop – Ready Stock MY",                     seller:"digitalzone_my",       price:`RM ${(vary(85)).toLocaleString()}`,  priceNum:vary(85),  rating:"4.6", sold:"41 sold",    delivery:"Shipping from Penang",       url:"#" },
+        { id:"s4", title:"[Bundle] Dell Latitude 5540 + Bag + Mouse – Offer",              seller:"ClearanceTechHub",     price:`RM ${(vary(96)).toLocaleString()}`,  priceNum:vary(96),  rating:"4.5", sold:"17 sold",    delivery:"Shipping from KL",           url:"#" },
+      ]
+      if (isMonitor) return [
+        { id:"s1", title:`LG 27\" 4K UltraFine USB-C Monitor – MY Warranty`,               seller:"LG_Official_MY",       price:`RM ${(vary(90)).toLocaleString()}`,  priceNum:vary(90),  rating:"4.9", sold:"520 sold",   delivery:"Free · Ships from KL",       badge:"Mall",      url:"#" },
+        { id:"s2", title:`LG 27UK850-W 4K HDR Monitor USB-C – Sealed`,                     seller:"MonitorWorldMY",       price:`RM ${(vary(84)).toLocaleString()}`,  priceNum:vary(84),  rating:"4.7", sold:"203 sold",   delivery:"Free shipping",              badge:"Preferred", url:"#" },
+        { id:"s3", title:`LG UltraFine 27\" 4K IPS – Open Box Excellent Condition`,         seller:"refurb_electronics_my", price:`RM ${(vary(72)).toLocaleString()}`,  priceNum:vary(72),  rating:"4.5", sold:"34 sold",    delivery:"Shipping from Selangor",     url:"#" },
+      ]
+      if (isPaper) return [
+        { id:"s1", title:"Double A A4 80gsm Copy Paper 5 Ream/Box – Original",              seller:"PaperMart_Official",   price:`RM ${(vary(95)).toLocaleString()}`,  priceNum:vary(95),  rating:"4.9", sold:"2.1k sold",  delivery:"Free · Ships Today",         badge:"Mall",      url:"#" },
+        { id:"s2", title:"IK Plus A4 Paper 80gsm 5 Reams/Box – Bulk Order",                 seller:"OfficeSupplyMY",       price:`RM ${(vary(88)).toLocaleString()}`,  priceNum:vary(88),  rating:"4.8", sold:"1.4k sold",  delivery:"Free shipping",              badge:"Preferred", url:"#" },
+        { id:"s3", title:"A4 80gsm Paper Box (5 Reams) – Same Day Dispatch",                seller:"stationery_hub_kl",    price:`RM ${(vary(82)).toLocaleString()}`,  priceNum:vary(82),  rating:"4.6", sold:"890 sold",   delivery:"Ships from KL · Free",       url:"#" },
+        { id:"s4", title:"Mondi Rotatrim A4 Paper 80gsm – Office Bulk Pack",                seller:"BulkBuy_MY",           price:`RM ${(vary(79)).toLocaleString()}`,  priceNum:vary(79),  rating:"4.4", sold:"512 sold",   delivery:"Shipping from Shah Alam",    url:"#" },
+      ]
+      // default
+      return [
+        { id:"s1", title:`${item.name} – Authorised Seller MY`,                             seller:"TechMall_MY",          price:`RM ${(vary(88)).toLocaleString()}`,  priceNum:vary(88),  rating:"4.8", sold:"156 sold",   delivery:"Free · Ships from KL",       badge:"Mall",      url:"#" },
+        { id:"s2", title:`${item.name} – Original Sealed`,                                  seller:"OfficialbrandsMY",     price:`RM ${(vary(91)).toLocaleString()}`,  priceNum:vary(91),  rating:"4.7", sold:"72 sold",    delivery:"Free shipping",              badge:"Preferred", url:"#" },
+        { id:"s3", title:`${item.name} – Ready Stock`,                                      seller:"local_tech_dealer",    price:`RM ${(vary(84)).toLocaleString()}`,  priceNum:vary(84),  rating:"4.5", sold:"38 sold",    delivery:"Shipping from Selangor",     url:"#" },
+      ]
+    }
+
+    if (platform === "lazada") {
+      if (isLaptop) return [
+        { id:"l1", title:"Dell Latitude 5540 i7 16GB 512GB SSD – LazMall Official",         seller:"Dell LazMall",         price:`RM ${(vary(93)).toLocaleString()}`,  priceNum:vary(93),  rating:"4.9", sold:"421 sold",   delivery:"Free · LazMall Guarantee",   badge:"LazMall",   url:"#" },
+        { id:"l2", title:"Dell Latitude 5540 Business Laptop – Authorised Reseller",        seller:"CompuZone MY",         price:`RM ${(vary(87)).toLocaleString()}`,  priceNum:vary(87),  rating:"4.7", sold:"134 sold",   delivery:"Free shipping",              url:"#" },
+        { id:"l3", title:"Dell L5540 i7-13th Gen Laptop – Sealed + 1Y Warranty",            seller:"itech_solutions",      price:`RM ${(vary(85)).toLocaleString()}`,  priceNum:vary(85),  rating:"4.6", sold:"67 sold",    delivery:"Shipping from KL",           url:"#" },
+      ]
+      if (isPaper) return [
+        { id:"l1", title:"Double A A4 80gsm 5 Reams/Box – LazMall",                         seller:"Double A LazMall",     price:`RM ${(vary(96)).toLocaleString()}`,  priceNum:vary(96),  rating:"4.9", sold:"3.2k sold",  delivery:"Free · Same Day",            badge:"LazMall",   url:"#" },
+        { id:"l2", title:"IK Plus A4 80gsm Paper Box 5 Reams – Bulk",                       seller:"OfficeWorld LazMall",  price:`RM ${(vary(89)).toLocaleString()}`,  priceNum:vary(89),  rating:"4.8", sold:"1.8k sold",  delivery:"Free shipping",              badge:"LazMall",   url:"#" },
+        { id:"l3", title:"Mondi Rotatrim A4 80gsm Copy Paper – Office Pack",                 seller:"paper_supply_my",      price:`RM ${(vary(81)).toLocaleString()}`,  priceNum:vary(81),  rating:"4.5", sold:"740 sold",   delivery:"Shipping from Selangor",     url:"#" },
+      ]
+      return [
+        { id:"l1", title:`${item.name} – LazMall Official`,                                  seller:"Brand LazMall",       price:`RM ${(vary(92)).toLocaleString()}`,  priceNum:vary(92),  rating:"4.9", sold:"288 sold",   delivery:"Free · LazMall Guarantee",   badge:"LazMall",   url:"#" },
+        { id:"l2", title:`${item.name} – Authorised Reseller`,                               seller:"TechZone MY",         price:`RM ${(vary(87)).toLocaleString()}`,  priceNum:vary(87),  rating:"4.7", sold:"93 sold",    delivery:"Free shipping",              url:"#" },
+        { id:"l3", title:`${item.name} – Ready Stock MY`,                                    seller:"eStore_KL",           price:`RM ${(vary(83)).toLocaleString()}`,  priceNum:vary(83),  rating:"4.6", sold:"45 sold",    delivery:"Ships from KL",              url:"#" },
+      ]
+    }
+
+    if (platform === "1688") {
+      if (isLaptop) return [
+        { id:"c1", title:"戴尔 Latitude 5540 i7-13th 商用笔记本 批发",                       seller:"深圳华南电脑批发",     price:`RM ${(vary(48)).toLocaleString()}`,  priceNum:vary(48),  rating:"4.8", sold:"900+ sold",  delivery:"Sea freight ~25 days",       badge:"Gold Supplier", url:"#" },
+        { id:"c2", title:"Dell L5540 企业采购 整机 定制配置",                                  seller:"广州商用IT采购",       price:`RM ${(vary(52)).toLocaleString()}`,  priceNum:vary(52),  rating:"4.7", sold:"310 sold",   delivery:"Air freight ~7 days",        url:"#" },
+        { id:"c3", title:"笔记本电脑 i7 16G 512G 商务 批量议价",                              seller:"联想华硕戴尔批发中心", price:`RM ${(vary(44)).toLocaleString()}`,  priceNum:vary(44),  rating:"4.5", sold:"1.2k sold",  delivery:"Sea freight ~30 days",       url:"#" },
+      ]
+      if (isPaper) return [
+        { id:"c1", title:"A4 复印纸 80克 整箱批发 500张/包×5",                               seller:"广州纸业批发",         price:`RM ${(vary(38)).toLocaleString()}`,  priceNum:vary(38),  rating:"4.9", sold:"50k+ sold",  delivery:"Sea freight ~20 days",       badge:"Gold Supplier", url:"#" },
+        { id:"c2", title:"办公用纸 A4 80g 白度95 整件起批",                                    seller:"山东纸业",             price:`RM ${(vary(32)).toLocaleString()}`,  priceNum:vary(32),  rating:"4.7", sold:"30k sold",   delivery:"Sea freight ~25 days",       url:"#" },
+        { id:"c3", title:"A4纸 双面打印 5令/箱 大量采购优惠",                                  seller:"东莞文具批发",         price:`RM ${(vary(35)).toLocaleString()}`,  priceNum:vary(35),  rating:"4.6", sold:"18k sold",   delivery:"Air freight ~8 days",        url:"#" },
+      ]
+      return [
+        { id:"c1", title:`${item.name.slice(0,12)} 批发 企业采购`,                            seller:"深圳品质批发",         price:`RM ${(vary(45)).toLocaleString()}`,  priceNum:vary(45),  rating:"4.8", sold:"1.5k sold",  delivery:"Sea freight ~25 days",       badge:"Gold Supplier", url:"#" },
+        { id:"c2", title:`${item.name.slice(0,12)} 整件起批 工厂直销`,                         seller:"广东直供",             price:`RM ${(vary(40)).toLocaleString()}`,  priceNum:vary(40),  rating:"4.6", sold:"620 sold",   delivery:"Air freight ~7 days",        url:"#" },
+        { id:"c3", title:`${item.name.slice(0,12)} 企业定制 量大议价`,                         seller:"义乌品质货源",         price:`RM ${(vary(36)).toLocaleString()}`,  priceNum:vary(36),  rating:"4.5", sold:"980 sold",   delivery:"Sea freight ~30 days",       url:"#" },
+      ]
+    }
+
+    // Google Shopping
+    if (isLaptop) return [
+      { id:"g1", title:"Dell Latitude 5540 – Tech Solutions MY (Authorised)",                seller:"techsolutionsmy.com",  price:`RM ${(vary(100)).toLocaleString()}`, priceNum:vary(100), rating:"",    sold:"In stock",   delivery:"Delivery 3–5 days",          badge:"Authorised", url:"#" },
+      { id:"g2", title:"Dell Latitude 5540 – CompuZone Malaysia",                            seller:"compuzone.com.my",     price:`RM ${(vary(94)).toLocaleString()}`,  priceNum:vary(94),  rating:"",    sold:"In stock",   delivery:"Free delivery KL/Selangor",  url:"#" },
+      { id:"g3", title:"Dell L5540 i7 16GB – Harvey Norman Malaysia",                        seller:"harveynorman.com.my",  price:`RM ${(vary(98)).toLocaleString()}`,  priceNum:vary(98),  rating:"",    sold:"In stock",   delivery:"Click & collect or delivery", url:"#" },
+      { id:"g4", title:"Dell Latitude 5540 Business – LYN Marketplace",                      seller:"forum.lowyat.net",     price:`RM ${(vary(86)).toLocaleString()}`,  priceNum:vary(86),  rating:"",    sold:"1 unit",     delivery:"Self-collect Petaling Jaya",  url:"#" },
+    ]
+    return [
+      { id:"g1", title:`${item.name} – Official MY Distributor`,                             seller:"official-store.com.my", price:`RM ${(vary(100)).toLocaleString()}`,priceNum:vary(100), rating:"",   sold:"In stock",   delivery:"Delivery 3–5 working days",  badge:"Official",  url:"#" },
+      { id:"g2", title:`${item.name} – Authorised Reseller`,                                 seller:"techstore.com.my",     price:`RM ${(vary(93)).toLocaleString()}`,  priceNum:vary(93),  rating:"",    sold:"In stock",   delivery:"Free delivery above RM 200", url:"#" },
+      { id:"g3", title:`${item.name} – Low Price MY`,                                        seller:"priceman.com.my",      price:`RM ${(vary(87)).toLocaleString()}`,  priceNum:vary(87),  rating:"",    sold:"In stock",   delivery:"Ships from KL",              url:"#" },
+    ]
+  }
+
+  const handleOpenBrowse = (item: ConfirmedItem) => {
+    setBrowseItem(item)
+    setBrowsePlatform("shopee")
+    setBrowseLoading(true)
+    setRightWidth(null)   // open right panel
+    setTimeout(() => setBrowseLoading(false), 600)
+  }
+
+  const handleBrowsePlatformChange = (p: "google" | "shopee" | "lazada" | "1688") => {
+    setBrowsePlatform(p)
+    setBrowseLoading(true)
+    setTimeout(() => setBrowseLoading(false), 400)
+  }
+
+  const handleSelectBrowseResult = (result: BrowseResult) => {
+    if (!browseItem) return
+    handleItemVendorOverride(browseItem.code, result.seller, result.seller, false)
+    setBrowseItem(null)
+  }
+
   const rightPanelStyle: React.CSSProperties = {
     background:"#F7F7FE", borderRadius:10, overflow:"hidden",
     display: rightWidth === 0 ? "none" : "flex",
@@ -471,7 +1203,7 @@ export default function NewPRPage() {
     <div ref={wrapperRef} className="flex min-h-0" style={{ height:"calc(100vh - 20px)" }}>
 
       {/* ── Chat — flex:1, content centered at max 600px ── */}
-      <div className="flex flex-col min-h-0 flex-1 min-w-[500px]">
+      <div className="flex flex-col min-h-0 flex-1 min-w-[500px] relative">
         <div className="flex flex-col min-h-0 h-full w-full max-w-[700px] mx-auto"
           style={{ padding: chatState === "idle" ? "0 16px 16px" : "24px 16px 16px", gap:0 }}>
 
@@ -479,6 +1211,17 @@ export default function NewPRPage() {
         {chatState === "idle" ? (
           <div className="flex-1 overflow-y-auto flex flex-col items-center min-h-0"
             style={{ paddingTop:100, paddingBottom:24, gap:24 }}>
+
+            {/* Back button */}
+            <div className="absolute top-5 left-5">
+              <button onClick={() => router.push("/p2p/purchase-requests")}
+                className="flex items-center gap-1.5 cursor-pointer transition-opacity hover:opacity-70">
+                <div className="size-6 rounded-lg flex items-center justify-center">
+                  <ChevronLeft size={16} color="#FFFFFF" strokeWidth={1.67}/>
+                </div>
+                <span className="text-[12px] font-light text-white">Purchase Requests</span>
+              </button>
+            </div>
 
             {/* Jomie logomark */}
             <div className="shrink-0" style={{ width:52, height:52 }}>
@@ -638,7 +1381,7 @@ export default function NewPRPage() {
             </button>
             <span className="px-2 py-0.5 rounded-md text-[12px]"
               style={{ background: T.indigoBadgeBg, color: T.indigoBadgeFg }}>
-              {savedPRId ? `${savedPRId} · Pending` : "PR-2026-NEW · Draft"}
+              {savedPRId ? `${savedPRId} · Pending` : draftPRId ? `${draftPRId} · Draft` : "Draft"}
             </span>
           </div>
           {/* Editable PR title — InlineEditableTitle component */}
@@ -694,116 +1437,466 @@ export default function NewPRPage() {
               </div>
 
               {chatState === "questioning" ? (
-                /* ── Live questions UI ── */
-                <div className="flex flex-col gap-4 p-4 rounded-xl"
-                  style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
+                /* ── Round A + B UI ── */
+                <div className="flex flex-col gap-4">
 
-                  <p className="text-[14px] text-white leading-5">
-                    Got it — <strong>{submittedProject}</strong>. Before I prepare the sub-PRs,
-                    I need to confirm two quick details.
-                  </p>
+                  {/* Progress strip */}
+                  <ProgressStrip roundADone={roundAComplete} roundBDone={roundBComplete}/>
 
-                  {/* Q1: Delivery timeline */}
-                  <div className="space-y-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider"
-                      style={{ color: T.dimText }}>
-                      1 · When is delivery needed?
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {DELIVERY_OPTIONS.map(opt => (
-                        <button key={opt}
-                          onClick={() => setFollowUp(f => ({ ...f, delivery: opt }))}
-                          className="px-3 py-1.5 rounded-lg text-[12px] transition-all cursor-pointer"
-                          style={{
-                            background: followUp.delivery === opt ? T.purple : "rgba(255,255,255,0.06)",
-                            color:      followUp.delivery === opt ? "#fff"    : T.dimText,
-                            border:    `1px solid ${followUp.delivery === opt ? T.purple : "rgba(103,100,136,0.3)"}`,
-                            fontFamily: "Inter, sans-serif",
-                          }}>
-                          {opt}
-                        </button>
+                  {/* ── Round A: Item Identification ── */}
+                  {!roundAComplete ? (
+                    <div className="flex flex-col gap-3 p-4 rounded-xl"
+                      style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
+                      <div className="text-[13px] text-white leading-5">
+                        {confirmedItems.length > 0 ? (
+                          <>I found <strong>{confirmedItems.length} item{confirmedItems.length !== 1 ? "s" : ""}</strong> from your description. Confirm quantities and check stock before we proceed.</>
+                        ) : (
+                          <>I couldn{"'"}t detect specific items from your description. Use <strong>/item</strong> below to search the item master, or describe what you need more specifically.</>
+                        )}
+                      </div>
+
+                      {/* Item cards */}
+                      {confirmedItems.map(item => (
+                        <ItemCard
+                          key={item.code}
+                          item={item}
+                          inventorySkipped={inventorySkipped}
+                          onQtyChange={handleItemQtyChange}
+                          onRemove={handleItemRemove}
+                          onSkipInventory={() => setInventorySkipped(true)}
+                        />
                       ))}
-                    </div>
-                    {followUp.delivery && (
-                      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: T.teal }}>
-                        <Check size={11} strokeWidth={2.5}/> {followUp.delivery}
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Q2: Budget code */}
-                  <div className="space-y-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider"
-                      style={{ color: T.dimText }}>
-                      2 · Which budget code applies?
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {BUDGET_OPTIONS.map(opt => (
-                        <button key={opt}
-                          onClick={() => setFollowUp(f => ({ ...f, budgetCode: opt }))}
-                          className="px-3 py-1.5 rounded-lg text-[12px] font-mono transition-all cursor-pointer"
+                      {/* Add item button */}
+                      <button
+                        onClick={() => { setShowItemPicker(true); setItemPickerQuery("") }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] cursor-pointer transition-colors w-fit"
+                        style={{ background:"rgba(93,94,244,0.1)", color:"#A5A6F6", border:"0.5px solid rgba(93,94,244,0.35)" }}>
+                        <Plus size={12}/>
+                        Add item <span className="font-mono opacity-60 text-[11px]">· type /item to search</span>
+                      </button>
+
+                      {/* Confirm button */}
+                      {confirmedItems.length > 0 && (
+                        <button
+                          onClick={handleConfirmAllItems}
+                          disabled={confirmedItems.some(i => i.qty < i.moq || i.qty === 0)}
+                          className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-semibold text-white transition-all cursor-pointer"
                           style={{
-                            background: followUp.budgetCode === opt ? T.purple : "rgba(255,255,255,0.06)",
-                            color:      followUp.budgetCode === opt ? "#fff"    : T.dimText,
-                            border:    `1px solid ${followUp.budgetCode === opt ? T.purple : "rgba(103,100,136,0.3)"}`,
+                            background: confirmedItems.every(i => i.qty >= i.moq && i.qty > 0) ? T.purple : "rgba(93,94,244,0.3)",
+                            opacity: confirmedItems.some(i => i.qty < i.moq || i.qty === 0) ? 0.5 : 1,
                           }}>
-                          {opt}
+                          <Check size={14} strokeWidth={2.5}/>
+                          Confirm {confirmedItems.length} item{confirmedItems.length !== 1 ? "s" : ""} — proceed to vendor matching
+                          <ArrowRight size={14}/>
                         </button>
-                      ))}
+                      )}
                     </div>
-                    {/* Custom budget code input */}
-                    {followUp.budgetCode === "Other" && (
-                      <input
-                        type="text"
-                        value={followUp.budgetCustom}
-                        onChange={e => setFollowUp(f => ({ ...f, budgetCustom: e.target.value }))}
-                        placeholder="e.g. MKTG-OPEX-2024"
-                        autoFocus
-                        className="w-full h-9 px-3 rounded-lg text-[12px] font-mono focus:outline-none"
-                        style={{
-                          background: "rgba(255,255,255,0.07)",
-                          border: `1px solid ${T.border}`,
-                          color: "white",
-                        }}
-                      />
-                    )}
-                    {followUp.budgetCode && followUp.budgetCode !== "Other" && (
-                      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: T.teal }}>
-                        <Check size={11} strokeWidth={2.5}/> {followUp.budgetCode}
+                  ) : (
+                    /* Round A complete — collapsed summary with edit link */
+                    <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl"
+                      style={{ background:"rgba(29,158,117,0.08)", border:"0.5px solid rgba(29,158,117,0.3)" }}>
+                      <div className="flex items-center gap-2.5">
+                        <div className="size-4 rounded-full flex items-center justify-center shrink-0" style={{ background: T.teal }}>
+                          <Check size={8} color="#fff" strokeWidth={3}/>
+                        </div>
+                        <span className="text-[12px]" style={{ color: T.dimText }}>
+                          <span className="text-white font-medium">{confirmedItems.length} items confirmed</span>
+                          <span className="mx-1.5" style={{ color:"rgba(255,255,255,0.2)" }}>·</span>
+                          Total <span className="font-mono text-white">RM {confirmedItems.reduce((s,i) => s+i.qty*i.unitPrice, 0).toLocaleString()}</span>
+                        </span>
                       </div>
-                    )}
-                    {followUp.budgetCode === "Other" && followUp.budgetCustom && (
-                      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: T.teal }}>
-                        <Check size={11} strokeWidth={2.5}/> {followUp.budgetCustom}
-                      </div>
-                    )}
-                  </div>
+                      <button
+                        onClick={() => { setRoundAComplete(false); setRoundBComplete(false) }}
+                        className="text-[10px] font-medium cursor-pointer transition-opacity hover:opacity-70 shrink-0"
+                        style={{ color:"#A5A6F6" }}>
+                        Edit items
+                      </button>
+                    </div>
+                  )}
 
-                  {/* Continue button — appears when both answered */}
-                  <div className={cn("transition-all duration-300", allQuestionsAnswered ? "opacity-100" : "opacity-40 pointer-events-none")}>
-                    <button
-                      onClick={allQuestionsAnswered ? startProcessing : undefined}
-                      className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-semibold text-white transition-all"
-                      style={{
-                        background: allQuestionsAnswered ? T.teal : "rgba(29,158,117,0.3)",
-                        cursor: allQuestionsAnswered ? "pointer" : "default",
-                      }}>
-                      <Sparkles size={14} strokeWidth={2}/>
-                      Analyse request
-                      <ArrowRight size={14} strokeWidth={2}/>
-                    </button>
-                  </div>
+                  {/* ── Round B: Vendor Matching ── */}
+                  {roundAComplete && !roundBComplete && (() => {
+                    const groups = buildSubPRGroups(confirmedItems)
+                    const hasMyInvoisIssue = groups.some(g => !g.myInvois && !!g.vendorCode && g.vendorCode !== "" && !(vendorOverrides[g.id]?.approved === true))
+                    return (
+                      <div className="flex flex-col gap-3 p-4 rounded-xl"
+                        style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
+                        <div className="text-[13px] text-white leading-5">
+                          I{"'"}ve grouped your {confirmedItems.length} item{confirmedItems.length !== 1 ? "s" : ""} into{" "}
+                          <strong>{groups.length} sub-PR{groups.length !== 1 ? "s" : ""}</strong> by vendor and approval tier.
+                          Review and suggest a different vendor if needed — final decision is confirmed during Phase C.
+                        </div>
+
+                        {/* Sub-PR cards (flat, one per group) */}
+                        {groups.map(group => {
+                          // vendor display comes from group (already resolved via effectiveVendorCode on items)
+                          const displayName     = group.vendorName
+                          const displayApproved = group.isApproved
+                          const isPickerOpen    = vendorPickerOpen === group.id
+                          // Has any item in this group a manual vendor preference set?
+                          const hasItemOverride = group.items.some(i => !!i.preferredVendorCode)
+
+                          // Relevant vendors: those that supply any item in this group (by original item master code)
+                          const relevantCodes = new Set(group.items.map(i => i.vendorCode).filter(Boolean))
+                          const sLower = vendorSearchQuery.toLowerCase()
+                          const relevantVendors = VENDOR_MASTER.filter(v =>
+                            relevantCodes.has(v.code) && v.name.toLowerCase().includes(sLower)
+                          )
+                          const otherVendors = VENDOR_MASTER.filter(v =>
+                            !relevantCodes.has(v.code) && v.name.toLowerCase().includes(sLower)
+                          )
+                          const tierColor = group.tier === "FM + CFO" ? { bg:"#EFF6FF", fg:"#1D4ED8" }
+                                          : group.tier === "Finance Manager" ? { bg:"#EEF4FF", fg:"#3538CD" }
+                                          : { bg:"#F0FDF4", fg:"#16A34A" }
+
+                          return (
+                            <div key={group.id} className="rounded-xl overflow-hidden"
+                              style={{ border:"0.5px solid rgba(103,100,136,0.3)", background:"rgba(255,255,255,0.03)" }}>
+
+                              {/* Sub-PR header */}
+                              <div className="flex items-center justify-between px-3 py-2.5 border-b"
+                                style={{ borderColor:"rgba(103,100,136,0.15)" }}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[9px] font-mono font-semibold" style={{ color:"rgba(255,255,255,0.4)" }}>{group.id}</span>
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                                    style={{ background: tierColor.bg, color: tierColor.fg }}>
+                                    {group.tier}
+                                  </span>
+                                </div>
+                                <span className="text-[12px] font-mono font-semibold text-white">
+                                  RM {group.total.toLocaleString()}
+                                </span>
+                              </div>
+
+                              {/* Item lines — each item has its own per-item vendor button */}
+                              <div className="flex flex-col px-3 py-2">
+                                {group.items.map(item => {
+                                  const itemPickerOpen = itemVendorPickerOpen === item.code
+                                  const hasOverride = !!item.preferredVendorCode
+                                  const iLower = itemVendorSearchQuery.toLowerCase()
+                                  // For per-item picker: all vendors are shown (any can supply any item as a preference)
+                                  const pickerVendors = VENDOR_MASTER.filter(v =>
+                                    !iLower || v.name.toLowerCase().includes(iLower)
+                                  )
+                                  return (
+                                    <div key={item.code} className="flex flex-col py-1.5 border-b last:border-0"
+                                      style={{ borderColor:"rgba(103,100,136,0.1)" }}>
+                                      <div className="flex items-center gap-1.5 text-[10px]">
+                                        {item.isNew
+                                          ? <AlertCircle size={8} style={{ color:"#BA7517", flexShrink:0 }}/>
+                                          : <div className="size-1 rounded-full shrink-0" style={{ background:"rgba(255,255,255,0.3)" }}/>
+                                        }
+                                        <span className="flex-1 truncate" style={{ color: item.isNew ? "#BA7517" : "rgba(255,255,255,0.65)" }}>
+                                          {item.name}
+                                          {item.isNew && <span className="ml-1 text-[8px]">(new item request)</span>}
+                                        </span>
+                                        <span className="font-mono shrink-0" style={{ color:"rgba(255,255,255,0.35)" }}>×{item.qty}</span>
+                                        <span className="font-mono shrink-0" style={{ color:"rgba(255,255,255,0.5)" }}>
+                                          {item.unitPrice > 0 ? `RM ${(item.qty * item.unitPrice).toLocaleString()}` : "Price TBD"}
+                                        </span>
+                                      </div>
+                                      {/* Per-item vendor hint + change buttons */}
+                                      <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-0.5 ml-3">
+                                        {hasOverride && (
+                                          <span className="text-[8px] font-semibold px-1 py-0.5 rounded"
+                                            style={{ background:"rgba(93,94,244,0.2)", color:"#A5A6F6" }}>
+                                            → {item.preferredVendorName}
+                                          </span>
+                                        )}
+                                        {/* Approved-vendor picker toggle */}
+                                        <button
+                                          onClick={() => {
+                                            setItemVendorPickerOpen(itemPickerOpen ? null : item.code)
+                                            setItemVendorSearchQuery("")
+                                          }}
+                                          className="text-[8px] cursor-pointer transition-opacity hover:opacity-70"
+                                          style={{ color: hasOverride ? "rgba(255,255,255,0.3)" : "#A5A6F6" }}>
+                                          {hasOverride ? "change vendor" : "from approved list"}
+                                        </button>
+                                        {/* Browse online */}
+                                        <button
+                                          onClick={() => handleOpenBrowse(item)}
+                                          className="flex items-center gap-0.5 text-[8px] cursor-pointer transition-opacity hover:opacity-70"
+                                          style={{ color:"rgba(255,255,255,0.45)" }}>
+                                          <Search size={7}/>
+                                          browse Shopee / Lazada / 1688
+                                        </button>
+                                        {hasOverride && (
+                                          <button
+                                            onClick={() => {
+                                              setConfirmedItems(prev => prev.map(i =>
+                                                i.code === item.code
+                                                  ? { ...i, preferredVendorCode: undefined, preferredVendorName: undefined }
+                                                  : i
+                                              ))
+                                              setVendorOverrides({})
+                                            }}
+                                            className="text-[8px] cursor-pointer transition-opacity hover:opacity-70"
+                                            style={{ color:"rgba(255,255,255,0.2)" }}>
+                                            ✕ reset
+                                          </button>
+                                        )}
+                                      </div>
+                                      {/* Per-item vendor picker dropdown */}
+                                      {itemPickerOpen && (
+                                        <div className="mt-1.5 ml-3 rounded-lg overflow-hidden"
+                                          style={{ border:"0.5px solid rgba(103,100,136,0.5)", background:"#1A1740" }}>
+                                          <div className="flex items-center gap-1.5 px-2 py-1.5 border-b"
+                                            style={{ borderColor:"rgba(103,100,136,0.3)" }}>
+                                            <Search size={10} style={{ color:"rgba(255,255,255,0.3)" }}/>
+                                            <input
+                                              autoFocus
+                                              type="text"
+                                              value={itemVendorSearchQuery}
+                                              onChange={e => setItemVendorSearchQuery(e.target.value)}
+                                              placeholder="Search vendor to source from…"
+                                              className="flex-1 bg-transparent text-[11px] text-white placeholder-gray-500 border-0 focus:outline-none"
+                                            />
+                                          </div>
+                                          <div className="px-2 pt-1.5 pb-0.5">
+                                            <span className="text-[8px] font-semibold uppercase tracking-wider"
+                                              style={{ color:"rgba(255,255,255,0.25)" }}>
+                                              Select preferred vendor for this item
+                                            </span>
+                                          </div>
+                                          <div className="overflow-y-auto" style={{ maxHeight:130 }}>
+                                            {pickerVendors.map(v => (
+                                              <button key={v.code}
+                                                onClick={() => handleItemVendorOverride(item.code, v.code, v.name, v.approved)}
+                                                className="w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors"
+                                                style={{ background:"transparent" }}
+                                                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                                <div className="size-1.5 rounded-full shrink-0"
+                                                  style={{ background: v.approved ? "#1D9E75" : "#BA7517" }}/>
+                                                <span className="text-[11px] text-white flex-1 truncate">{v.name}</span>
+                                                {v.approved
+                                                  ? <span className="text-[8px] shrink-0" style={{ color:T.teal }}>Approved</span>
+                                                  : <span className="text-[8px] shrink-0" style={{ color:"#BA7517" }}>Unapproved</span>
+                                                }
+                                              </button>
+                                            ))}
+                                            {/* Custom vendor */}
+                                            {itemVendorSearchQuery.length > 2 && !VENDOR_MASTER.some(v => v.name.toLowerCase() === itemVendorSearchQuery.toLowerCase()) && (
+                                              <button
+                                                onClick={() => handleItemVendorOverride(item.code, itemVendorSearchQuery, itemVendorSearchQuery, false)}
+                                                className="w-full flex items-center gap-2 px-2 py-1.5 border-t transition-colors"
+                                                style={{ borderColor:"rgba(103,100,136,0.2)", background:"transparent" }}
+                                                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                                <Plus size={9} style={{ color:"#BA7517" }}/>
+                                                <span className="text-[11px]" style={{ color:"#BA7517" }}>
+                                                  Suggest "{itemVendorSearchQuery}"
+                                                </span>
+                                                <span className="text-[9px] ml-auto" style={{ color:"rgba(255,255,255,0.3)" }}>Unapproved</span>
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+
+                              {/* Vendor row */}
+                              <div className="px-3 py-2 border-t" style={{ borderColor:"rgba(103,100,136,0.15)", background:"rgba(0,0,0,0.12)" }}>
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <div className="size-1.5 rounded-full shrink-0"
+                                      style={{ background: displayApproved ? "#1D9E75" : group.vendorCode ? "#BA7517" : "rgba(255,255,255,0.3)" }}/>
+                                    <span className="text-[10px] font-medium truncate"
+                                      style={{ color: hasItemOverride ? "#A5A6F6" : group.vendorCode ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.35)" }}>
+                                      {displayName}
+                                    </span>
+                                    {hasItemOverride && (
+                                      <span className="text-[8px] font-semibold shrink-0 px-1 py-0.5 rounded"
+                                        style={{ background:"rgba(93,94,244,0.2)", color:"#A5A6F6" }}>
+                                        Your preference
+                                      </span>
+                                    )}
+                                    {!override && displayApproved && (
+                                      <span className="text-[8px] shrink-0" style={{ color:T.teal }}>✓ Approved</span>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      setVendorPickerOpen(isPickerOpen ? null : group.id)
+                                      setVendorSearchQuery("")
+                                    }}
+                                    className="text-[9px] font-medium cursor-pointer transition-opacity hover:opacity-70 shrink-0"
+                                    style={{ color:"#A5A6F6" }}>
+                                    {hasItemOverride ? "Change" : "Suggest vendor"}
+                                  </button>
+                                </div>
+
+                                {hasItemOverride && !displayApproved && (
+                                  <div className="flex items-center gap-1 text-[9px]" style={{ color:"#BA7517" }}>
+                                    <AlertCircle size={8}/> Not on approved list — sourcing approval required
+                                  </div>
+                                )}
+                                {hasItemOverride && (
+                                  <div className="text-[9px] mt-0.5" style={{ color:"rgba(255,255,255,0.25)" }}>
+                                    Final vendor confirmed by approver in Phase C
+                                  </div>
+                                )}
+
+                                {/* Vendor picker */}
+                                {isPickerOpen && (
+                                  <div className="mt-2 rounded-lg overflow-hidden" style={{ border:"0.5px solid rgba(103,100,136,0.5)", background:"#1A1740" }}>
+                                    <div className="flex items-center gap-1.5 px-2 py-1.5 border-b" style={{ borderColor:"rgba(103,100,136,0.3)" }}>
+                                      <Search size={10} style={{ color:"rgba(255,255,255,0.3)" }}/>
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        value={vendorSearchQuery}
+                                        onChange={e => setVendorSearchQuery(e.target.value)}
+                                        placeholder="Search vendors…"
+                                        className="flex-1 bg-transparent text-[11px] text-white placeholder-gray-500 border-0 focus:outline-none"
+                                      />
+                                    </div>
+                                    <div className="overflow-y-auto" style={{ maxHeight:160 }}>
+                                      {/* Suggested: vendors that supply items in this group */}
+                                      {relevantVendors.length > 0 && (
+                                        <>
+                                          <div className="px-2 pt-2 pb-1">
+                                            <span className="text-[8px] font-semibold uppercase tracking-wider"
+                                              style={{ color:"rgba(255,255,255,0.3)" }}>
+                                              Suggested — supply these items
+                                            </span>
+                                          </div>
+                                          {relevantVendors.map(v => (
+                                            <button key={v.code}
+                                              onClick={() => handleVendorOverride(group.id, v.code, v.name)}
+                                              className="w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors"
+                                              style={{ background:"transparent" }}
+                                              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                                              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                              <div className="size-1.5 rounded-full shrink-0"
+                                                style={{ background: v.approved ? "#1D9E75" : "#BA7517" }}/>
+                                              <span className="text-[11px] text-white flex-1 truncate">{v.name}</span>
+                                              {v.approved
+                                                ? <span className="text-[8px] shrink-0" style={{ color:T.teal }}>Approved</span>
+                                                : <span className="text-[8px] shrink-0" style={{ color:"#BA7517" }}>Unapproved</span>
+                                              }
+                                            </button>
+                                          ))}
+                                        </>
+                                      )}
+                                      {/* Other vendors */}
+                                      {otherVendors.length > 0 && (
+                                        <>
+                                          <div className="px-2 pt-2 pb-1 border-t" style={{ borderColor:"rgba(103,100,136,0.15)" }}>
+                                            <span className="text-[8px] font-semibold uppercase tracking-wider"
+                                              style={{ color:"rgba(255,255,255,0.2)" }}>
+                                              Other vendors
+                                            </span>
+                                          </div>
+                                          {otherVendors.map(v => (
+                                            <button key={v.code}
+                                              onClick={() => handleVendorOverride(group.id, v.code, v.name)}
+                                              className="w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors"
+                                              style={{ background:"transparent", opacity:0.7 }}
+                                              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.opacity = "1" }}
+                                              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.opacity = "0.7" }}>
+                                              <div className="size-1.5 rounded-full shrink-0"
+                                                style={{ background: v.approved ? "#1D9E75" : "#BA7517" }}/>
+                                              <span className="text-[11px] text-white flex-1 truncate">{v.name}</span>
+                                              {!v.approved && <span className="text-[8px] shrink-0" style={{ color:"#BA7517" }}>Unapproved</span>}
+                                            </button>
+                                          ))}
+                                        </>
+                                      )}
+                                      {/* Custom vendor */}
+                                      {vendorSearchQuery.length > 2 && !VENDOR_MASTER.some(v => v.name.toLowerCase() === vendorSearchQuery.toLowerCase()) && (
+                                        <button
+                                          onClick={() => handleVendorOverride(group.id, vendorSearchQuery, vendorSearchQuery)}
+                                          className="w-full flex items-center gap-2 px-2 py-1.5 text-left border-t transition-colors"
+                                          style={{ borderColor:"rgba(103,100,136,0.2)", background:"transparent" }}
+                                          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                          <Plus size={9} style={{ color:"#BA7517" }}/>
+                                          <span className="text-[11px]" style={{ color:"#BA7517" }}>
+                                            Suggest "{vendorSearchQuery}"
+                                          </span>
+                                          <span className="text-[9px] ml-auto shrink-0" style={{ color:"rgba(255,255,255,0.3)" }}>Unapproved</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+
+                        {/* MyInvois warning */}
+                        {hasMyInvoisIssue && (
+                          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg"
+                            style={{ background:T.amberLight, border:`0.5px solid ${T.amber}55` }}>
+                            <TriangleAlert size={11} style={{ color:T.amber, marginTop:1, flexShrink:0 }}/>
+                            <span className="text-[11px]" style={{ color:T.amberText }}>
+                              One or more vendors are not registered on MyInvois. Request e-invoice confirmation before PO issuance to protect your SST input credit claim.
+                            </span>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleConfirmVendors}
+                          className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-semibold text-white transition-all cursor-pointer"
+                          style={{ background: T.teal }}>
+                          <Check size={14} strokeWidth={2.5}/>
+                          Confirm vendor & sub-PR grouping
+                          <ArrowRight size={14}/>
+                        </button>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Round B complete — show Analyse button */}
+                  {roundBComplete && (
+                    <>
+                      <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl"
+                        style={{ background:"rgba(29,158,117,0.08)", border:"0.5px solid rgba(29,158,117,0.3)" }}>
+                        <div className="flex items-center gap-2.5">
+                          <div className="size-4 rounded-full flex items-center justify-center shrink-0" style={{ background: T.teal }}>
+                            <Check size={8} color="#fff" strokeWidth={3}/>
+                          </div>
+                          <span className="text-[12px]" style={{ color: T.dimText }}>
+                            Vendor confirmed — <span className="text-white font-medium">{[...new Set(confirmedItems.map(i=>i.vendorCode))].map(vc=>VENDOR_MASTER.find(v=>v.code===vc)?.name).join(", ")}</span>
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setRoundBComplete(false)}
+                          className="text-[10px] font-medium cursor-pointer transition-opacity hover:opacity-70 shrink-0"
+                          style={{ color:"#A5A6F6" }}>
+                          Edit vendor
+                        </button>
+                      </div>
+                      <button
+                        onClick={startProcessing}
+                        className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-semibold text-white transition-all cursor-pointer"
+                        style={{ background: T.teal }}>
+                        <Sparkles size={14} strokeWidth={2}/>
+                        Analyse request
+                        <ArrowRight size={14} strokeWidth={2}/>
+                      </button>
+                    </>
+                  )}
 
                 </div>
               ) : (
-                /* ── Collapsed summary of answers (shown after questioning) ── */
+                /* ── Collapsed summary (shown after questioning → processing) ── */
                 <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl"
                   style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.3)" }}>
                   <Check size={13} style={{ color: T.teal, flexShrink:0 }} strokeWidth={2.5}/>
                   <span className="text-[12px]" style={{ color: T.dimText }}>
-                    Delivery: <span className="text-white">{followUp.delivery}</span>
+                    <span className="text-white">{confirmedItems.length} items confirmed</span>
                     <span className="mx-2" style={{ color:"rgba(255,255,255,0.2)" }}>·</span>
-                    Budget: <span className="text-white font-mono">{resolvedBudgetCode}</span>
+                    <span className="text-white font-mono">RM {confirmedItems.reduce((s,i)=>s+i.qty*i.unitPrice,0).toLocaleString()}</span>
+                    <span className="mx-2" style={{ color:"rgba(255,255,255,0.2)" }}>·</span>
+                    2 sub-PRs
                   </span>
                 </div>
               )}
@@ -1009,18 +2102,30 @@ export default function NewPRPage() {
         </div>
         </div>{/* end fade wrapper */}
 
-        {/* ── Bottom sticky: visible once PR is confirmed/submitted ── */}
-        {(chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
+        {/* ── Bottom sticky: questioning + confirmed/submitted ── */}
+        {(chatState === "questioning" || chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
         <div className="shrink-0 pt-4 flex flex-col gap-2">
+          {/* Item picker popup — floats above input during questioning */}
+          {chatState === "questioning" && showItemPicker && (
+            <ItemPickerPopup
+              query={itemPickerQuery}
+              onQueryChange={setItemPickerQuery}
+              onSelect={handleItemAdd}
+              onRequestNew={handleRequestNew}
+              onClose={() => { setShowItemPicker(false); setItemPickerQuery("") }}
+              confirmedCodes={new Set(confirmedItems.map(i => i.code))}
+            />
+          )}
+
           <div className="flex flex-col" style={{
             background:"#FFFFFF", border:`2px solid ${T.border}`,
             borderRadius:20, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
           }}>
             <textarea
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-              onKeyDown={handleChatKeyDown}
-              placeholder="Ask Jomie anything about this PR… (↵ to send, ⇧↵ for new line)"
+              value={chatState === "questioning" ? questioningInput : inputValue}
+              onChange={e => chatState === "questioning" ? handleQuestioningInput(e.target.value) : setInputValue(e.target.value)}
+              onKeyDown={chatState === "questioning" ? undefined : handleChatKeyDown}
+              placeholder={chatState === "questioning" ? "Type a message or /item to add items from the master list…" : "Ask Jomie anything about this PR… (↵ to send, ⇧↵ for new line)"}
               rows={3}
               className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
               style={{ fontFamily:"Inter, sans-serif" }}
@@ -1100,8 +2205,135 @@ export default function NewPRPage() {
         </button>
       </div>
 
-      {/* ── Right — Live PR Preview ── */}
+      {/* ── Right — Live PR Preview / Browse ── */}
       <div style={rightPanelStyle}>
+
+        {/* ══ Browse mode ══ */}
+        {browseItem ? (
+          <div className="flex flex-col h-full">
+            {/* Browse header */}
+            <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <div className="flex items-center gap-2">
+                  <Search size={13} style={{ color: T.purple, flexShrink:0 }}/>
+                  <span className="text-[12px] font-semibold text-gray-700 truncate">
+                    Sourcing: {browseItem.name}
+                  </span>
+                </div>
+                <span className="text-[9px] text-gray-400 ml-5">
+                  Compare prices · pick a seller · Jomie will tag it as your preference
+                </span>
+              </div>
+              <button
+                onClick={() => { setBrowseItem(null) }}
+                className="size-6 rounded-lg flex items-center justify-center shrink-0 cursor-pointer transition-colors hover:bg-gray-100">
+                <X size={12} style={{ color:"#9CA3AF" }}/>
+              </button>
+            </div>
+
+            {/* Platform tabs */}
+            <div className="flex items-center gap-0 px-4 pt-3 pb-0 shrink-0">
+              {(["shopee","lazada","1688","google"] as const).map(p => {
+                const labels: Record<string, string> = { shopee:"Shopee", lazada:"Lazada", "1688":"1688.com", google:"Google" }
+                const colors: Record<string, string> = { shopee:"#EE4D2D", lazada:"#0F146D", "1688":"#E31837", google:"#4285F4" }
+                const isActive = browsePlatform === p
+                return (
+                  <button key={p}
+                    onClick={() => handleBrowsePlatformChange(p)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold cursor-pointer transition-all border-b-2"
+                    style={{
+                      color: isActive ? colors[p] : "#9CA3AF",
+                      borderColor: isActive ? colors[p] : "transparent",
+                      borderRadius:"4px 4px 0 0",
+                    }}>
+                    <div className="size-2 rounded-full shrink-0" style={{ background: colors[p] }}/>
+                    {labels[p]}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="h-px w-full shrink-0" style={{ background:"#E5E7EB" }}/>
+
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+              {browseLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="p-3 rounded-xl border border-gray-100 animate-pulse">
+                    <Skeleton className="h-3 w-3/4 bg-gray-200 mb-2"/>
+                    <Skeleton className="h-4 w-1/3 bg-gray-300 mb-2"/>
+                    <Skeleton className="h-2 w-1/2 bg-gray-200"/>
+                  </div>
+                ))
+              ) : getBrowseResults(browseItem, browsePlatform).map(result => {
+                const platformColors: Record<string, string> = { shopee:"#EE4D2D", lazada:"#0F146D", "1688":"#E31837", google:"#4285F4" }
+                const pc = platformColors[browsePlatform]
+                const isCheaper = result.priceNum < browseItem.unitPrice
+                const saving = browseItem.unitPrice - result.priceNum
+                return (
+                  <div key={result.id}
+                    className="flex flex-col gap-2 p-3 rounded-xl border cursor-pointer transition-all hover:shadow-sm hover:border-gray-300"
+                    style={{ borderColor:"#E5E7EB", background:"#FFFFFF" }}>
+                    {/* Result title + badge */}
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                          {result.badge && (
+                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                              style={{ background: pc + "15", color: pc }}>
+                              {result.badge}
+                            </span>
+                          )}
+                          {isCheaper && (
+                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                              style={{ background:"#DCFCE7", color:"#16A34A" }}>
+                              Save RM {saving.toLocaleString()} vs master price
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-medium text-gray-700 leading-snug line-clamp-2">{result.title}</p>
+                      </div>
+                    </div>
+                    {/* Price + meta */}
+                    <div className="flex items-end justify-between gap-2">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[15px] font-bold" style={{ color: isCheaper ? "#16A34A" : "#111827" }}>
+                          {result.price}
+                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[9px] text-gray-400">{result.seller}</span>
+                          {result.rating && (
+                            <span className="text-[9px] text-amber-500">★ {result.rating}</span>
+                          )}
+                          <span className="text-[9px] text-gray-400">{result.sold}</span>
+                        </div>
+                        <span className="text-[9px] text-gray-400">{result.delivery}</span>
+                      </div>
+                      <button
+                        onClick={() => handleSelectBrowseResult(result)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-semibold shrink-0 cursor-pointer transition-all hover:opacity-80"
+                        style={{ background: T.purple, color:"#fff" }}>
+                        <Check size={9} strokeWidth={2.5}/>
+                        Use this seller
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* Disclaimer */}
+              <div className="flex items-start gap-1.5 px-2 py-2 rounded-lg mt-1"
+                style={{ background:"#FEF9C3" }}>
+                <TriangleAlert size={10} style={{ color:"#CA8A04", marginTop:1, flexShrink:0 }}/>
+                <p className="text-[9px] leading-relaxed" style={{ color:"#92400E" }}>
+                  Prices are indicative only. Unapproved sellers require sourcing approval before PO issuance.
+                  Final vendor confirmed by approver in Phase C.
+                </p>
+              </div>
+            </div>
+          </div>
+
+        ) : (
+          <>{/* ══ PR Preview mode ══ */}
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 shrink-0">
@@ -1285,7 +2517,9 @@ export default function NewPRPage() {
             </div>
           )}
 
-        </div>
+        </>)}
+
+      </div>{/* end rightPanelStyle */}
 
     </div>
   )

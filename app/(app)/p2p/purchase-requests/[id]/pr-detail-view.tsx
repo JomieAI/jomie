@@ -8,10 +8,11 @@ import {
   TooltipProvider, Tooltip, TooltipTrigger, TooltipContent,
 } from "@/components/ui/tooltip"
 import { InlineEditableTitle } from "@/components/ui/inline-editable-title"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
-  ChevronLeft, Sparkles, ShieldCheck, CheckCircle2,
-  TriangleAlert, Clock, Truck, Check, ArrowRight,
-  Globe, ChevronDown, CircleCheck, Building2, Send, Plus,
+  ChevronLeft, ChevronRight, ChevronDown, Sparkles, ShieldCheck, CheckCircle2,
+  TriangleAlert, Clock, Check, ArrowRight,
+  Globe, CircleCheck, Building2, Plus, Loader2,
 } from "lucide-react"
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -20,6 +21,7 @@ const T = {
   purple:      "#5D5EF4",
   purpleLight: "#EEEDFE",
   purpleText:  "#3C3489",
+  purpleDark:  "#4243AD",
   teal:        "#1D9E75",
   tealLight:   "#E1F5EE",
   tealText:    "#085041",
@@ -32,6 +34,7 @@ const T = {
   border:      "#E0DED8",
   dimText:     "#98A2B3",
   darkBorder:  "#676488",
+  activeBg:    "#0F0D2B",
 }
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -50,7 +53,7 @@ const PR_TEMPLATE = {
   costAllocation:{ centre:"IT Department", glCode:"GL-7200-CAPEX", budgetCode:"IT-CAPEX-2024", total:150000, committed:142806 },
   subPRs:[
     { id:"PR-0089-A", type:"Capex", items:"Dell L5540 × 14, WD22TB4 × 14", amount:"127,806", path:"FM + CFO", status:"pending" as const, leftColor:"#2563EB" },
-    { id:"PR-0089-B", type:"Capex", items:"LG 27\" 4K × 6",                 amount:"15,000",  path:"Dept Head",    status:"review"  as const, leftColor:"#2563EB" },
+    { id:"PR-0089-B", type:"Capex", items:"LG 27\" 4K × 6",                 amount:"15,000",  path:"Dept Head", status:"review" as const, leftColor:"#2563EB" },
   ],
   a2Results:[
     { check:"Exact duplicate",      result:"pass" as const, detail:"No duplicates in last 7 days" },
@@ -81,7 +84,7 @@ const ITEM_SOURCING: Record<string, {
       { rank:2, name:"Digital Hub Malaysia", price:"7,450", unit:"/unit" },
     ],
     marketplace:[
-      { rank:1, name:"TechGear (Shopee Biz)",     price:"6,890",  unit:"/unit" },
+      { rank:1, name:"TechGear (Shopee Biz)",       price:"6,890",  unit:"/unit" },
       { rank:2, name:"Lenovo Authorised (1688.com)", price:"~5,900", unit:"/unit", isImport:true },
     ],
   },
@@ -91,8 +94,8 @@ const ITEM_SOURCING: Record<string, {
       { rank:2, name:"PC Image Malaysia", price:"2,650", unit:"/unit" },
     ],
     marketplace:[
-      { rank:1, name:"LG Official (Shopee)",      price:"2,280", unit:"/unit" },
-      { rank:2, name:"Display World (Lazada)",    price:"2,350", unit:"/unit" },
+      { rank:1, name:"LG Official (Shopee)",   price:"2,280", unit:"/unit" },
+      { rank:2, name:"Display World (Lazada)", price:"2,350", unit:"/unit" },
     ],
   },
   "NXG-IT-003":{ code:"NXG-IT-003", name:"Dell WD22TB4 Dock",
@@ -107,33 +110,48 @@ const ITEM_SOURCING: Record<string, {
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
-interface ChatMsg { role:"ai"|"user"; text:string }
+interface ChatMsg { role:"ai"|"user"; text:string; isHistory?:boolean }
 
 const INITIAL_MESSAGES: ChatMsg[] = [
   {
-    role:"ai",
+    role:"ai", isHistory:true,
     text:"PR-0089 is pending your approval as Finance Manager. I've pre-loaded line items, A2 integrity checks, and sourcing options across 5 channels.\n\nApproval chain: Dept Head ✓ → You (current) → CFO pending.",
   },
   {
-    role:"ai",
+    role:"ai", isHistory:true,
     text:"⚠️ 1 flag: Tech Solutions MY is not registered on MyInvois. SST input credit may be disallowed if a validated e-invoice is not obtained before PO issuance.\n\nSource: jomie-sst-baseline.md:v1.5 → SST18:S38",
   },
   {
-    role:"ai",
+    role:"ai", isHistory:true,
     text:"Budget headroom is 4.8% (RM 7,194 remaining of RM 150,000 IT-CAPEX-2024). Below the 10% alert threshold — flagged for awareness, no override required.\n\nSource: budgetControl.md:v1.2",
   },
 ]
 
+function generateReply(msg: string): string {
+  const m = msg.toLowerCase()
+  if (/approve|approv/i.test(m))
+    return "Based on A2 check results and available budget headroom (4.8%), I recommend proceeding with approval — selecting approved vendor Tech Solutions MY for all line items.\n\nNote: Request e-invoice from vendor before PO issuance to preserve SST input credit."
+  if (/budget|headroom|cost/i.test(m))
+    return "IT-CAPEX-2024 has RM 7,194 remaining after committing this PR (RM 142,806 of RM 150,000). This is 4.8% headroom — below the 10% alert threshold flagged in budgetControl.md:v1.2."
+  if (/vendor|sourcing|supply/i.test(m))
+    return "Tech Solutions MY (recommended) is the sole approved vendor across all 3 line items. Marketplace alternatives available but require vendor onboarding before PO issuance per procurementPolicy.md:v1.3 → S7.2."
+  if (/sla|timeline|urgent/i.test(m))
+    return "You have 30h remaining on your FM approval SLA (48h total). CFO approval (Chong Mei Ling) follows with a 72h SLA. Target delivery: 31 July 2026."
+  if (/reject|decline/i.test(m))
+    return "If you reject this PR, the requestor (Lim Wei Xiang) will be notified and can revise and resubmit. All A2 checks will re-run on resubmission. Confirm rejection?"
+  return "I'll look into that for PR-0089. Cross-referencing line items, budget codes, and vendor records now...\n\nSource: procurementPolicy.md:v1.3 · budgetControl.md:v1.2"
+}
+
 // ─── Journey strip ────────────────────────────────────────────────────────────
 
 const PHASES = [
-  { key:"pr",    label:"PR Created" },
-  { key:"a2",    label:"A2 Check"   },
-  { key:"appvl", label:"Approval"   },
-  { key:"quote", label:"Quotation"  },
-  { key:"po",    label:"PO"         },
-  { key:"grn",   label:"GRN"        },
-  { key:"ap",    label:"AP Payment" },
+  { key:"pr",    label:"PR Created", short:"PR"    },
+  { key:"a2",    label:"A2 Check",   short:"A2"    },
+  { key:"appvl", label:"Approval",   short:"Appvl" },
+  { key:"quote", label:"Quotation",  short:"Quote" },
+  { key:"po",    label:"PO",         short:"PO"    },
+  { key:"grn",   label:"GRN",        short:"GRN"   },
+  { key:"ap",    label:"AP Payment", short:"AP"    },
 ]
 
 function JourneyStrip({ activeIdx }: { activeIdx:number }) {
@@ -156,12 +174,12 @@ function JourneyStrip({ activeIdx }: { activeIdx:number }) {
                       background:  done ? T.teal : active ? T.purple : "white",
                       borderColor: done ? T.teal : active ? T.purple : "#D1D5DB",
                     }}>
-                    {done   && <Check size={9}  color="white" strokeWidth={3}/>}
+                    {done   && <Check size={9} color="white" strokeWidth={3}/>}
                     {active && <div className="size-1.5 rounded-full bg-white"/>}
                   </div>
                   <span className="text-[8px] font-semibold whitespace-nowrap leading-none"
                     style={{ color: done ? T.teal : active ? T.purple : "#9CA3AF" }}>
-                    {phase.label}
+                    {phase.short}
                   </span>
                 </div>
               </TooltipTrigger>
@@ -174,47 +192,52 @@ function JourneyStrip({ activeIdx }: { activeIdx:number }) {
   )
 }
 
-// ─── Right-panel section components ──────────────────────────────────────────
+// ─── PR stat grid (2×2 summary cards) ───────────────────────────────────────
 
-function SectionLabel({ children }: { children:React.ReactNode }) {
+function PRStatGrid() {
+  const PR = React.useContext(PRContext)
+  const approvalPath = PR.approvers.filter(a => a.state !== "waiting").map(a => a.role.split(" ")[0]).join(" + ")
+  const stats = [
+    { label:"Items",           value:String(PR.lineItems.length), sub:"matched to master"   },
+    { label:"Est. Total",      value:`RM ${PR.costAllocation.committed.toLocaleString()}`, sub:`${PR.subPRs.length} sub-PRs` },
+    { label:"POs to Generate", value:String(PR.subPRs.length),   sub:"after approval"       },
+    { label:"Approvals Needed",value:approvalPath,                sub:"highest tier"         },
+  ]
   return (
-    <div className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color:"#888780" }}>
-      {children}
+    <div className="grid grid-cols-2 gap-2 pt-4 pb-2">
+      {stats.map(s => (
+        <div key={s.label} className="rounded-xl px-4 py-3.5 bg-white"
+          style={{ border:`0.5px solid ${T.border}` }}>
+          <div className="text-[9px] font-semibold uppercase tracking-widest mb-1.5" style={{ color:"#888780" }}>
+            {s.label}
+          </div>
+          <div className="text-[15px] font-bold text-gray-900 leading-tight truncate">{s.value}</div>
+          <div className="text-[10px] mt-0.5" style={{ color:T.dimText }}>{s.sub}</div>
+        </div>
+      ))}
     </div>
   )
 }
 
+// ─── Right-panel section components ──────────────────────────────────────────
+
 function RequestDetails() {
   const PR = React.useContext(PRContext)
   return (
-    <div className="pb-5 border-b" style={{ borderColor:T.border }}>
-      <SectionLabel>Request Details</SectionLabel>
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <div>
-          <div className="text-[10px] text-gray-400 mb-0.5">Requestor</div>
-          <div className="flex items-center gap-1.5">
-            <div className="size-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
-              style={{ background:T.purpleLight, color:T.purple }}>{PR.requesterInitials}</div>
-            <span className="text-[12px] font-medium text-gray-800">{PR.requester}</span>
-          </div>
-          <div className="text-[10px] text-gray-400 mt-0.5">{PR.dept}</div>
-        </div>
-        <div>
-          <div className="text-[10px] text-gray-400 mb-0.5">Submitted</div>
-          <div className="text-[12px] text-gray-700">{PR.submittedDate}</div>
-        </div>
-        <div>
-          <div className="text-[10px] text-gray-400 mb-0.5">Required delivery</div>
-          <div className="flex items-center gap-1.5 text-[12px] text-gray-700">
-            <Truck size={12} className="text-gray-400"/>{PR.deliveryDate}
-          </div>
-        </div>
-      </div>
-      <div className="rounded-lg px-3 py-2.5" style={{ background:"#F0EFEB", border:`0.5px solid ${T.border}` }}>
+    <div className="space-y-4 py-4">
+      <div>
         <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color:"#888780" }}>
           Business Justification
         </div>
         <p className="text-[12px] text-gray-600 leading-relaxed">{PR.justification}</p>
+      </div>
+      <div>
+        <div className="text-[10px] font-semibold uppercase tracking-wider mb-2.5" style={{ color:"#888780" }}>
+          Journey
+        </div>
+        <div className="rounded-xl bg-white px-6 py-6">
+          <JourneyStrip activeIdx={2}/>
+        </div>
       </div>
     </div>
   )
@@ -224,18 +247,20 @@ function LineItemsSection() {
   const PR = React.useContext(PRContext)
   const total = PR.lineItems.reduce((n, i) => n + parseFloat(i.total.replace(/,/g,"")), 0)
   return (
-    <div className="py-5 border-b" style={{ borderColor:T.border }}>
-      <SectionLabel>Line Items</SectionLabel>
+    <div className="pb-4">
+      <div className="text-[10px] font-semibold uppercase tracking-wider mb-2.5" style={{ color:"#888780" }}>
+        Line Items
+      </div>
       <div className="rounded-xl overflow-hidden" style={{ border:`0.5px solid ${T.border}` }}>
         <div className="grid text-[9px] font-semibold uppercase tracking-wider px-3 py-2"
-          style={{ gridTemplateColumns:"76px 1fr 40px 68px 72px 84px", background:"#F0EFEB", color:"#888780", borderBottom:`0.5px solid ${T.border}` }}>
+          style={{ gridTemplateColumns:"72px 1fr 36px 64px 88px 96px", background:"#F0EFEB", color:"#888780", borderBottom:`0.5px solid ${T.border}` }}>
           <span>Code</span><span>Item</span><span className="text-right">Qty</span>
           <span className="text-right">Unit</span><span className="text-right">Total</span>
-          <span className="text-right">GL Code</span>
+          <span className="text-right">GL</span>
         </div>
         {PR.lineItems.map((item, i) => (
           <div key={i} className="grid items-center px-3 py-2.5 bg-white text-[12px]"
-            style={{ gridTemplateColumns:"76px 1fr 40px 68px 72px 84px", borderTop:i>0 ? `0.5px solid ${T.border}` : undefined }}>
+            style={{ gridTemplateColumns:"72px 1fr 36px 64px 88px 96px", borderTop:i>0 ? `0.5px solid ${T.border}` : undefined }}>
             <span className="font-mono text-[9px] text-gray-400">{item.code}</span>
             <div>
               <div className="font-medium text-gray-800 truncate">{item.name}</div>
@@ -244,14 +269,14 @@ function LineItemsSection() {
             <span className="text-right font-mono text-gray-600">{item.qty}</span>
             <span className="text-right font-mono text-gray-600">RM {item.unitPrice}</span>
             <span className="text-right font-mono font-semibold text-gray-800">RM {item.total}</span>
-            <span className="text-right font-mono text-[9px] text-gray-400">{item.glCode}</span>
+            <span className="text-right font-mono text-[9px] text-gray-400 whitespace-nowrap">{item.glCode}</span>
           </div>
         ))}
         <div className="grid px-3 py-2 bg-gray-50"
-          style={{ gridTemplateColumns:"76px 1fr 40px 68px 72px 84px", borderTop:`0.5px solid ${T.border}` }}>
+          style={{ gridTemplateColumns:"72px 1fr 36px 64px 88px 96px", borderTop:`0.5px solid ${T.border}` }}>
           <div/><div className="text-[11px] font-semibold text-gray-600">Total</div>
           <div/><div/>
-          <div className="text-right font-mono font-bold text-gray-900 text-[13px]">RM {total.toLocaleString()}</div>
+          <div className="text-right font-mono font-bold text-gray-900 text-[13px] whitespace-nowrap">RM {total.toLocaleString()}</div>
           <div/>
         </div>
       </div>
@@ -265,9 +290,11 @@ function CostAllocationSection() {
   const pct   = (ca.committed / ca.total) * 100
   const isLow = ((ca.total - ca.committed) / ca.total) < 0.1
   return (
-    <div className="py-5 border-b" style={{ borderColor:T.border }}>
-      <SectionLabel>Cost Allocation</SectionLabel>
-      <div className="grid grid-cols-3 gap-2 mb-3">
+    <div className="pb-4 space-y-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:"#888780" }}>
+        Cost Allocation
+      </div>
+      <div className="grid grid-cols-3 gap-2">
         {[
           { label:"Cost Centre",  value:ca.centre    },
           { label:"GL Code",      value:ca.glCode    },
@@ -307,8 +334,10 @@ function CostAllocationSection() {
 function SubPRBreakdown() {
   const PR = React.useContext(PRContext)
   return (
-    <div className="py-5 border-b" style={{ borderColor:T.border }}>
-      <SectionLabel>Sub-PR Breakdown</SectionLabel>
+    <div className="py-4 space-y-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:"#888780" }}>
+        Sub-PR Breakdown
+      </div>
       <div className="space-y-2">
         {PR.subPRs.map(sub => (
           <div key={sub.id} className="rounded-lg bg-white overflow-hidden"
@@ -349,15 +378,17 @@ function A2Section() {
   const PR = React.useContext(PRContext)
   const warns = PR.a2Results.filter(r => r.result==="warn")
   return (
-    <div className="py-5">
-      <div className="flex items-center justify-between mb-3">
-        <SectionLabel>A2 Integrity Checks</SectionLabel>
+    <div className="py-4 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:"#888780" }}>
+          A2 Integrity Checks
+        </div>
         {warns.length===0
-          ? <span className="text-[10px] font-semibold flex items-center gap-1 mb-3" style={{ color:T.teal }}><Check size={10}/>All passed</span>
-          : <span className="text-[10px] font-semibold flex items-center gap-1 mb-3" style={{ color:T.amber }}><TriangleAlert size={10}/>{warns.length} warning</span>
+          ? <span className="text-[10px] font-semibold flex items-center gap-1" style={{ color:T.teal }}><Check size={10}/>All passed</span>
+          : <span className="text-[10px] font-semibold flex items-center gap-1" style={{ color:T.amber }}><TriangleAlert size={10}/>{warns.length} warning</span>
         }
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {PR.a2Results.map((r, i) => (
           <div key={i} className="flex items-start gap-2 rounded-lg px-3 py-2.5 bg-white"
             style={{ border:`0.5px solid ${T.border}` }}>
@@ -384,8 +415,10 @@ function A2Section() {
 function ApprovalChainSection() {
   const PR = React.useContext(PRContext)
   return (
-    <div className="py-5">
-      <SectionLabel>Approval Chain</SectionLabel>
+    <div className="py-4 space-y-4">
+      <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:"#888780" }}>
+        Approval Chain
+      </div>
       <div className="flex flex-col">
         {PR.approvers.map((a, i) => (
           <div key={i} className="flex items-start gap-3 pb-4 last:pb-0 relative">
@@ -427,7 +460,7 @@ function ApprovalChainSection() {
           </div>
         ))}
       </div>
-      <div className="mt-4 flex items-start gap-2 rounded-lg px-3 py-2.5"
+      <div className="flex items-start gap-2 rounded-lg px-3 py-2.5"
         style={{ background:"#F0EFEB", border:`0.5px solid ${T.border}` }}>
         <ShieldCheck size={12} className="shrink-0 mt-0.5" style={{ color:T.purple }}/>
         <p className="text-[10px] text-gray-500 leading-snug">{PR.sodNote}</p>
@@ -440,7 +473,6 @@ function ItemSourcingBlock({ itemCode }: { itemCode:string }) {
   const data = ITEM_SOURCING[itemCode]
   if (!data) return null
   const [expanded, setExpanded] = React.useState(itemCode==="NXG-IT-001")
-
   return (
     <div className="rounded-lg overflow-hidden bg-white" style={{ border:`0.5px solid ${T.border}` }}>
       <button onClick={() => setExpanded(v => !v)}
@@ -451,7 +483,6 @@ function ItemSourcingBlock({ itemCode }: { itemCode:string }) {
       </button>
       {expanded && (
         <div className="border-t" style={{ borderColor:T.border }}>
-          {/* Approved */}
           <div className="px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider"
             style={{ background:T.tealLight, color:T.tealText, borderBottom:`0.5px solid ${T.teal}33` }}>
             Approved vendors
@@ -468,7 +499,6 @@ function ItemSourcingBlock({ itemCode }: { itemCode:string }) {
                 style={{ background:T.tealLight, color:T.tealText }}>Approved</span>
             </div>
           ))}
-          {/* Marketplace */}
           <div className="px-3 py-1 text-[9px] flex items-center gap-1.5"
             style={{ background:T.amberLight+"88", color:T.amberText, borderTop:`0.5px solid ${T.amber}33` }}>
             <TriangleAlert size={9}/> Requires vendor onboarding before PO
@@ -495,7 +525,110 @@ function ItemSourcingBlock({ itemCode }: { itemCode:string }) {
   )
 }
 
-// ─── Status badge config ──────────────────────────────────────────────────────
+// ─── Activity feed ────────────────────────────────────────────────────────────
+
+const ACTIVITY_ITEMS = [
+  {
+    type:"pending",
+    actor:"Razif Abdullah",
+    initials:"RA",
+    ts:"In progress",
+    label:"Awaiting Finance Manager approval",
+    detail:"L2 · 18h elapsed / 48h SLA",
+    color:"#BA7517",
+    bg:"#FAEEDA",
+  },
+  {
+    type:"flag",
+    actor:"Jomie AI",
+    initials:"AI",
+    ts:"28 May 2026, 11:28 AM",
+    label:"A2 integrity check completed",
+    detail:"4 passed · 1 warning (budget headroom 4.8%)",
+    color:"#BA7517",
+    bg:"#FAEEDA",
+  },
+  {
+    type:"approval",
+    actor:"Siti Aisyah",
+    initials:"SA",
+    ts:"28 May 2026, 11:28 AM",
+    label:"Approved by Dept Head",
+    detail:"L1 — 2h 14m after submission",
+    color:"#1D9E75",
+    bg:"#E1F5EE",
+  },
+  {
+    type:"submit",
+    actor:"Lim Wei Xiang",
+    initials:"LW",
+    ts:"28 May 2026, 09:14 AM",
+    label:"PR submitted",
+    detail:"IT Equipment — Q3 Upgrade · RM 142,806",
+    color:"#5D5EF4",
+    bg:"#EEEDFE",
+  },
+]
+
+function ActivitySection() {
+  return (
+    <div className="py-4">
+      <div className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color:"#888780" }}>
+        Activity Trail
+      </div>
+      <div className="flex flex-col">
+        {ACTIVITY_ITEMS.map((item, i) => (
+          <div key={i} className="flex items-start gap-3 pb-4 last:pb-0 relative">
+            {i < ACTIVITY_ITEMS.length - 1 && (
+              <div className="absolute left-[13px] top-7 bottom-0 w-px" style={{ background:"#E5E7EB" }}/>
+            )}
+            {/* Avatar */}
+            <div className="size-[26px] rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 z-10"
+              style={{ background:item.bg, color:item.color }}>
+              {item.initials}
+            </div>
+            <div className="flex-1 min-w-0 pt-0.5">
+              <div className="flex items-baseline gap-2 flex-wrap mb-0.5">
+                <span className="text-[12px] font-semibold text-gray-800">{item.label}</span>
+              </div>
+              <div className="text-[11px] text-gray-500 mb-0.5">{item.detail}</div>
+              <div className="text-[10px] font-mono" style={{ color:T.dimText }}>{item.ts}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function PanelSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 py-4">
+      <div className="grid grid-cols-2 gap-2">
+        {[0,1,2,3].map(i => (
+          <div key={i} className="p-3 rounded-xl" style={{ background:"#F0EFEB" }}>
+            <Skeleton className="h-2.5 w-14 bg-gray-200 mb-2"/>
+            <Skeleton className="h-4 w-20 bg-gray-300"/>
+            <Skeleton className="h-2 w-24 bg-gray-200 mt-1.5"/>
+          </div>
+        ))}
+      </div>
+      {[0,1].map(i => (
+        <div key={i} className="rounded-xl p-3.5 flex flex-col gap-2.5" style={{ background:"#F0EFEB" }}>
+          <div className="flex justify-between items-start">
+            <Skeleton className="h-3.5 w-36 bg-gray-200"/>
+            <Skeleton className="h-3.5 w-14 bg-gray-300"/>
+          </div>
+          <Skeleton className="h-2.5 w-28 bg-gray-200"/>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Status badges ────────────────────────────────────────────────────────────
 
 const STATUS_BADGE: Record<string, { bg:string; color:string; label:string }> = {
   pending:  { bg:"#FFFAEB", color:"#B54708", label:"Pending Approval" },
@@ -505,8 +638,6 @@ const STATUS_BADGE: Record<string, { bg:string; color:string; label:string }> = 
   rejected: { bg:"#FEF2F2", color:"#991B1B", label:"Rejected"         },
 }
 
-// ─── Tab bar config ───────────────────────────────────────────────────────────
-
 const CHAT_TABS = [
   { key:"ai",      label:"AI Chat"       },
   { key:"form",    label:"Form"          },
@@ -514,370 +645,567 @@ const CHAT_TABS = [
   { key:"reorder", label:"Auto Reorder"  },
 ]
 
-const PANEL1_TABS = [
+const DETAIL_TABS = [
   { key:"details",  label:"Details"   },
   { key:"a2",       label:"A2 Checks" },
   { key:"approval", label:"Approvals" },
+  { key:"activity", label:"Activity"  },
 ]
 
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export default function PRDetailView() {
-  const router = useRouter()
-  const params = useParams()
+  const router   = useRouter()
+  const params   = useParams()
+
   const [sourcingChoice, setSourcingChoice] = React.useState<"approved"|"marketplace"|"defer"|null>(null)
-  const [approved,   setApproved]   = React.useState(false)
-  const [prData,     setPrData]     = React.useState<PRData>(PR_TEMPLATE)
-  const [messages,   setMessages]   = React.useState<ChatMsg[]>(INITIAL_MESSAGES)
-  const [inputVal,   setInputVal]   = React.useState("")
-  const [activeTab,  setActiveTab]  = React.useState("ai")
-  const [panel1Tab,  setPanel1Tab]  = React.useState("details")
+  const [approved,       setApproved]       = React.useState(false)
+  const [prData,         setPrData]         = React.useState<PRData>(PR_TEMPLATE)
+  const [messages,       setMessages]       = React.useState<ChatMsg[]>(INITIAL_MESSAGES)
+  const [inputVal,       setInputVal]       = React.useState("")
+  const [chatTab,        setChatTab]        = React.useState("ai")
+  const [detailTab,      setDetailTab]      = React.useState("details")
+  const [isChatThinking, setIsChatThinking] = React.useState(false)
+  const [isPanelLoading, setIsPanelLoading] = React.useState(true)
+
+  // Single-open accordion for right panels: "details" | "sourcing"
+  const [activePanel, setActivePanel] = React.useState<"details"|"sourcing">("details")
+
   const endRef      = React.useRef<HTMLDivElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
-  // Load localStorage PR
+  // null = fill remaining | 0 = hidden | >0 = fixed px
+  const [rightWidth, setRightWidth] = React.useState<number | null>(null)
+  const wrapperRef = React.useRef<HTMLDivElement>(null)
+  const dragging   = React.useRef(false)
+  const rightOpen  = rightWidth !== 0
+
+  // Load PR from localStorage
   React.useEffect(() => {
     const id = params?.id as string | undefined
     if (!id || SEED_IDS.includes(id)) return
     const saved = getSavedPRs()
     const found = saved.find(p => p.id === id)
-    if (found) {
-      setPrData({ ...PR_TEMPLATE, id:found.id, title:found.title, sub:found.sub, justification:found.message })
-    }
+    if (found) setPrData({ ...PR_TEMPLATE, id:found.id, title:found.title, sub:found.sub, justification:found.message })
   }, [params?.id])
 
-  // Auto-scroll chat
+  // Simulate panel loading
+  React.useEffect(() => {
+    const t = setTimeout(() => setIsPanelLoading(false), 900)
+    return () => clearTimeout(t)
+  }, [])
+
+  // Auto-scroll on new messages / thinking
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior:"smooth" })
-  }, [messages])
+  }, [messages, isChatThinking])
 
+  // Drag resize — exact pattern from /new/
+  const onDragMouseDown = (e: React.MouseEvent) => {
+    dragging.current = true
+    e.preventDefault()
+  }
+
+  React.useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current || !wrapperRef.current) return
+      const rect = wrapperRef.current.getBoundingClientRect()
+      const newW = Math.max(0, Math.min(rect.width - 16 - 500, rect.right - e.clientX))
+      setRightWidth(newW)
+    }
+    const onUp = () => {
+      if (!dragging.current) return
+      dragging.current = false
+      setRightWidth(w => {
+        if (w === null) return w
+        if (w < 160) return 0
+        if (w < 280) return 280
+        return w
+      })
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup",   onUp)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup",   onUp)
+    }
+  }, [])
+
+  // Send message with Jomie thinking animation
   const sendMessage = () => {
     const text = inputVal.trim()
-    if (!text) return
-    setMessages(prev => [
-      ...prev,
-      { role:"user", text },
-      { role:"ai", text:"I'm reviewing your question. Let me check the relevant policies and data for this purchase request..." },
-    ])
+    if (!text || isChatThinking) return
+    setMessages(prev => [...prev, { role:"user", text }])
     setInputVal("")
+    setIsChatThinking(true)
+    const delay = Math.min(1200 + text.length * 8, 2400)
+    setTimeout(() => {
+      setIsChatThinking(false)
+      setMessages(prev => [...prev, { role:"ai", text:generateReply(text) }])
+    }, delay)
     setTimeout(() => textareaRef.current?.focus(), 50)
   }
 
   const badge = STATUS_BADGE[prData.status] ?? STATUS_BADGE.pending
 
+  const rightPanelStyle: React.CSSProperties = {
+    display:       rightWidth === 0 ? "none" : "flex",
+    flexDirection: "column",
+    flex:          rightWidth ? `0 0 ${rightWidth}px` : "1 1 0",
+    minWidth:      0,
+    gap:           8,
+    overflow:      "hidden",
+  }
+
   return (
     <PRContext.Provider value={prData}>
     <TooltipProvider>
-      {/* ── Page wrapper — dark gradient ── */}
-      <div className="flex h-full gap-2 p-4"
-        style={{ background:"linear-gradient(45deg, #141137 0%, #191647 100%)" }}>
+      {/*
+        Use calc(100vh - 20px) on wrapperRef — same as /new/ page — so the
+        flex container has a definite height and the chat input sticks to bottom.
+        The dark gradient is applied directly here.
+      */}
+      <div
+        ref={wrapperRef}
+        className="flex min-h-0"
+        style={{
+          height:"calc(100vh - 20px)",
+          background:"linear-gradient(45deg, #141137 0%, #191647 100%)",
+          padding:10,
+          gap:0,
+        }}>
 
         {/* ══════════════════════════════════════════════════════════
-            MIDDLE COLUMN — chat + PR summary
+            MIDDLE COLUMN — identical structure to /new/
         ══════════════════════════════════════════════════════════ */}
-        <div className="flex flex-col min-h-0 h-full shrink-0" style={{ width:440 }}>
+        <div className="flex flex-col min-h-0 flex-1 min-w-[500px]">
+          <div className="flex flex-col min-h-0 h-full w-full max-w-[700px] mx-auto"
+            style={{ padding:"4px 16px 16px", gap:0 }}>
 
-          {/* ── Header ── */}
-          <div className="pb-5 shrink-0" style={{ borderBottom:`1px solid ${T.darkBorder}` }}>
-            {/* Breadcrumb row */}
-            <div className="flex items-center gap-1.5 mb-2">
-              <button
-                onClick={() => router.push("/p2p/purchase-requests")}
-                className="size-6 rounded-lg flex items-center justify-center hover:bg-white/10 transition-colors shrink-0">
-                <ChevronLeft size={16} color="white"/>
-              </button>
-              <span className="text-[12px] font-light" style={{ color:"rgba(255,255,255,0.7)" }}>
-                Purchase Request / {prData.id}
-              </span>
+            {/* ── Header ── */}
+            <div className="pb-4 shrink-0" style={{ borderBottom:`1px solid ${T.darkBorder}` }}>
+              <div className="flex items-center gap-1.5 mb-2">
+                <button
+                  onClick={() => router.push("/p2p/purchase-requests")}
+                  className="group flex items-center gap-1.5 cursor-pointer">
+                  <div className="size-6 rounded-lg flex items-center justify-center transition-colors"
+                    onMouseEnter={e => (e.currentTarget.style.background="rgba(255,255,255,0.15)")}
+                    onMouseLeave={e => (e.currentTarget.style.background="transparent")}>
+                    <ChevronLeft size={16} color="#FFFFFF" strokeWidth={1.67}/>
+                  </div>
+                  <span className="text-[12px] font-light text-white opacity-70 group-hover:opacity-100 transition-opacity">
+                    Purchase Request / {prData.id}
+                  </span>
+                </button>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <InlineEditableTitle
+                  value={prData.title}
+                  onSave={title => setPrData(p => ({ ...p, title }))}
+                  className="text-[18px] font-semibold text-white leading-7"
+                  inputClassName="text-[18px] font-semibold text-white leading-7"
+                  style={{ fontFamily:"var(--font-lora), Lora, serif" }}
+                />
+                <span className="shrink-0 text-[12px] px-2 py-0.5 rounded-md whitespace-nowrap"
+                  style={{ background:badge.bg, color:badge.color }}>
+                  {badge.label}
+                </span>
+              </div>
             </div>
-            {/* Title + badge row */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <InlineEditableTitle
-                value={prData.title}
-                onSave={title => setPrData(p => ({ ...p, title }))}
-                className="text-[18px] font-semibold text-white leading-7"
-                inputClassName="text-[18px] font-semibold text-white leading-7"
-                style={{ fontFamily:"var(--font-lora), Lora, serif" }}
-              />
-              <span className="shrink-0 text-[12px] px-2 py-0.5 rounded-md whitespace-nowrap"
-                style={{ background:badge.bg, color:badge.color }}>
-                {badge.label}
-              </span>
-            </div>
-          </div>
 
-          {/* ── PR Summary card ── */}
-          <div className="mt-5 rounded-[10px] p-4 shrink-0" style={{ background:"#F7F7FE" }}>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 mb-3">
-              <div>
-                <div className="text-[10px] text-gray-400 mb-0.5">Requester</div>
-                <div className="flex items-center gap-1.5">
-                  <div className="size-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
-                    style={{ background:T.purpleLight, color:T.purple }}>{prData.requesterInitials}</div>
-                  <span className="text-[12px] font-medium text-gray-800">{prData.requester}</span>
+            {/* ── PR Summary card — dark glass ── */}
+            <div className="mt-4 rounded-[10px] p-4 shrink-0"
+              style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(103,100,136,0.3)" }}>
+              {/* Single row: Requester left, Budget summary right */}
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-[10px] mb-0.5" style={{ color:T.dimText }}>Requester</div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="size-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
+                      style={{ background:"rgba(93,94,244,0.25)", color:"#A5A6F6" }}>{prData.requesterInitials}</div>
+                    <span className="text-[12px] font-medium text-white">{prData.requester}</span>
+                  </div>
+                  <div className="text-[10px] mt-0.5" style={{ color:T.dimText }}>{prData.dept}</div>
                 </div>
-                <div className="text-[10px] text-gray-400 mt-0.5">{prData.dept}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-gray-400 mb-0.5">Submitted</div>
-                <div className="text-[12px] text-gray-700">{prData.submittedDate}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-gray-400 mb-0.5">Total Amount</div>
-                <div className="text-[13px] font-bold font-mono text-gray-900">
-                  RM {prData.costAllocation.committed.toLocaleString()}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-gray-400 mb-0.5">Budget Approved</div>
-                <div className="text-[12px] font-mono text-gray-600">
-                  RM {prData.costAllocation.total.toLocaleString()}
-                </div>
-              </div>
-            </div>
-            <div className="pt-2.5 border-t text-[11px] text-gray-500 mb-3" style={{ borderColor:T.border }}>
-              {prData.sub}
-            </div>
-            {/* Journey strip */}
-            <JourneyStrip activeIdx={2}/>
-          </div>
-
-          {/* ── Chat messages ── */}
-          <div className="flex-1 min-h-0 relative mt-4">
-            {/* Bottom fade */}
-            <div className="absolute bottom-0 left-0 right-0 h-10 pointer-events-none z-10"
-              style={{ background:"linear-gradient(to top, #141137 0%, transparent 100%)" }}/>
-            <div className="h-full overflow-y-auto py-2 jomie-scrollbar"
-              style={{ display:"flex", flexDirection:"column", gap:16,
-                scrollbarWidth:"thin", scrollbarColor:"rgba(93,94,244,0.2) transparent" }}>
-              {messages.map((msg, i) => (
-                <div key={i} className={cn("flex flex-col gap-1", msg.role==="user" && "items-end")}>
-                  {msg.role==="ai" && (
-                    <span className="text-[13px] font-bold" style={{ color:T.purple, fontFamily:"var(--font-inter), Inter, sans-serif" }}>
-                      Jomie AI
-                    </span>
-                  )}
-                  <div className={cn(
-                    "w-fit max-w-[85%] px-3.5 py-2.5 text-[13px] leading-[1.5] whitespace-pre-wrap",
-                    msg.role==="ai"
-                      ? "rounded-[0px_8px_8px_8px]"
-                      : "rounded-[8px_0px_8px_8px]",
-                  )}
-                    style={{
-                      background: msg.role==="ai" ? "rgba(255,255,255,0.09)" : T.purple,
-                      color:      msg.role==="ai" ? "rgba(255,255,255,0.88)" : "white",
-                    }}>
-                    {msg.text}
+                <div className="text-right shrink-0">
+                  <div className="flex items-center justify-end gap-1 mb-0.5">
+                    <span className="text-[10px]" style={{ color:T.dimText }}>Amount</span>
+                    <Tooltip>
+                      <TooltipTrigger render={<button className="cursor-default"/>}>
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                          <circle cx="8" cy="8" r="7" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5"/>
+                          <path d="M8 7v4M8 5.5v.5" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-[180px] text-[11px]">
+                        Committed / total budget allocated to this PR (IT-CAPEX-2024)
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <div className="text-[17px] font-bold font-mono text-white leading-tight">
+                    RM {prData.costAllocation.committed.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] font-mono mt-0.5" style={{ color:T.dimText }}>
+                    of RM {prData.costAllocation.total.toLocaleString()} budgeted
                   </div>
                 </div>
-              ))}
-              <div ref={endRef}/>
+              </div>
             </div>
-          </div>
 
-          {/* ── Input area ── */}
-          <div className="mt-3 flex flex-col gap-3 shrink-0">
-            {/* Textarea card */}
-            <div className="rounded-[15px] overflow-hidden bg-white"
-              style={{ border:`2px solid ${T.darkBorder}`, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)" }}>
-              <textarea
-                ref={textareaRef}
-                value={inputVal}
-                onChange={e => setInputVal(e.target.value)}
-                onKeyDown={e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                placeholder="Write a message..."
-                rows={3}
-                className="w-full px-4 pt-4 pb-2 text-[13px] text-gray-700 placeholder-gray-400 resize-none bg-transparent focus:outline-none"
-                style={{ fontFamily:"var(--font-inter), Inter, sans-serif" }}
-              />
-              <div className="flex items-center justify-between px-3 pb-3">
-                <button className="size-8 rounded-lg flex items-center justify-center border"
-                  style={{ borderColor:"#D0D5DD", boxShadow:"0px 1px 2px rgba(16,24,40,0.05)" }}>
-                  <Plus size={15} style={{ color:"#344054" }}/>
-                </button>
-                <div className="flex items-center gap-2">
-                  <button className="flex items-center gap-1 text-[13px] px-2 py-1 rounded-lg transition-colors hover:bg-gray-50"
-                    style={{ color:T.purpleText }}>
-                    Claude Opus 4.8
-                    <ChevronDown size={14} style={{ color:T.purpleText }}/>
+            {/* ── Chat scroll area ── */}
+            <div className="flex-1 min-h-0 relative mt-4">
+              {/* Bottom fade — same as /new/ */}
+              <div className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none z-10"
+                style={{ background:"linear-gradient(to top, #141137 0%, transparent 100%)" }}/>
+              <div className="h-full overflow-y-auto py-4 jomie-scrollbar"
+                style={{ display:"flex", flexDirection:"column", gap:20,
+                  scrollbarWidth:"thin", scrollbarColor:"rgba(93,94,244,0.2) transparent" }}>
+
+                {messages.map((msg, i) => (
+                  <div key={i}
+                    className={cn("flex flex-col gap-1.5", msg.role==="user" && "items-end")}
+                    style={{ animation:"fadeInUp 0.35s ease-out" }}>
+                    {msg.role==="user" ? (
+                      /* ── User bubble — same as /new/ ── */
+                      <>
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-[12px] font-light" style={{ color:T.dimText }}>
+                            {msg.isHistory ? "28 May, 9:14am" : "Just now"}
+                          </span>
+                          <span className="text-[12px] font-bold text-white">You</span>
+                        </div>
+                        <div className="w-fit max-w-[80%] px-3.5 py-2.5 text-[14px] text-white leading-5"
+                          style={{ background:"rgba(255,255,255,0.05)", borderRadius:12 }}>
+                          {msg.text}
+                        </div>
+                      </>
+                    ) : msg.isHistory ? (
+                      /* ── Jomie history message — glass card style (like /new/ analysis block) ── */
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-bold" style={{ color:T.purple }}>Jomie AI</span>
+                          <span className="text-[12px] font-light" style={{ color:T.dimText }}>28 May, 9:14am</span>
+                        </div>
+                        <div className="px-3.5 py-3 rounded-xl text-[14px] text-white leading-5 whitespace-pre-wrap"
+                          style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
+                          {msg.text}
+                        </div>
+                      </>
+                    ) : (
+                      /* ── Jomie new reply — plain text, same as /new/ follow-up chat ── */
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-bold" style={{ color:T.purple }}>Jomie AI</span>
+                          <span className="text-[12px] font-light" style={{ color:T.dimText }}>Just now</span>
+                        </div>
+                        <div className="text-[14px] text-white leading-5 whitespace-pre-wrap">{msg.text}</div>
+                      </>
+                    )}
+                  </div>
+                ))}
+
+                {/* Jomie thinking — same as /new/ */}
+                {isChatThinking && (
+                  <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.25s ease-out" }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-bold" style={{ color:T.purple }}>Jomie AI</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl w-fit"
+                      style={{ background:"rgba(255,255,255,0.05)" }}>
+                      {[0,1,2].map(j => (
+                        <span key={j} className="size-1.5 rounded-full animate-bounce"
+                          style={{ background:"rgba(255,255,255,0.4)", animationDelay:`${j*160}ms` }}/>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div ref={endRef}/>
+              </div>
+            </div>
+
+            {/* ── Sticky bottom: textarea + tab bar — same as /new/ ── */}
+            <div className="shrink-0 pt-4">
+              <div className="flex flex-col"
+                style={{ background:"#FFFFFF", border:`2px solid ${T.darkBorder}`, borderRadius:20,
+                  boxShadow:"0px 1px 2px rgba(16,24,40,0.05)" }}>
+                <textarea
+                  ref={textareaRef}
+                  value={inputVal}
+                  onChange={e => setInputVal(e.target.value)}
+                  onKeyDown={e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                  placeholder="Ask Jomie anything about this PR… (↵ to send, ⇧↵ new line)"
+                  rows={3}
+                  className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
+                  style={{ fontFamily:"Inter, sans-serif" }}
+                />
+                <div className="flex items-center justify-between px-4 pb-3.5 pt-1">
+                  <button className="size-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50"
+                    style={{ background:"#FFFFFF", border:"1px solid #D0D5DD", boxShadow:"0px 1px 2px rgba(16,24,40,0.05)" }}>
+                    <Plus size={16} style={{ color:"#344054" }}/>
                   </button>
-                  <button onClick={sendMessage}
-                    className="flex items-center gap-1.5 h-8 px-4 rounded-lg text-[13px] font-medium text-white transition-opacity hover:opacity-90"
-                    style={{ background:T.purple, border:`1px solid ${T.purple}` }}>
-                    Send
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[14px] cursor-pointer transition-opacity hover:opacity-80"
+                      style={{ color:T.purpleDark }}>
+                      Claude Opus 4.8
+                      <ChevronDown size={16} style={{ color:T.purpleDark }}/>
+                    </button>
+                    <button
+                      onClick={sendMessage}
+                      className="flex items-center justify-center px-3.5 h-8 rounded-lg text-[14px] font-medium text-white transition-all cursor-pointer"
+                      style={{
+                        background: inputVal.trim() && !isChatThinking ? T.purple : "rgba(93,94,244,0.35)",
+                        border:`1px solid ${inputVal.trim() && !isChatThinking ? T.purple : "transparent"}`,
+                        boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
+                        opacity: isChatThinking ? 0.5 : 1,
+                      }}>
+                      {isChatThinking ? <Loader2 size={14} className="animate-spin"/> : "Send"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tab bar — same as /new/ */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="inline-flex items-center p-1 gap-2"
+                  style={{ background:"rgba(255,255,255,0.05)", border:`2px solid ${T.darkBorder}`, borderRadius:24 }}>
+                  {CHAT_TABS.map(tab => (
+                    <button key={tab.key}
+                      onClick={() => setChatTab(tab.key)}
+                      className={cn(
+                        "h-9 px-3 text-[12px] transition-all cursor-pointer whitespace-nowrap",
+                        chatTab===tab.key ? "text-white" : "text-gray-400 hover:text-gray-300",
+                      )}
+                      style={{
+                        borderRadius: chatTab===tab.key ? 20 : 6,
+                        background:   chatTab===tab.key ? T.activeBg : "transparent",
+                        boxShadow:    chatTab===tab.key ? "0px 1px 3px rgba(16,24,40,0.1), 0px 1px 2px rgba(16,24,40,0.06)" : "none",
+                      }}>
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Tab bar */}
-            <div className="flex items-center justify-center pb-1">
-              <div className="flex items-center gap-1 p-1 rounded-[24px]"
-                style={{ background:"rgba(255,255,255,0.05)", border:`2px solid ${T.darkBorder}` }}>
-                {CHAT_TABS.map(tab => (
-                  <button key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className="px-3 py-2 text-[12px] rounded-[20px] transition-all whitespace-nowrap"
-                    style={{
-                      background:  activeTab===tab.key ? "#0F0D2B" : "transparent",
-                      color:       activeTab===tab.key ? "white"    : T.dimText,
-                      boxShadow:   activeTab===tab.key ? "0px 1px 3px rgba(16,24,40,0.1), 0px 1px 2px rgba(16,24,40,0.06)" : "none",
-                    }}>
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
 
         {/* ══════════════════════════════════════════════════════════
-            RIGHT COLUMN — two stacked #F7F7FE panels
+            DRAG HANDLE + TOGGLE — exact from /new/
         ══════════════════════════════════════════════════════════ */}
-        <div className="flex-1 flex flex-col gap-2 min-h-0 h-full">
+        <div
+          className="flex items-center justify-center shrink-0"
+          style={{ width:16, alignSelf:"stretch", position:"relative", cursor:"col-resize" }}
+          onMouseDown={onDragMouseDown}>
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px"
+            style={{ background:"rgba(103,100,136,0.25)" }}/>
+          <button
+            onClick={() => setRightWidth(w => w === 0 ? null : 0)}
+            onMouseDown={e => e.stopPropagation()}
+            className="relative z-10 flex items-center justify-center size-7 rounded-lg transition-all cursor-pointer"
+            style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(103,100,136,0.35)" }}
+            onMouseEnter={e => (e.currentTarget.style.background="rgba(255,255,255,0.14)")}
+            onMouseLeave={e => (e.currentTarget.style.background="rgba(255,255,255,0.07)")}
+            title={rightOpen ? "Hide panels" : "Show panels"}>
+            {rightOpen
+              ? <ChevronRight size={13} color="rgba(255,255,255,0.6)"/>
+              : <ChevronLeft  size={13} color="rgba(255,255,255,0.6)"/>
+            }
+          </button>
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════
+            RIGHT — Two mutually-exclusive accordion panels
+        ══════════════════════════════════════════════════════════ */}
+        <div style={rightPanelStyle}>
 
           {/* ── Panel 1: PR Details ── */}
-          <div className="flex-1 flex flex-col rounded-[10px] overflow-hidden min-h-0"
-            style={{ background:"#F7F7FE" }}>
+          <div
+            className="flex flex-col rounded-[10px] overflow-hidden"
+            style={{
+              background:"#F7F7FE",
+              flex: activePanel==="details" ? "1 1 0" : "0 0 auto",
+              minHeight: 0,
+            }}>
 
-            {/* Panel 1 header */}
-            <div className="px-6 pt-5 shrink-0">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[13px] font-semibold text-gray-700">PR Details</span>
-                <span className="text-[10px] font-mono text-gray-300">{prData.id}</span>
-              </div>
-              {/* Section tabs */}
-              <div className="flex items-center gap-0 border-b" style={{ borderColor:T.border }}>
-                {PANEL1_TABS.map(tab => (
-                  <button key={tab.key}
-                    onClick={() => setPanel1Tab(tab.key)}
-                    className="px-3 py-2 text-[12px] font-medium transition-colors border-b-2 -mb-px"
-                    style={{
-                      borderColor: panel1Tab===tab.key ? T.purple : "transparent",
-                      color:       panel1Tab===tab.key ? T.purple : "#6B7280",
-                    }}>
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Panel 1 content */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 jomie-scrollbar"
-              style={{ scrollbarWidth:"thin", scrollbarColor:"rgba(93,94,244,0.15) transparent" }}>
-              {panel1Tab==="details" && (
-                <>
-                  <RequestDetails/>
-                  <LineItemsSection/>
-                  <CostAllocationSection/>
-                  <SubPRBreakdown/>
-                </>
-              )}
-              {panel1Tab==="a2"       && <A2Section/>}
-              {panel1Tab==="approval" && <ApprovalChainSection/>}
-            </div>
-          </div>
-
-          {/* ── Panel 2: Sourcing + Approval Action ── */}
-          <div className="flex-1 flex flex-col rounded-[10px] overflow-hidden min-h-0"
-            style={{ background:"#F7F7FE" }}>
-
-            {/* Panel 2 header */}
-            <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b shrink-0"
+            {/* Panel 1 header — click to open (closes Panel 2 content) */}
+            <button
+              onClick={() => setActivePanel("details")}
+              className="w-full flex items-center justify-between px-5 py-3 border-b shrink-0 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
               style={{ borderColor:T.border }}>
               <div className="flex items-center gap-2">
-                <div className="size-5 rounded-md flex items-center justify-center shrink-0"
-                  style={{ background:T.purpleLight }}>
-                  <Sparkles size={11} style={{ color:T.purple }}/>
-                </div>
-                <span className="text-[13px] font-semibold text-gray-700">Sourcing Options</span>
-                <span className="text-[10px] font-mono text-gray-400">· fetched 4 min ago</span>
+                <span className="text-[12px] font-semibold text-gray-700">PR Details</span>
+                <span className="text-[10px] font-mono text-gray-300">{prData.id}</span>
               </div>
-              <span className="text-[10px] font-mono text-gray-300">{prData.id}</span>
-            </div>
+              <ChevronDown size={14}
+                className="text-gray-400 transition-transform duration-200 shrink-0"
+                style={{ transform: activePanel==="details" ? "rotate(180deg)" : "rotate(0deg)" }}/>
+            </button>
 
-            {/* Sourcing list */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 jomie-scrollbar"
-              style={{ scrollbarWidth:"thin", scrollbarColor:"rgba(93,94,244,0.15) transparent" }}>
-              {prData.lineItems.map(item => (
-                <ItemSourcingBlock key={item.code} itemCode={item.code}/>
-              ))}
-              <code className="text-[9px] font-mono text-gray-300 block px-1">
-                procurementPolicy.md:v1.3 → S7.2 · vendorOnboarding.md:v2.1
-              </code>
-            </div>
+            {/* Panel 1 content — visible only when active */}
+            {activePanel==="details" && (
+              <>
+                {/* Inner tabs */}
+                <div className="flex items-center px-5 border-b shrink-0"
+                  style={{ borderColor:T.border, background:"white" }}>
+                  {DETAIL_TABS.map(tab => (
+                    <button key={tab.key}
+                      onClick={() => setDetailTab(tab.key)}
+                      className="px-3 py-2.5 text-[12px] font-medium transition-colors border-b-2 -mb-px whitespace-nowrap"
+                      style={{
+                        borderColor: detailTab===tab.key ? T.purple : "transparent",
+                        color:       detailTab===tab.key ? T.purple : "#6B7280",
+                      }}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
 
-            {/* Approval action footer */}
-            <div className="px-4 pb-5 pt-3 border-t shrink-0 space-y-2.5" style={{ borderColor:T.border }}>
+                {/* Tab content — scrollable, height fits content */}
+                <div className="flex-1 overflow-y-auto px-5 jomie-scrollbar min-h-0">
+                  {isPanelLoading ? (
+                    <PanelSkeleton/>
+                  ) : (
+                    <>
+                      {detailTab==="details"  && <><PRStatGrid/><RequestDetails/><LineItemsSection/><SubPRBreakdown/><CostAllocationSection/></>}
+                      {detailTab==="a2"       && <A2Section/>}
+                      {detailTab==="approval" && <ApprovalChainSection/>}
+                      {detailTab==="activity" && <ActivitySection/>}
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
 
-              {/* SLA */}
-              <div className="flex items-center justify-between text-[11px]">
+          {/* ── Panel 2: Sourcing Options + always-visible Approval footer ── */}
+          <div
+            className="flex flex-col rounded-[10px] overflow-hidden"
+            style={{
+              background:"#F7F7FE",
+              flex: activePanel==="sourcing" ? "1 1 0" : "0 0 auto",
+              minHeight: 0,
+            }}>
+
+            {/* Panel 2 header — click to open (closes Panel 1 content) */}
+            <button
+              onClick={() => setActivePanel("sourcing")}
+              className="w-full flex items-center justify-between px-5 py-3 border-b shrink-0 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+              style={{ borderColor:T.border }}>
+              <div className="flex items-center gap-2">
+                <div className="size-4 rounded flex items-center justify-center shrink-0"
+                  style={{ background:T.purpleLight }}>
+                  <Sparkles size={9} style={{ color:T.purple }}/>
+                </div>
+                <span className="text-[12px] font-semibold text-gray-700">Sourcing Options</span>
+                <span className="text-[10px] font-mono text-gray-400">· 4 min ago</span>
+              </div>
+              <ChevronDown size={14}
+                className="text-gray-400 transition-transform duration-200 shrink-0"
+                style={{ transform: activePanel==="sourcing" ? "rotate(180deg)" : "rotate(0deg)" }}/>
+            </button>
+
+            {/* Sourcing list — only when active */}
+            {activePanel==="sourcing" && (
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 jomie-scrollbar min-h-0">
+                {isPanelLoading ? (
+                  <div className="flex flex-col gap-2 py-1">
+                    {[0,1,2].map(i => (
+                      <div key={i} className="rounded-lg p-3 bg-white" style={{ border:`0.5px solid ${T.border}` }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Skeleton className="h-2.5 w-20 bg-gray-200"/>
+                          <Skeleton className="h-3 w-32 bg-gray-300 flex-1"/>
+                        </div>
+                        <Skeleton className="h-2 w-full bg-gray-100"/>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    {prData.lineItems.map(item => (
+                      <ItemSourcingBlock key={item.code} itemCode={item.code}/>
+                    ))}
+                    <code className="text-[9px] font-mono text-gray-300 block px-1 pb-1">
+                      procurementPolicy.md:v1.3 → S7.2 · vendorOnboarding.md:v2.1
+                    </code>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Approval action footer — ALWAYS VISIBLE regardless of panel state ── */}
+            <div className="px-4 pb-4 pt-3 border-t shrink-0"
+              style={{ borderColor:T.border, background:"#F7F7FE" }}>
+
+              {/* SLA bar */}
+              <div className="flex items-center justify-between mb-3 text-[11px]">
                 <div className="flex items-center gap-1.5" style={{ color:T.amber }}>
                   <Clock size={11} className="shrink-0"/>
-                  <span className="font-medium">18h elapsed · 30h remaining (FM SLA)</span>
+                  <span className="font-medium">18h elapsed · 30h remaining</span>
                 </div>
-                <div className="h-1.5 w-20 rounded-full bg-gray-100 overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width:"37.5%", background:T.amber }}/>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-16 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width:"37.5%", background:T.amber }}/>
+                  </div>
+                  <span className="text-[10px] font-mono text-gray-400">FM SLA</span>
                 </div>
               </div>
 
               {/* State banners */}
-              {!sourcingChoice && !approved && (
-                <div className="text-[11px] text-gray-500 px-3 py-2 rounded-lg"
-                  style={{ background:"#F0EFEB", border:`0.5px solid ${T.border}` }}>
-                  Select a sourcing direction below before approving
-                </div>
-              )}
-              {approved && (
-                <div className="flex items-center gap-2 rounded-lg px-3 py-2.5"
+              {approved ? (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3"
                   style={{ background:T.tealLight, border:`0.5px solid ${T.teal}66` }}>
-                  <CheckCircle2 size={13} style={{ color:T.teal }}/>
+                  <CheckCircle2 size={12} style={{ color:T.teal }}/>
                   <div className="text-[11px] font-medium" style={{ color:T.tealText }}>
-                    Approved · Sourcing direction recorded · Routing to CFO
+                    Approved · Sourcing recorded · Routing to CFO
                   </div>
+                </div>
+              ) : !sourcingChoice && (
+                <div className="text-[11px] text-gray-500 px-3 py-2 rounded-lg mb-3"
+                  style={{ background:"#F0EFEB", border:`0.5px solid ${T.border}` }}>
+                  Select a sourcing direction before approving
                 </div>
               )}
 
-              {/* Sourcing direction buttons */}
-              <div className="space-y-1.5">
-                {[
+              {/* ── Compact 3-column sourcing direction selector ── */}
+              <div className="grid grid-cols-3 gap-1.5 mb-3">
+                {([
                   {
                     key:"approved" as const,
-                    icon:<CheckCircle2 size={13}/>,
-                    label:"Proceed with best approved vendor",
-                    activeBg:T.teal, activeColor:"white",
+                    icon:<CheckCircle2 size={15}/>,
+                    label:"Best Vendor",
+                    activeBg:T.teal,     activeColor:"white",
                     inactiveBg:T.tealLight, inactiveColor:T.tealText,
-                    border:`0.5px solid ${T.teal}55`,
                   },
                   {
                     key:"marketplace" as const,
-                    icon:<Globe size={13}/>,
-                    label:"Select marketplace option",
-                    activeBg:T.amber, activeColor:"white",
+                    icon:<Globe size={15}/>,
+                    label:"Marketplace",
+                    activeBg:T.amber,    activeColor:"white",
                     inactiveBg:T.amberLight, inactiveColor:T.amberText,
-                    border:`0.5px solid ${T.amber}55`,
                   },
                   {
                     key:"defer" as const,
-                    icon:null,
-                    label:"Defer to quotation stage",
+                    icon:<ArrowRight size={15}/>,
+                    label:"Defer",
                     activeBg:"#6B7280", activeColor:"white",
                     inactiveBg:"#F3F4F6", inactiveColor:"#6B7280",
-                    border:"0.5px solid #E5E7EB",
                   },
-                ].map(opt => (
+                ] as const).map(opt => (
                   <button key={opt.key}
                     onClick={() => setSourcingChoice(opt.key)}
-                    className="w-full flex items-center gap-2 h-9 px-3 rounded-lg text-[12px] font-medium transition-all cursor-pointer"
+                    className="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[11px] font-semibold transition-all cursor-pointer"
                     style={{
                       background: sourcingChoice===opt.key ? opt.activeBg   : opt.inactiveBg,
                       color:      sourcingChoice===opt.key ? opt.activeColor : opt.inactiveColor,
-                      border:     opt.border,
-                      fontWeight: opt.key !== "defer" ? 600 : 400,
+                      border: sourcingChoice===opt.key
+                        ? `1.5px solid ${opt.activeBg}`
+                        : `1px solid ${opt.inactiveBg === "#F3F4F6" ? "#E5E7EB" : opt.inactiveBg}`,
+                      boxShadow: sourcingChoice===opt.key ? "0 1px 4px rgba(0,0,0,0.12)" : "none",
                     }}>
                     {opt.icon}
-                    {opt.label}
-                    {opt.key !== "defer" && <ArrowRight size={12} className="ml-auto"/>}
+                    <span>{opt.label}</span>
                   </button>
                 ))}
               </div>
@@ -887,21 +1215,21 @@ export default function PRDetailView() {
                 disabled={!sourcingChoice || approved}
                 onClick={() => sourcingChoice && setApproved(true)}
                 className={cn(
-                  "w-full flex items-center justify-center gap-2 h-10 rounded-lg text-[13px] font-semibold text-white transition-all",
+                  "w-full flex items-center justify-center gap-2 h-9 rounded-xl text-[13px] font-semibold text-white transition-all",
                   (!sourcingChoice || approved) ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:opacity-90",
                 )}
                 style={{ background: approved ? T.teal : T.purple }}>
-                <CheckCircle2 size={14}/>
+                <CheckCircle2 size={13}/>
                 {approved ? "Approved ✓" : `Approve ${prData.id} →`}
               </button>
 
-              <p className="text-center text-[10px] leading-relaxed" style={{ color:T.dimText }}>
-                Sourcing direction is a preference. Formal selection at Phase C.
-                Deviation requires documented justification.
+              <p className="text-center text-[10px] mt-2 leading-relaxed" style={{ color:T.dimText }}>
+                Sourcing preference only · formal selection at Phase C
               </p>
             </div>
           </div>
-        </div>
+
+        </div>{/* end right panels */}
 
       </div>
     </TooltipProvider>
