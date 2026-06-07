@@ -180,6 +180,12 @@
   }
 }
 
+/* ── Jomie custom scrollbar ── */
+.jomie-scrollbar::-webkit-scrollbar        { width: 8px; }
+.jomie-scrollbar::-webkit-scrollbar-track  { background: transparent; }
+.jomie-scrollbar::-webkit-scrollbar-thumb  { background: rgba(93,94,244,0.2); border-radius: 99px; }
+.jomie-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(93,94,244,0.4); }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

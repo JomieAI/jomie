@@ -6,10 +6,11 @@ import { cn } from "@/lib/utils"
 import {
   Sparkles, ChevronLeft, ChevronRight, Send, Plus, Check, CheckCircle2,
   Building2, TriangleAlert, ArrowRight, Loader2, ShieldCheck,
-  CircleDot, Package, Briefcase, RefreshCw, ChevronDown,
-  Pencil,
+  CircleDot, Package, Briefcase, RefreshCw, ChevronDown, Pencil,
 } from "lucide-react"
+import { InlineEditableTitle } from "@/components/ui/inline-editable-title"
 import { savePR, buildNextPRId, getSavedPRs } from "@/lib/pr-store"
+import { Skeleton } from "@/components/ui/skeleton"
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -81,27 +82,115 @@ interface FollowUpAnswers {
 
 // ─── Auto-generate project name from description ──────────────────────────────
 
+function toTitleCase(s: string): string {
+  const STOP = new Set(["a","an","the","and","or","for","of","to","in","on","at","by","with","from"])
+  return s.split(" ").map((w, i) =>
+    i === 0 || !STOP.has(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w
+  ).join(" ")
+}
+
 function autoGenerateName(desc: string): string {
   const d = desc.toLowerCase()
-  if (/laptop|desktop|computer|server|workstation|monitor|dock|hardware|printer|scanner/.test(d))
-    return "IT Equipment"
-  if (/software|licence|license|subscription|saas|cloud|app/.test(d))
-    return "Software License"
-  if (/renovation|partition|furniture|flooring|office fit|fitting/.test(d))
-    return "Office Renovation"
-  if (/vehicle|car|van|truck|lorry/.test(d))
-    return "Fleet Purchase"
-  if (/training|course|workshop|seminar|conference/.test(d))
-    return "Training & Development"
-  if (/marketing|booth|banner|trade fair|brochure|print/.test(d))
-    return "Marketing Materials"
-  if (/cleaning|maintenance|repair|servic/.test(d))
-    return "Maintenance Services"
-  if (/stationery|supplies|paper|toner|consumable/.test(d))
-    return "Office Supplies"
-  // Fallback: first 3 words title-cased
-  const words = desc.trim().split(/\s+/).slice(0, 3)
-  return words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")
+
+  // ── Step 1: strip all intent/filler phrases from the front ──
+  const INTENT = /^(i want to|we want to|i would like to|we would like to|i need to|we need to|i am looking to|we are looking to|please|kindly|i need|we need|we require|please purchase|please order|purchase|buy|order|request for|requesting|looking for|looking to buy|looking to order|looking to purchase|reorder\s+request\s+for|reorder\s+for)\s+/i
+  let core = desc.trim()
+  // Apply repeatedly in case of stacked phrases ("i want to reorder" → remove → "reorder raw material" → remove → "raw material")
+  let prev = ""
+  while (prev !== core) {
+    prev = core
+    core = core.replace(INTENT, "").trim()
+  }
+
+  // ── Step 2: strip trailing context ("for upcoming batch", "for the finance team") ──
+  const deptMatch = desc.match(/\bfor\s+(?:the\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(?:team|dept|department|division)/i)
+  core = core
+    .replace(/\bfor\s+(?:the\s+)?[a-z\s]+?(team|dept|department|division)\b.*/i, "")
+    .replace(/\bfor\s+(?:upcoming|the\s+next|next|our|an?)\b.*/i, "")
+    .replace(/\bto\s+(?:support|prepare|use|be used|handle)\b.*/i, "")
+    .trim()
+
+  // ── Step 3: detect action verb left at the front (reorder, replenish, procure, source) ──
+  const actionMatch = core.match(/^(reorder|replenish|procure|source|renew|replace|refill|top[\s-]?up)\s+(.+)/i)
+  const action = actionMatch ? actionMatch[1].toLowerCase() : null
+  if (actionMatch) core = actionMatch[2].trim()
+
+  const actionLabel: Record<string, string> = {
+    reorder: "Reorder", replenish: "Replenishment", procure: "Procurement",
+    source: "Sourcing", renew: "Renewal", replace: "Replacement",
+    refill: "Replenishment", "top-up": "Top-Up", "top up": "Top-Up",
+  }
+
+  // ── Step 4: quantity pattern ("5 laptops", "2 units of chairs") ──
+  const qtyMatch = core.match(/^(\d+)\s+(?:units?\s+of\s+)?([a-z][a-z\s-]{2,30}?)(?:\s+for|\s+to|\s*[,.]|$)/i)
+  if (qtyMatch) {
+    const qty  = qtyMatch[1]
+    const item = qtyMatch[2].trim()
+    if (item.length >= 3) return toTitleCase(`${item} (×${qty})`)
+  }
+
+  // ── Step 5: specific item matching ──
+  const deptSuffix = deptMatch ? ` — ${toTitleCase(deptMatch[1])} Team` : ""
+  const suffix = (base: string) => action ? `${base} ${actionLabel[action] ?? "Reorder"}` : base
+
+  // IT hardware
+  const hwMatch = core.match(/\b(laptop|macbook|thinkpad|dell|hp|lenovo|desktop|workstation|server|monitor|keyboard|mouse|dock|docking station|webcam|headset|printer|scanner|projector|router|switch|nas|storage|ssd|hard drive)\b/i)
+  if (hwMatch) return suffix(toTitleCase(hwMatch[1])) + (action ? "" : " Purchase") + deptSuffix
+
+  // Software / SaaS
+  const swMatch = core.match(/\b(adobe|microsoft 365|google workspace|slack|zoom|notion|figma|jira|confluence|salesforce|hubspot|quickbooks|xero|autocount|antivirus|vpn)\b/i)
+  if (swMatch) return toTitleCase(swMatch[1]) + " Subscription"
+  if (/software|licence|license|subscription|saas|cloud app/.test(d)) return "Software License Renewal"
+
+  // Raw / production materials — capture keyword + up to 2 trailing qualifier words
+  const rawMatch = core.match(/\b(raw material|component|spare part|packaging|chemical|resin|fabric|steel|aluminium|plastic|rubber|ink|solvent|lubricant|catalyst|part)(?:\s+([a-z]+(?:\s+[a-z]+)?))?\b/i)
+  if (rawMatch) {
+    const item = rawMatch[2]
+      ? `${rawMatch[1]} ${rawMatch[2]}`.trim()
+      : rawMatch[1]
+    return suffix(toTitleCase(item))
+  }
+
+  // Office furniture / fit-out
+  const furnMatch = core.match(/\b(chair|desk|table|cabinet|shelf|shelving|whiteboard|partition|locker|sofa|standing desk|ergonomic chair)\b/i)
+  if (furnMatch) return toTitleCase(furnMatch[1]) + " Purchase"
+  if (/renovation|fit-?out|flooring|ceiling|electrical|plumbing/.test(d)) return "Office Fit-Out Works"
+
+  // Vehicles
+  const vehMatch = core.match(/\b(car|van|truck|lorry|pickup|vehicle|motorcycle|mpv|suv)\b/i)
+  if (vehMatch) return toTitleCase(vehMatch[1]) + " Purchase"
+
+  // Training
+  const trainMatch = core.match(/\b(.+?)\s+(?:training|course|workshop|seminar|certification|conference)\b/i)
+  if (trainMatch) return toTitleCase(trainMatch[1].trim()) + " Training"
+  if (/training|seminar|workshop|conference/.test(d)) return "Staff Training Program"
+
+  // Marketing
+  const mktMatch = core.match(/\b(.+?)\s+(?:banner|booth|brochure|flyer|signage|display|campaign)\b/i)
+  if (mktMatch) return toTitleCase(mktMatch[1].trim()) + " Marketing Materials"
+  if (/marketing|brand|promotion|exhibition|trade fair/.test(d)) return "Marketing & Promotional Materials"
+
+  // Maintenance / services
+  const svcMatch = core.match(/\b(.+?)\s+(?:maintenance|repair|servicing|cleaning|inspection|installation)\b/i)
+  if (svcMatch) return toTitleCase(svcMatch[1].trim()) + " Maintenance"
+  if (/maintenance|repair|service|cleaning|inspection/.test(d)) return "Maintenance Services"
+
+  // Stationery / consumables
+  if (/stationery|paper|toner|cartridge|envelope|folder|file/.test(d)) return "Office Stationery & Supplies"
+  if (/consumable|supplies/.test(d)) return "Office Consumables"
+
+  // ── Step 6: smart fallback — take meaningful words from stripped core ──
+  const words = core.split(/\s+/).slice(0, 4).filter(w => w.length > 2)
+  if (words.length >= 2) {
+    const name = toTitleCase(words.join(" "))
+    return action ? `${name} ${actionLabel[action] ?? "Reorder"}` : name
+  }
+
+  // Last resort — take first 3 meaningful words from original
+  const fallback = desc.trim().split(/\s+/)
+    .filter(w => !/^(i|we|a|an|the|to|for|of|and|or|is|are|was|were|be|been|being)$/i.test(w))
+    .slice(0, 3)
+  return toTitleCase(fallback.join(" "))
 }
 
 // ─── Jomie contextual reply generator ────────────────────────────────────────
@@ -205,6 +294,7 @@ export default function NewPRPage() {
   const [processStep, setProcessStep] = React.useState(-1)
   const [submittedMessage, setSubmittedMessage] = React.useState("")
   const [submittedProject, setSubmittedProject] = React.useState("")
+
   const [activeTab, setActiveTab] = React.useState("ai")
   const [savedPRId, setSavedPRId] = React.useState("")
   const [chatMessages, setChatMessages] = React.useState<ChatMsg[]>([])
@@ -214,7 +304,8 @@ export default function NewPRPage() {
   })
 
   // null = fill remaining space | 0 = closed | >0 = fixed px width
-  const [rightWidth, setRightWidth] = React.useState<number | null>(null)
+  const [rightWidth, setRightWidth] = React.useState<number | null>(0)
+  const [isPanelLoading, setIsPanelLoading] = React.useState(false)
   const endRef     = React.useRef<HTMLDivElement>(null)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
   const nameInputRef = React.useRef<HTMLInputElement>(null)
@@ -291,6 +382,9 @@ export default function NewPRPage() {
     setTimeout(() => {
       setChatState("confirmed")
       setProcessStep(-1)
+      setIsPanelLoading(true)
+      setRightWidth(null)                                  // expand right panel when PR is confirmed
+      setTimeout(() => setIsPanelLoading(false), 1200)    // skeleton while panel populates
     }, 400 + PROCESSING_STEPS.length * 400 + 500)
   }
 
@@ -322,6 +416,7 @@ export default function NewPRPage() {
 
   const handleCreate = () => {
     if (!inputValue.trim()) return
+    setRightWidth(0)                                       // collapse right panel while questioning
     setSubmittedMessage(inputValue)
     const finalProject = projectName.trim() || autoGenerateName(inputValue) || "New Purchase Request"
     setSubmittedProject(finalProject)
@@ -355,7 +450,7 @@ export default function NewPRPage() {
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior:"smooth" })
-  }, [chatState, processStep])
+  }, [chatState, processStep, chatMessages])
 
   const tabs = [
     { key:"ai",      label:"AI Chat" },
@@ -377,7 +472,7 @@ export default function NewPRPage() {
 
       {/* ── Chat — flex:1, content centered at max 600px ── */}
       <div className="flex flex-col min-h-0 flex-1 min-w-[500px]">
-        <div className="flex flex-col min-h-0 h-full w-full max-w-[600px] mx-auto"
+        <div className="flex flex-col min-h-0 h-full w-full max-w-[700px] mx-auto"
           style={{ padding: chatState === "idle" ? "0 16px 16px" : "24px 16px 16px", gap:0 }}>
 
         {/* ══ IDLE: Starter screen ══ */}
@@ -426,7 +521,7 @@ export default function NewPRPage() {
                       autoFocus
                       className="w-full text-[14px] leading-5 placeholder-gray-400 text-gray-700 focus:outline-none bg-white px-4"
                       style={{
-                        height:56, border:`2px solid ${T.purple}`, borderRadius:15,
+                        height:52, border:`2px solid ${T.purple}`, borderRadius:15,
                         boxShadow:"0px 0px 0px 3px rgba(93,94,244,0.12)",
                         fontFamily:"Inter, sans-serif",
                       }}
@@ -436,7 +531,7 @@ export default function NewPRPage() {
                       onClick={() => { setIsEditingName(true); setIsNameAutoGen(false) }}
                       className="w-full flex items-center cursor-text"
                       style={{
-                        height:56, border:`2px solid ${T.border}`, borderRadius:15,
+                        height:52, border:`2px solid ${T.border}`, borderRadius:15,
                         background:"white", padding:"0 16px",
                         boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
                       }}>
@@ -513,7 +608,7 @@ export default function NewPRPage() {
                   {tabs.map(tab => (
                     <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                       className={cn(
-                        "h-9 px-3 text-[14px] transition-all cursor-pointer whitespace-nowrap",
+                        "h-9 px-3 text-[12px] transition-all cursor-pointer whitespace-nowrap",
                         activeTab===tab.key ? "text-white" : "text-gray-400 hover:text-gray-300",
                       )}
                       style={{
@@ -546,19 +641,28 @@ export default function NewPRPage() {
               {savedPRId ? `${savedPRId} · Pending` : "PR-2026-NEW · Draft"}
             </span>
           </div>
-          <h1 className="text-[18px] font-semibold text-white leading-7"
-            style={{ fontFamily:"var(--font-lora), Lora, serif" }}>
-            {submittedProject || "New Purchase Request"}
-          </h1>
+          {/* Editable PR title — InlineEditableTitle component */}
+          <InlineEditableTitle
+            value={submittedProject || "New Purchase Request"}
+            onSave={setSubmittedProject}
+            className="text-[18px] font-semibold text-white leading-7 max-w-full"
+            inputClassName="text-[18px] font-semibold text-white leading-7"
+            style={{ fontFamily: "var(--font-lora), Lora, serif" }}
+          />
         </div>
 
-        {/* ── Chat scroll area ── */}
-        <div className="flex-1 overflow-y-auto min-h-0 py-4" style={{ display:"flex", flexDirection:"column", gap:20 }}>
+        {/* ── Chat scroll area (with bottom fade mask) ── */}
+        <div className="flex-1 min-h-0 relative">
+          {/* Bottom fade — softens messages being cut off by the input box */}
+          <div className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none z-10"
+            style={{ background:"linear-gradient(to top, #141137 0%, transparent 100%)" }}/>
+        <div className="h-full overflow-y-auto py-4 jomie-scrollbar" style={{ display:"flex", flexDirection:"column", gap:20,
+          scrollbarWidth:"thin", scrollbarColor:"rgba(93,94,244,0.2) transparent" }}>
 
           {/* Jomie greeting */}
           <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.4s ease-out" }}>
             <div className="flex items-center gap-2">
-              <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+              <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
               <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
             </div>
             <div className="text-[14px] text-white leading-5">
@@ -572,9 +676,9 @@ export default function NewPRPage() {
           <div className="flex flex-col items-end gap-1.5" style={{ animation:"fadeInUp 0.4s ease-out 0.15s both" }}>
             <div className="flex items-center gap-2">
               <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
-              <span className="text-[14px] font-bold text-white">Lim Wei Xiang</span>
+              <span className="text-[12px] font-bold text-white">Lim Wei Xiang</span>
             </div>
-            <div className="w-full px-3.5 py-2.5 text-[14px] text-white leading-5"
+            <div className="w-fit max-w-[85%] px-3.5 py-2.5 text-[14px] text-white leading-5"
               style={{ background:"rgba(255,255,255,0.05)", borderRadius:12 }}>
               {submittedMessage}
             </div>
@@ -585,7 +689,7 @@ export default function NewPRPage() {
             chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
             <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.5s ease-out 0.3s both" }}>
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+                <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                 <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
               </div>
 
@@ -711,7 +815,7 @@ export default function NewPRPage() {
             chatState === "submitting" || chatState === "a2-pass") && (
             <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.4s ease-out 0.2s both" }}>
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+                <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                 <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
               </div>
               <div className="flex flex-col gap-3 px-3.5 py-3 rounded-xl"
@@ -757,7 +861,7 @@ export default function NewPRPage() {
           {(chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
             <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.5s ease-out 0.15s both" }}>
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+                <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                 <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
               </div>
               <div className="text-[14px] text-white leading-5 space-y-3">
@@ -807,7 +911,7 @@ export default function NewPRPage() {
           {chatState === "submitting" && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+                <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
               </div>
               <div className="inline-flex items-center px-2.5 py-1.5 gap-1.5">
                 {[0,1,2].map(i => (
@@ -822,7 +926,7 @@ export default function NewPRPage() {
           {chatState === "a2-pass" && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+                <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                 <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
               </div>
               <div className="rounded-xl px-4 py-3 space-y-2"
@@ -860,15 +964,15 @@ export default function NewPRPage() {
           {/* ── Follow-up chat messages ── */}
           {chatMessages.map((msg, i) => (
             <div key={i}
-              className={cn("flex flex-col gap-1.5")}
+              className={cn("flex flex-col gap-1.5", msg.role === "user" && "items-end")}
               style={{ animation:"fadeInUp 0.3s ease-out" }}>
               {msg.role === "user" ? (
                 <>
                   <div className="flex items-center justify-end gap-2">
                     <span className="text-[12px] font-light" style={{ color: T.dimText }}>Just now</span>
-                    <span className="text-[14px] font-bold text-white">Lim Wei Xiang</span>
+                    <span className="text-[12px] font-bold text-white">Lim Wei Xiang</span>
                   </div>
-                  <div className="w-full px-3.5 py-2.5 text-[14px] text-white leading-5"
+                  <div className="w-fit max-w-[85%] px-3.5 py-2.5 text-[14px] text-white leading-5"
                     style={{ background:"rgba(255,255,255,0.05)", borderRadius:12 }}>
                     {msg.text}
                   </div>
@@ -876,7 +980,7 @@ export default function NewPRPage() {
               ) : (
                 <>
                   <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+                    <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                     <span className="text-[12px] font-light" style={{ color: T.dimText }}>Just now</span>
                   </div>
                   <div className="text-[14px] text-white leading-5">{msg.text}</div>
@@ -889,7 +993,7 @@ export default function NewPRPage() {
           {isChatThinking && (
             <div className="flex flex-col gap-1.5" style={{ animation:"fadeInUp 0.25s ease-out" }}>
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
+                <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
               </div>
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl w-fit"
                 style={{ background:"rgba(255,255,255,0.05)" }}>
@@ -903,6 +1007,7 @@ export default function NewPRPage() {
 
           <div ref={endRef}/>
         </div>
+        </div>{/* end fade wrapper */}
 
         {/* ── Bottom sticky: visible once PR is confirmed/submitted ── */}
         {(chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
@@ -918,7 +1023,7 @@ export default function NewPRPage() {
               placeholder="Ask Jomie anything about this PR… (↵ to send, ⇧↵ for new line)"
               rows={3}
               className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
-              style={{ fontFamily:"var(--font-pjs)" }}
+              style={{ fontFamily:"Inter, sans-serif" }}
             />
             <div className="flex items-center justify-between px-4 pb-3.5 pt-1">
               <button className="size-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50"
@@ -952,7 +1057,7 @@ export default function NewPRPage() {
             {tabs.map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                 className={cn(
-                  "h-9 px-3 text-[14px] transition-all cursor-pointer whitespace-nowrap",
+                  "h-9 px-3 text-[12px] transition-all cursor-pointer whitespace-nowrap",
                   activeTab===tab.key ? "text-white" : "text-gray-400 hover:text-gray-300",
                 )}
                 style={{
@@ -1036,6 +1141,42 @@ export default function NewPRPage() {
                   }
                 </div>
               </div>
+            </div>
+          ) : isPanelLoading ? (
+            /* ── PR preview skeleton while Jomie populates the panel ── */
+            <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="p-3 rounded-xl" style={{ background:"#F3F4F6" }}>
+                    <Skeleton className="h-3 w-16 bg-gray-200 mb-2" />
+                    <Skeleton className="h-5 w-20 bg-gray-300" />
+                    <Skeleton className="h-2.5 w-24 bg-gray-200 mt-1" />
+                  </div>
+                ))}
+              </div>
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="rounded-xl p-4 flex flex-col gap-2.5" style={{ background:"#F3F4F6" }}>
+                  <div className="flex justify-between items-start">
+                    <Skeleton className="h-3.5 w-40 bg-gray-200" />
+                    <Skeleton className="h-3.5 w-16 bg-gray-300" />
+                  </div>
+                  <Skeleton className="h-3 w-28 bg-gray-200" />
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div><Skeleton className="h-2.5 w-12 bg-gray-200 mb-1"/><Skeleton className="h-3 w-20 bg-gray-200"/></div>
+                    <div><Skeleton className="h-2.5 w-12 bg-gray-200 mb-1"/><Skeleton className="h-3 w-20 bg-gray-200"/></div>
+                  </div>
+                </div>
+              ))}
+              <div className="flex flex-col gap-1.5 pt-1">
+                <Skeleton className="h-3 w-24 bg-gray-200" />
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex justify-between">
+                    <Skeleton className="h-3 w-28 bg-gray-100" />
+                    <Skeleton className="h-3 w-16 bg-gray-200" />
+                  </div>
+                ))}
+              </div>
+              <Skeleton className="h-11 w-full rounded-xl bg-gray-200 mt-auto" />
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">

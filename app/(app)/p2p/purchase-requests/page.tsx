@@ -13,6 +13,7 @@ import {
   Briefcase, RefreshCw, ShoppingBag, Star, Globe,
   TriangleAlert, Check, ArrowRight, X,
 } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 
@@ -53,7 +54,7 @@ const T = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PRStatus = "pending" | "review" | "approved" | "draft"
+type PRStatus = "pending" | "review" | "approved" | "draft" | "rejected"
 type Phase    = "A1" | "A2" | "B" | "C" | "D" | "F" | "G"
 type PurchaseType = "trade" | "capex" | "service" | "recurring" | "nontrade"
 
@@ -675,12 +676,13 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
 
 // ─── Filter tabs ──────────────────────────────────────────────────────────────
 
-const FILTERS = [
-  { key:"all",      label:"All",      count:12 },
-  { key:"pending",  label:"Pending",  count:3  },
-  { key:"review",   label:"Review",   count:2  },
-  { key:"approved", label:"Approved", count:6  },
-  { key:"draft",    label:"Draft",    count:1  },
+const FILTER_KEYS = [
+  { key:"pending",  label:"Pending"  },
+  { key:"review",   label:"Review"   },
+  { key:"approved", label:"Approved" },
+  { key:"rejected", label:"Rejected" },
+  { key:"draft",    label:"Draft"    },
+  { key:"all",      label:"All"      },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -689,13 +691,21 @@ export default function PurchaseRequestsPage() {
   const router   = useRouter()
   const [allPRs,   setAllPRs]   = React.useState<PR[]>(PRS)
   const [selected, setSelected] = React.useState<PR>(PRS[0])
-  const [filter,   setFilter]   = React.useState("all")
+  const [filter,   setFilter]   = React.useState("pending")
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
   const [rightWidth, setRightWidth] = React.useState<number | null>(null)
+  const [isLoading,       setIsLoading]       = React.useState(true)   // PR list skeleton
+  const [isDetailLoading, setIsDetailLoading] = React.useState(false)  // right panel skeleton
   const wrapperRef = React.useRef<HTMLDivElement>(null)
   const dragging   = React.useRef(false)
 
   const rightOpen = rightWidth !== 0
+
+  // Compute tab counts dynamically from actual PR data
+  const FILTERS = React.useMemo(() => FILTER_KEYS.map(f => ({
+    ...f,
+    count: f.key === "all" ? allPRs.length : allPRs.filter(pr => pr.status === f.key).length,
+  })), [allPRs])
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -706,14 +716,18 @@ export default function PurchaseRequestsPage() {
     })
   }
 
-  // ── Load saved PRs from localStorage on mount ──
+  // ── Load saved PRs from localStorage on mount (simulate API fetch) ──
   React.useEffect(() => {
-    const saved = getSavedPRs()
-    if (saved.length > 0) {
-      const merged = [...saved.map(storedToPR), ...PRS]
-      setAllPRs(merged)
-      setSelected(merged[0]) // auto-select newest
-    }
+    const timer = setTimeout(() => {
+      const saved = getSavedPRs()
+      if (saved.length > 0) {
+        const merged = [...saved.map(storedToPR), ...PRS]
+        setAllPRs(merged)
+        setSelected(merged[0])
+      }
+      setIsLoading(false)
+    }, 900)
+    return () => clearTimeout(timer)
   }, [])
 
   // ── Drag ──
@@ -882,7 +896,30 @@ export default function PurchaseRequestsPage() {
 
             {/* Rows panel — transparent, scrollable, flex-1 */}
             <div className="flex-1 min-h-0 overflow-y-auto pb-2">
-              {filteredPRS.map(pr => {
+              {isLoading ? (
+                /* ── PR list skeleton ── */
+                <div className="flex flex-col">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="grid items-center py-3 border-b px-2"
+                      style={{ gridTemplateColumns: "1fr 140px 130px 120px 28px", borderColor:"rgba(103,100,136,0.2)" }}>
+                      <div className="flex flex-col gap-1.5 pr-2">
+                        <Skeleton className="h-3.5 w-48 bg-white/10" />
+                        <Skeleton className="h-3 w-64 bg-white/[0.06]" />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Skeleton className="h-3 w-20 bg-white/10" />
+                        <Skeleton className="h-3 w-16 bg-white/[0.06]" />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Skeleton className="h-3 w-24 bg-white/10" />
+                        <Skeleton className="h-3 w-16 bg-white/[0.06]" />
+                      </div>
+                      <Skeleton className="h-5 w-16 rounded-full bg-white/10" />
+                      <Skeleton className="h-4 w-4 rounded-sm bg-white/10" />
+                    </div>
+                  ))}
+                </div>
+              ) : filteredPRS.map(pr => {
                 const isSel     = selected?.id === pr.id
                 const isExp     = expanded.has(pr.id)
                 const hasSubPRs = pr.subPRs && pr.subPRs.length > 0
@@ -893,7 +930,7 @@ export default function PurchaseRequestsPage() {
                 return (
                   <React.Fragment key={pr.id}>
                     <div
-                      onClick={() => setSelected(pr)}
+                      onClick={() => { setIsDetailLoading(true); setSelected(pr); setTimeout(() => setIsDetailLoading(false), 600) }}
                       className={cn(
                         "grid items-center py-2.5 border-b cursor-pointer group transition-all duration-150 rounded-r-lg",
                       )}
@@ -1007,7 +1044,7 @@ export default function PurchaseRequestsPage() {
                   </React.Fragment>
                 )
               })}
-            </div>
+            </div>{/* end rows */}
 
           </div>
         </div>
@@ -1037,7 +1074,53 @@ export default function PurchaseRequestsPage() {
         {/* ── Right panel — #F7F7FE floating, draggable ── */}
         <div style={rightPanelStyle}>
           <div className="flex flex-col h-full" style={{ padding: "20px 18px" }}>
-            <CopilotPanel pr={selected}/>
+            {isDetailLoading || isLoading ? (
+              /* ── Right panel skeleton ── */
+              <div className="flex flex-col gap-4 h-full">
+                {/* Header */}
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-36 bg-gray-200" />
+                  <Skeleton className="h-3 w-52 bg-gray-100" />
+                </div>
+                {/* Metric cards */}
+                <div className="grid grid-cols-2 gap-2">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="p-3 rounded-xl" style={{ background:"#EEEEF8" }}>
+                      <Skeleton className="h-3 w-16 bg-gray-200 mb-2" />
+                      <Skeleton className="h-5 w-24 bg-gray-300" />
+                    </div>
+                  ))}
+                </div>
+                {/* Sub-PR cards */}
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <div key={i} className="rounded-xl p-4 flex flex-col gap-2" style={{ background:"#EEEEF8" }}>
+                    <div className="flex justify-between">
+                      <Skeleton className="h-3.5 w-40 bg-gray-200" />
+                      <Skeleton className="h-3.5 w-16 bg-gray-200" />
+                    </div>
+                    <Skeleton className="h-3 w-28 bg-gray-100" />
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      <Skeleton className="h-3 w-full bg-gray-100" />
+                      <Skeleton className="h-3 w-full bg-gray-100" />
+                    </div>
+                  </div>
+                ))}
+                {/* Controls */}
+                <div className="flex flex-col gap-2 mt-auto">
+                  <Skeleton className="h-3 w-24 bg-gray-200" />
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex justify-between">
+                      <Skeleton className="h-3 w-24 bg-gray-100" />
+                      <Skeleton className="h-3 w-20 bg-gray-100" />
+                    </div>
+                  ))}
+                </div>
+                {/* CTA */}
+                <Skeleton className="h-11 w-full rounded-xl bg-gray-200" />
+              </div>
+            ) : (
+              <CopilotPanel pr={selected}/>
+            )}
           </div>
         </div>
 

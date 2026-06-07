@@ -1,6 +1,7 @@
 import { Inter, Plus_Jakarta_Sans, Lora } from "next/font/google"
 import "./globals.css"
 import { cn } from "@/lib/utils"
+import AgentationToolbar from "@/components/agentation-toolbar"
 
 // Inter — all UI chrome (nav labels, badges, buttons, header)
 const inter = Inter({
@@ -44,6 +45,7 @@ export default function RootLayout({
         minHeight: "100vh",
       }}>
         {children}
+        <AgentationToolbar />
       </body>
     </html>
   )
