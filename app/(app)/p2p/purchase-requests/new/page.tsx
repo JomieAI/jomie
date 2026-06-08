@@ -75,21 +75,31 @@ const BUDGET_OPTIONS   = ["IT-CAPEX-2024", "IT-OPEX-2024", "CORP-CAPEX-2024", "O
 
 // ─── Item Master & Vendor Master (mock) ──────────────────────────────────────
 
+// itemType: semantic classification (Tier 1 — drives badge, GL logic, BOM slot reservation)
+// purchaseType: financial classification (capex vs opex — drives approval tier)
+type ItemType = "standard" | "service" | "capex" | "subscription"
+
 interface ItemMasterEntry {
   code: string; name: string; spec: string; uom: string
   unitPrice: number; purchaseType: "capex" | "opex"
+  itemType: ItemType
   glCode: string; vendorCode: string; moq: number
+  renewalDate?: string          // subscription only — "YYYY-MM" format
+  noPhysicalDelivery?: boolean  // service / subscription — skip delivery address in Round B
+  bomReady?: boolean            // Phase B: item has a BOM defined (placeholder flag)
 }
 
 const ITEM_MASTER: ItemMasterEntry[] = [
-  { code:"NXG-IT-001", name:"Dell Latitude 5540 Laptop",       spec:"Intel Core i7-13th Gen, 16GB RAM, 512GB SSD, 15.6\" FHD",   uom:"unit",    unitPrice:7200,  purchaseType:"capex", glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
-  { code:"NXG-IT-002", name:"LG 27\" UltraFine 4K Monitor",    spec:"3840×2160, USB-C 96W PD, 60Hz, IPS panel",                  uom:"unit",    unitPrice:2500,  purchaseType:"capex", glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
-  { code:"NXG-IT-003", name:"Dell WD22TB4 Thunderbolt Dock",   spec:"TB4, 130W PD, 5× USB-A, 2× Display out",                    uom:"unit",    unitPrice:1929,  purchaseType:"capex", glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
-  { code:"NXG-IT-004", name:"Logitech MX Keys Keyboard",       spec:"Wireless, Multi-device, Bluetooth + USB receiver",           uom:"unit",    unitPrice:380,   purchaseType:"opex",  glCode:"GL-6100-OPEX",  vendorCode:"V006", moq:1 },
-  { code:"NXG-OFF-001", name:"HP LaserJet Pro M404dn Printer", spec:"Monochrome, 40ppm, duplex, LAN",                             uom:"unit",    unitPrice:1200,  purchaseType:"capex", glCode:"GL-7200-CAPEX", vendorCode:"V002", moq:1 },
-  { code:"NXG-OFF-002", name:"Ergonomic Office Chair",         spec:"Adjustable lumbar support, mesh back, armrests",             uom:"unit",    unitPrice:850,   purchaseType:"opex",  glCode:"GL-6100-OPEX",  vendorCode:"V003", moq:1 },
-  { code:"NXG-CONS-001", name:"A4 Copy Paper (Box)",           spec:"80gsm, 500 sheets/ream, 5 reams/box",                        uom:"box",     unitPrice:45,    purchaseType:"opex",  glCode:"GL-6100-OPEX",  vendorCode:"V004", moq:5 },
-  { code:"NXG-SW-001", name:"Microsoft 365 Business Premium",  spec:"Per user/year, Cloud, Teams + Office apps",                  uom:"license", unitPrice:1500,  purchaseType:"opex",  glCode:"GL-6200-OPEX",  vendorCode:"V005", moq:1 },
+  { code:"NXG-IT-001", name:"Dell Latitude 5540 Laptop",       spec:"Intel Core i7-13th Gen, 16GB RAM, 512GB SSD, 15.6\" FHD",   uom:"unit",    unitPrice:7200,  purchaseType:"capex", itemType:"capex",        glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
+  { code:"NXG-IT-002", name:"LG 27\" UltraFine 4K Monitor",    spec:"3840×2160, USB-C 96W PD, 60Hz, IPS panel",                  uom:"unit",    unitPrice:2500,  purchaseType:"capex", itemType:"capex",        glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
+  { code:"NXG-IT-003", name:"Dell WD22TB4 Thunderbolt Dock",   spec:"TB4, 130W PD, 5× USB-A, 2× Display out",                    uom:"unit",    unitPrice:1929,  purchaseType:"capex", itemType:"capex",        glCode:"GL-7200-CAPEX", vendorCode:"V001", moq:1 },
+  { code:"NXG-IT-004", name:"Logitech MX Keys Keyboard",       spec:"Wireless, Multi-device, Bluetooth + USB receiver",           uom:"unit",    unitPrice:380,   purchaseType:"opex",  itemType:"standard",     glCode:"GL-6100-OPEX",  vendorCode:"V006", moq:1 },
+  { code:"NXG-OFF-001", name:"HP LaserJet Pro M404dn Printer", spec:"Monochrome, 40ppm, duplex, LAN",                             uom:"unit",    unitPrice:1200,  purchaseType:"capex", itemType:"capex",        glCode:"GL-7200-CAPEX", vendorCode:"V002", moq:1 },
+  { code:"NXG-OFF-002", name:"Ergonomic Office Chair",         spec:"Adjustable lumbar support, mesh back, armrests",             uom:"unit",    unitPrice:850,   purchaseType:"opex",  itemType:"standard",     glCode:"GL-6100-OPEX",  vendorCode:"V003", moq:1 },
+  { code:"NXG-CONS-001", name:"A4 Copy Paper (Box)",           spec:"80gsm, 500 sheets/ream, 5 reams/box",                        uom:"box",     unitPrice:45,    purchaseType:"opex",  itemType:"standard",     glCode:"GL-6100-OPEX",  vendorCode:"V004", moq:5 },
+  { code:"NXG-SW-001",  name:"Microsoft 365 Business Premium", spec:"Per user/year, Cloud, Teams + Office apps",                  uom:"license", unitPrice:1500,  purchaseType:"opex",  itemType:"subscription", glCode:"GL-6200-OPEX",  vendorCode:"V005", moq:1, renewalDate:"2026-09", noPhysicalDelivery:true },
+  { code:"NXG-SVC-001", name:"IT Support Retainer",            spec:"Monthly on-site & remote support, 8h/month SLA",             uom:"month",   unitPrice:2500,  purchaseType:"opex",  itemType:"service",      glCode:"GL-6300-OPEX",  vendorCode:"V001", moq:1, noPhysicalDelivery:true },
+  { code:"NXG-SVC-002", name:"Courier & Logistics Service",    spec:"Same-day & next-day delivery, peninsular MY",                uom:"trip",    unitPrice:80,    purchaseType:"opex",  itemType:"service",      glCode:"GL-6300-OPEX",  vendorCode:"",     moq:1, noPhysicalDelivery:true },
 ]
 
 const VENDOR_MASTER = [
@@ -448,17 +458,34 @@ function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInvento
           <Package size={13} style={{ color: isNew ? "#BA7517" : item.purchaseType === "capex" ? "#1D4ED8" : "#16A34A" }}/>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 mb-0.5">
+          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
             <span className="text-[10px] font-mono" style={{ color:"rgba(255,255,255,0.35)" }}>{item.code}</span>
-            {!isNew && (
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                style={{ background: item.purchaseType === "capex" ? "#EFF6FF" : "#F0FDF4", color: item.purchaseType === "capex" ? "#1D4ED8" : "#16A34A" }}>
-                {item.purchaseType.toUpperCase()}
-              </span>
-            )}
-            {isNew && (
+            {isNew ? (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background:"#FAEEDA", color:"#633806" }}>
                 NEW REQUEST
+              </span>
+            ) : (() => {
+              const typeConfig: Record<ItemType,{label:string;bg:string;fg:string}> = {
+                standard:     { label:"STANDARD",     bg:"rgba(255,255,255,0.1)",  fg:"rgba(255,255,255,0.5)" },
+                capex:        { label:"CAPEX",         bg:"#EFF6FF",               fg:"#1D4ED8" },
+                service:      { label:"SERVICE",       bg:"rgba(29,158,117,0.15)", fg:"#1D9E75" },
+                subscription: { label:"SUBSCRIPTION",  bg:"rgba(93,94,244,0.18)",  fg:"#A5A6F6" },
+              }
+              const t = typeConfig[item.itemType ?? "standard"]
+              return (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background:t.bg, color:t.fg }}>
+                  {t.label}
+                </span>
+              )
+            })()}
+            {item.renewalDate && (
+              <span className="text-[8px] font-semibold px-1 py-0.5 rounded" style={{ background:"rgba(93,94,244,0.15)", color:"#A5A6F6" }}>
+                Renews {item.renewalDate}
+              </span>
+            )}
+            {item.noPhysicalDelivery && (
+              <span className="text-[8px] px-1 py-0.5 rounded" style={{ background:"rgba(255,255,255,0.06)", color:"rgba(255,255,255,0.3)" }}>
+                No delivery
               </span>
             )}
           </div>
@@ -535,7 +562,7 @@ function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInvento
 
 // ─── Item picker popup ─────────────────────────────────────────────────────────
 
-interface NewItemFormData { name: string; spec: string; unitPrice: string; uom: string }
+interface NewItemFormData { name: string; spec: string; unitPrice: string; uom: string; itemType: ItemType }
 
 interface ItemPickerProps {
   query: string
@@ -548,7 +575,7 @@ interface ItemPickerProps {
 
 function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose, confirmedCodes }: ItemPickerProps) {
   const [showNewForm, setShowNewForm] = React.useState(false)
-  const [newForm, setNewForm] = React.useState<NewItemFormData>({ name: query, spec: "", unitPrice: "", uom: "unit" })
+  const [newForm, setNewForm] = React.useState<NewItemFormData>({ name: query, spec: "", unitPrice: "", uom: "unit", itemType: "standard" })
 
   React.useEffect(() => {
     if (showNewForm) setNewForm(f => ({ ...f, name: query }))
@@ -561,6 +588,14 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
     item.spec.toLowerCase().includes(lower)
   )
 
+  // Item type display config
+  const ITEM_TYPE_META: Record<ItemType, { label: string; bg: string; fg: string; icon: React.ReactNode }> = {
+    standard:     { label:"STANDARD",     bg:"rgba(255,255,255,0.08)", fg:"rgba(255,255,255,0.45)", icon:<Package size={10}/> },
+    capex:        { label:"CAPEX",        bg:"#EFF6FF",                fg:"#1D4ED8",                icon:<Briefcase size={10}/> },
+    service:      { label:"SERVICE",      bg:"rgba(29,158,117,0.15)",  fg:"#1D9E75",                icon:<Link2 size={10}/> },
+    subscription: { label:"SUBSCRIPTION", bg:"rgba(93,94,244,0.15)",   fg:"#A5A6F6",                icon:<RefreshCw size={10}/> },
+  }
+
   return (
     <div className="rounded-xl overflow-hidden shadow-2xl"
       style={{ background:"#1A1740", border:"1px solid rgba(103,100,136,0.6)" }}>
@@ -572,12 +607,26 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
           type="text"
           value={query}
           onChange={e => { onQueryChange(e.target.value); setShowNewForm(false) }}
-          placeholder="Search by name or item code…"
+          placeholder="Search by name, code, or item type…"
           className="flex-1 bg-transparent text-[13px] text-white placeholder-gray-500 border-0 focus:outline-none"
         />
         <button onClick={onClose} className="cursor-pointer hover:opacity-70">
           <X size={13} style={{ color:"rgba(255,255,255,0.4)" }}/>
         </button>
+      </div>
+
+      {/* BOM placeholder banner */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor:"rgba(103,100,136,0.15)", background:"rgba(93,94,244,0.06)" }}>
+        <div className="size-4 rounded flex items-center justify-center shrink-0" style={{ background:"rgba(93,94,244,0.2)" }}>
+          <Package size={9} style={{ color:"#A5A6F6" }}/>
+        </div>
+        <span className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>
+          Manufacturing / F&B / Construction?
+        </span>
+        <span className="ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0"
+          style={{ background:"rgba(93,94,244,0.15)", color:"#A5A6F6" }}>
+          BOM / BOQ — Phase B
+        </span>
       </div>
 
       {/* Results list */}
@@ -609,6 +658,8 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
             <>
               {filtered.map(item => {
                 const already = confirmedCodes.has(item.code)
+                const typeMeta = ITEM_TYPE_META[item.itemType]
+                const isSubscription = item.itemType === "subscription"
                 return (
                   <button key={item.code}
                     onClick={() => !already && onSelect(item)}
@@ -617,18 +668,33 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
                     onMouseEnter={e => { if (!already) e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
                     onMouseLeave={e => { e.currentTarget.style.background = "transparent" }}>
                     <div className="size-6 rounded-md shrink-0 flex items-center justify-center mt-0.5"
-                      style={{ background: item.purchaseType === "capex" ? "#EFF6FF" : "#F0FDF4" }}>
-                      <Package size={11} style={{ color: item.purchaseType === "capex" ? "#1D4ED8" : "#16A34A" }}/>
+                      style={{ background: typeMeta.bg }}>
+                      <span style={{ color: typeMeta.fg }}>{typeMeta.icon}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[12px] font-medium text-white truncate">{item.name}</span>
+                        <span className="text-[8px] font-bold px-1 py-0.5 rounded shrink-0"
+                          style={{ background: typeMeta.bg, color: typeMeta.fg }}>
+                          {typeMeta.label}
+                        </span>
                         {already && <span className="text-[9px] shrink-0" style={{ color:"rgba(255,255,255,0.35)" }}>Added</span>}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-[9px] font-mono" style={{ color:"rgba(255,255,255,0.35)" }}>{item.code}</span>
                         <span className="text-[9px]" style={{ color:"rgba(255,255,255,0.3)" }}>·</span>
-                        <span className="text-[9px] font-mono" style={{ color:"rgba(255,255,255,0.5)" }}>RM {item.unitPrice.toLocaleString()}/{item.uom}</span>
+                        <span className="text-[9px] font-mono" style={{ color:"rgba(255,255,255,0.5)" }}>
+                          RM {item.unitPrice.toLocaleString()}/{item.uom}
+                        </span>
+                        {isSubscription && item.renewalDate && (
+                          <span className="text-[8px] font-semibold px-1 py-0.5 rounded"
+                            style={{ background:"rgba(93,94,244,0.15)", color:"#A5A6F6" }}>
+                            Renews {item.renewalDate}
+                          </span>
+                        )}
+                        {item.noPhysicalDelivery && (
+                          <span className="text-[8px]" style={{ color:"rgba(255,255,255,0.25)" }}>No delivery</span>
+                        )}
                       </div>
                     </div>
                   </button>
@@ -660,6 +726,33 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
           <div className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>
             This will be submitted for item master approval. Your PR may be delayed until approved.
           </div>
+          {/* Item type selector */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color:"rgba(255,255,255,0.35)" }}>Item type</span>
+            <div className="flex gap-1.5 flex-wrap">
+              {(["standard","capex","service","subscription"] as ItemType[]).map(t => {
+                const labels: Record<ItemType,string> = { standard:"Standard", capex:"Capex / Asset", service:"Service", subscription:"Subscription" }
+                const colors: Record<ItemType,{bg:string,fg:string,activeBg:string}> = {
+                  standard:     { bg:"rgba(255,255,255,0.06)", fg:"rgba(255,255,255,0.4)",  activeBg:"rgba(255,255,255,0.14)" },
+                  capex:        { bg:"rgba(29,77,216,0.1)",    fg:"#6FA3F8",                activeBg:"rgba(29,77,216,0.25)"   },
+                  service:      { bg:"rgba(29,158,117,0.1)",   fg:"#1D9E75",                activeBg:"rgba(29,158,117,0.25)"  },
+                  subscription: { bg:"rgba(93,94,244,0.1)",    fg:"#A5A6F6",                activeBg:"rgba(93,94,244,0.25)"   },
+                }
+                const c = colors[t]
+                const active = newForm.itemType === t
+                return (
+                  <button key={t}
+                    onClick={() => setNewForm(prev => ({ ...prev, itemType: t }))}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-semibold cursor-pointer transition-all"
+                    style={{ background: active ? c.activeBg : c.bg, color: active ? c.fg : "rgba(255,255,255,0.35)",
+                      border: `0.5px solid ${active ? c.fg + "66" : "transparent"}` }}>
+                    {labels[t]}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           {/* Fields */}
           {[
             { label:"Item name", key:"name" as const, placeholder:"e.g. Standing Desk 140cm" },
@@ -696,7 +789,7 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
                 onChange={e => setNewForm(prev => ({ ...prev, uom: e.target.value }))}
                 className="w-full px-2 h-8 rounded-lg text-[12px] text-white focus:outline-none cursor-pointer"
                 style={{ background:"rgba(255,255,255,0.07)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
-                {["unit","box","set","kg","litre","license"].map(u => <option key={u} value={u}>{u}</option>)}
+                {["unit","box","set","kg","litre","license","month","trip","lot"].map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
           </div>
@@ -1006,12 +1099,16 @@ export default function NewPRPage() {
     setNewItemCounter(counter)
     const code = `NEW-${String(counter).padStart(3, "0")}`
     const price = parseFloat(data.unitPrice) || 0
+    const isCapex = data.itemType === "capex" || (data.itemType === "standard" && price >= 1000)
+    const isService = data.itemType === "service" || data.itemType === "subscription"
     const newItem: ConfirmedItem = {
       code, name: data.name, spec: data.spec,
       uom: data.uom, unitPrice: price,
-      purchaseType: price >= 1000 ? "capex" : "opex",
-      glCode: price >= 1000 ? "GL-7200-CAPEX" : "GL-6100-OPEX",
+      itemType: data.itemType,
+      purchaseType: isCapex ? "capex" : "opex",
+      glCode: isCapex ? "GL-7200-CAPEX" : isService ? "GL-6300-OPEX" : "GL-6100-OPEX",
       vendorCode: "",
+      noPhysicalDelivery: isService,
       moq: 1, qty: 1, stockSkipped: true, isNew: true,
     }
     setConfirmedItems(prev => [...prev, newItem])
@@ -1476,6 +1573,30 @@ export default function NewPRPage() {
                         Add item <span className="font-mono opacity-60 text-[11px]">· type /item to search</span>
                       </button>
 
+                      {/* Subscription duplicate warning */}
+                      {confirmedItems.some(i => i.itemType === "subscription") && (
+                        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
+                          style={{ background:"rgba(93,94,244,0.08)", border:"0.5px solid rgba(93,94,244,0.3)" }}>
+                          <RefreshCw size={10} style={{ color:"#A5A6F6", flexShrink:0, marginTop:1 }}/>
+                          <div className="text-[10px]" style={{ color:"rgba(255,255,255,0.55)" }}>
+                            <span className="font-semibold" style={{ color:"#A5A6F6" }}>Subscription detected</span>
+                            {" "}— Jomie will check for active duplicates before submission. Renewal date shown on each item.
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Service no-delivery note */}
+                      {confirmedItems.some(i => i.noPhysicalDelivery) && (
+                        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
+                          style={{ background:"rgba(29,158,117,0.06)", border:"0.5px solid rgba(29,158,117,0.25)" }}>
+                          <Link2 size={10} style={{ color:"#1D9E75", flexShrink:0, marginTop:1 }}/>
+                          <div className="text-[10px]" style={{ color:"rgba(255,255,255,0.5)" }}>
+                            <span className="font-semibold" style={{ color:"#1D9E75" }}>Service / subscription items</span>
+                            {" "}have no physical delivery — delivery address will be skipped for these lines in vendor matching.
+                          </div>
+                        </div>
+                      )}
+
                       {/* Confirm button */}
                       {confirmedItems.length > 0 && (
                         <button
@@ -1716,7 +1837,7 @@ export default function NewPRPage() {
                                         Your preference
                                       </span>
                                     )}
-                                    {!override && displayApproved && (
+                                    {!hasItemOverride && displayApproved && (
                                       <span className="text-[8px] shrink-0" style={{ color:T.teal }}>✓ Approved</span>
                                     )}
                                   </div>
@@ -1838,6 +1959,18 @@ export default function NewPRPage() {
                             <TriangleAlert size={11} style={{ color:T.amber, marginTop:1, flexShrink:0 }}/>
                             <span className="text-[11px]" style={{ color:T.amberText }}>
                               One or more vendors are not registered on MyInvois. Request e-invoice confirmation before PO issuance to protect your SST input credit claim.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Service / subscription — no delivery note */}
+                        {confirmedItems.some(i => i.noPhysicalDelivery) && (
+                          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg"
+                            style={{ background:"rgba(29,158,117,0.06)", border:"0.5px solid rgba(29,158,117,0.25)" }}>
+                            <Link2 size={11} style={{ color:"#1D9E75", marginTop:1, flexShrink:0 }}/>
+                            <span className="text-[11px]" style={{ color:"rgba(255,255,255,0.5)" }}>
+                              <span style={{ color:"#1D9E75", fontWeight:600 }}>Service / subscription lines</span>
+                              {" "}have no physical delivery — delivery address will be skipped for these items during Phase C.
                             </span>
                           </div>
                         )}
