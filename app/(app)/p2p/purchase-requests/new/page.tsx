@@ -1660,19 +1660,30 @@ export default function NewPRPage() {
       }, delay)
     }
   }
+  // Execute a slash command directly (bypasses state timing issues)
+  const executeSlashCommand = (cmd: string) => {
+    setSlashOpen(false)
+    setQuestioningInput("")
+    if (cmd === "/add-item" || cmd === "/item") {
+      setChatMessages(prev => [
+        ...prev,
+        { role:"user", text:"/add-item" },
+        { role:"ai", text:`Opening the item picker — search below and tap + to add items to your cart on the right. Hit Done when you're finished.${confirmedItems.length > 0 ? ` You already have ${confirmedItems.length} item${confirmedItems.length !== 1 ? "s" : ""} in your cart.` : ""}` },
+      ])
+      setTimeout(handleOpenItemPicker, 80)
+    }
+  }
+
   const handleQuestioningKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (slashOpen) {
-      if (e.key === "ArrowDown") { e.preventDefault(); setSlashSelectedIdx(i => i + 1) }
-      if (e.key === "ArrowUp")   { e.preventDefault(); setSlashSelectedIdx(i => Math.max(0, i - 1)) }
-      if (e.key === "Escape")    { e.preventDefault(); setSlashOpen(false) }
-      if (e.key === "Enter") {
+      if (e.key === "ArrowDown") { e.preventDefault(); setSlashSelectedIdx(i => Math.min(i + 1, SLASH_COMMANDS.length - 1)); return }
+      if (e.key === "ArrowUp")   { e.preventDefault(); setSlashSelectedIdx(i => Math.max(0, i - 1)); return }
+      if (e.key === "Escape")    { e.preventDefault(); setSlashOpen(false); return }
+      if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault()
-        const cmds = SLASH_COMMANDS.filter(c => c.cmd.includes(slashQuery))
-        if (cmds[slashSelectedIdx]) {
-          setQuestioningInput(cmds[slashSelectedIdx].cmd)
-          setSlashOpen(false)
-          setTimeout(() => handleQuestioningSend(), 10)
-        }
+        const cmds = SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().includes(slashQuery.toLowerCase()))
+        const selected = cmds[slashSelectedIdx] ?? cmds[0]
+        if (selected) executeSlashCommand(selected.cmd)
         return
       }
     }
@@ -2497,11 +2508,7 @@ export default function NewPRPage() {
               <SlashPopover
                 query={slashQuery}
                 selectedIndex={slashSelectedIdx}
-                onSelect={(cmd) => {
-                  setQuestioningInput(cmd)
-                  setSlashOpen(false)
-                  setTimeout(() => handleQuestioningSend(), 10)
-                }}
+                onSelect={(cmd) => executeSlashCommand(cmd)}
                 onClose={() => setSlashOpen(false)}
               />
             )}
