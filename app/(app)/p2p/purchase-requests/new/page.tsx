@@ -111,7 +111,7 @@ const VENDOR_MASTER = [
   { code:"V006", name:"Logitech Authorised Reseller",   approved:true,  myInvois:true,  terms:"Net 14",       lastOrder:"MX Keys @ RM 365 · Oct 2025" },
 ]
 
-type ChatState = "idle" | "questioning" | "processing" | "initial" | "confirmed" | "submitting" | "a2-pass"
+type ChatState = "idle" | "item-picking" | "questioning" | "processing" | "initial" | "confirmed" | "submitting" | "a2-pass"
 
 interface FollowUpAnswers {
   delivery:   string
@@ -242,29 +242,175 @@ function autoGenerateName(desc: string): string {
 
 // ─── Jomie contextual reply generator ────────────────────────────────────────
 
-interface ChatMsg { role: "user" | "ai"; text: string }
+type ChatActionType = "open-picker" | "proceed-to-vendor" | "edit-items" | "confirm-vendors"
 
-function generateReply(msg: string): string {
+interface ChatMsgAction {
+  label: string
+  primary?: boolean
+  action: ChatActionType
+}
+
+interface ChatMsg {
+  role: "user" | "ai"
+  text: string
+  actions?: ChatMsgAction[]
+}
+
+// ─── Intent detection ────────────────────────────────────────────────────────
+
+function detectIntent(msg: string): "affirm" | "edit" | "question" | "item-request" | "other" {
+  const m = msg.toLowerCase().trim()
+  if (/^(yes|ok|okay|sure|proceed|confirm|looks good|that'?s? (right|correct|good|fine)|go ahead|continue|next|right|correct|sounds good|agreed|perfect|done|ready|yep|yup|let'?s go|please do|do it)/.test(m))
+    return "affirm"
+  if (/\b(no|wait|change|edit|wrong|different|update|modify|add more|remove|adjust|undo|back|again|re-?open|not right|incorrect)\b/.test(m))
+    return "edit"
+  if (/^(why|what|how|when|who|which|explain|tell me|help|what is|what are|can you|could you|is there|are there)\b/.test(m))
+    return "question"
+  if (/\b(need|want|buy|purchase|order|add|get|item|product|laptop|monitor|printer|chair|paper|keyboard|mouse|dock|software|subscription|service)\b/.test(m))
+    return "item-request"
+  return "other"
+}
+
+// ─── Smart Jomie reply engine ─────────────────────────────────────────────────
+
+interface JomieContext {
+  roundAComplete: boolean
+  roundBComplete: boolean
+  confirmedItems: ConfirmedItem[]
+  submittedMessage: string
+}
+
+interface JomieReply {
+  text: string
+  actions?: ChatMsgAction[]
+  sideEffect?: "open-picker" | "proceed-to-vendor" | "confirm-vendors"
+}
+
+function buildItemSummaryText(items: ConfirmedItem[]): string {
+  const total = items.reduce((s, i) => s + i.qty * i.unitPrice, 0)
+  const lines = items.map(i =>
+    `· ${i.name} ×${i.qty}${i.unitPrice > 0 ? ` — RM ${(i.qty * i.unitPrice).toLocaleString()}` : " — Price TBD"}`
+  ).join("\n")
+  return `${lines}\n\nTotal estimate: RM ${total.toLocaleString()}`
+}
+
+function buildVendorSummaryText(groups: SubPRGroup[], _items: ConfirmedItem[]): string {
+  const lines = groups.map(g => {
+    const tier = g.tier
+    const total = `RM ${g.total.toLocaleString()}`
+    const vendorStatus = g.isApproved ? "✓ Approved vendor" : g.vendorCode ? "⚠ Unapproved vendor" : "⚠ Vendor TBD"
+    const myInvoisWarn = !g.myInvois && g.vendorCode ? " · Not on MyInvois" : ""
+    return `📦 ${g.id} · ${g.vendorName} · ${total} · ${tier}\n   ${vendorStatus}${myInvoisWarn}`
+  })
+  const warnings: string[] = []
+  if (groups.some(g => !g.myInvois && !!g.vendorCode))
+    warnings.push("⚠ One or more vendors are not registered on MyInvois — request e-invoice before PO is issued.")
+  if (groups.some(g => !g.isApproved && !!g.vendorCode))
+    warnings.push("⚠ Some vendors are not on the approved list — sourcing approval will be required.")
+  return lines.join("\n") + (warnings.length ? "\n\n" + warnings.join("\n") : "")
+}
+
+function smartReply(msg: string, ctx: JomieContext): JomieReply {
   const m = msg.toLowerCase()
-  if (/vendor|supplier|tech solution/.test(m))
-    return "Tech Solutions MY is on the approved vendor list with a current unit price of RM 7,200 for the Dell Latitude 5540. They've fulfilled 3 orders in the past 12 months — no delivery issues flagged. MyInvois registration is still pending; request a validated e-invoice before the PO is issued."
-  if (/budget|cost|price|amount|total|rm/.test(m))
-    return "The RM 142,806 commitment sits at 95.2% of IT-CAPEX-2024 (RM 150,000). Remaining headroom is RM 7,194 — below the 10% threshold, which triggers CFO co-approval per approvalMatrix.md:v1.2. No override is needed, but the low headroom will be flagged to the CFO."
-  if (/deliver|when|date|timeline|urgent|july|june/.test(m))
-    return "Delivery is targeted for End of July 2026. Tech Solutions MY has a 14–21 day standard lead time for this order size. I'd recommend issuing the PO by 10 July to allow buffer for logistics and goods receipt."
-  if (/approv|who|sign|authoris|razif|siti|chong/.test(m))
-    return "3 approvals are required: Siti Aisyah (Dept Head, L1) — ✓ approved. Razif Abdullah (Finance Mgr, L2) — pending, 18h elapsed of 48h SLA. Chong Mei Ling (CFO, L3) — waiting on L2. SOD rules exclude you from all approval steps."
-  if (/cancel|delete|withdraw|remove|stop/.test(m))
-    return "To cancel this PR you'll need to withdraw it before Phase C (Quotation). I can draft a withdrawal memo for you — just confirm and I'll initiate the recall and notify the pending approvers."
-  if (/gl|code|account|chart/.test(m))
-    return "All 3 line items are mapped to GL-7200-CAPEX under the IT Department cost centre (IT-CAPEX-2024). Capital allowance applies: IA 20% + AA 14% under Schedule 3, ITA 1967. Tag as IT Equipment in the fixed asset register before period close."
-  if (/tax|sst|gst|invoice|myinvois/.test(m))
-    return "Tech Solutions MY is not yet registered on MyInvois. SST input credit under S38 of the SST Act 2018 requires a validated e-invoice. I've flagged this — request the registration confirmation before the PO is raised to protect the RM 8,568 SST claim."
-  if (/split|duplicate|fraud|risk/.test(m))
-    return "A2 checks confirmed no split-PR pattern and no duplicates in the last 7 days. Vendor concentration is within limits (1 PR this month for Tech Solutions MY). All integrity checks passed."
-  if (/po|purchase order|when.*po|generate/.test(m))
-    return "The PO will be auto-generated by Jomie once all approvals are complete (Phase B → Phase C). You'll receive a notification. The PO will reference both sub-PRs and consolidate to a single vendor order for Tech Solutions MY."
-  return "Noted. Is there anything specific you'd like me to look into — vendor options, budget headroom, approval status, compliance flags, or delivery timeline?"
+  const intent = detectIntent(msg)
+  const { roundAComplete, roundBComplete, confirmedItems } = ctx
+  const hasItems = confirmedItems.length > 0
+
+  // ── Post-Round B: free-form Q&A ──
+  if (roundBComplete) {
+    if (/vendor|supplier/.test(m)) return { text: "The vendors shown are from your approved vendor master. You can override per item using the 'from approved list' option in the vendor grouping view. Final vendor selection is confirmed during Phase C (Quotation)." }
+    if (/budget|cost|gl|code/.test(m)) return { text: "GL codes and budget codes are assigned in Round C. I'll suggest the most appropriate budget code based on the item types and your department's active codes." }
+    if (/approv|who|sign/.test(m)) return { text: "Approval routing is determined by sub-PR value and your company's approval matrix. High-value lines (>RM 50k) route to Finance Manager + CFO. Standard lines route to Dept Head only." }
+    return { text: "Ready to proceed to Round C — budget code, delivery date, and urgency. Just say 'continue' whenever you're ready.", actions:[{ label:"Continue to Round C →", primary:true, action:"confirm-vendors" }] }
+  }
+
+  // ── Round A in progress ──
+  if (!roundAComplete) {
+    if (intent === "affirm" && hasItems) {
+      return {
+        text: `Great! Here's your cart:\n\n${buildItemSummaryText(confirmedItems)}\n\nShall I group these by vendor and work out the approval routing?`,
+        actions: [
+          { label:"Yes, proceed to vendor matching →", primary:true, action:"proceed-to-vendor" },
+          { label:"Edit items", action:"edit-items" },
+        ],
+        sideEffect: undefined,
+      }
+    }
+    if (intent === "affirm" && !hasItems) {
+      return {
+        text: "Let's add items to your PR first. Search the item master or describe what you need.",
+        actions:[{ label:"Open item picker", primary:true, action:"open-picker" }],
+      }
+    }
+    if (intent === "edit" || m.includes("add") || m.includes("more") || m.includes("picker")) {
+      return {
+        text: "Opening the item picker — search for items and tap + to add them to your cart.",
+        actions:[],
+        sideEffect: "open-picker",
+      }
+    }
+    if (intent === "item-request") {
+      const keyword = msg.trim()
+      return {
+        text: `I'll open the item picker pre-filtered for "${keyword}". Tap + on any item to add it to your cart.`,
+        actions:[{ label:`Search "${keyword.slice(0, 30)}" in picker →`, primary:true, action:"open-picker" }],
+      }
+    }
+    if (intent === "question") {
+      if (/split|sub.pr|why.*2|why.*two/.test(m))
+        return { text: "Sub-PRs are split by vendor and approval tier. Items from the same vendor that exceed RM 50k per line get a higher approval tier (Finance Manager or FM + CFO) than lower-value items. This enforces your approval matrix automatically." }
+      if (/vendor|supplier/.test(m))
+        return { text: "Vendors are matched from your approved vendor master based on each item's default supplier. You can override vendor per item using the item picker. Unapproved vendors trigger a sourcing approval step." }
+      if (/budget|gl|code/.test(m))
+        return { text: "GL codes are pre-mapped per item type in your item master. Budget codes are assigned in Round C — I'll suggest the most active code for your department." }
+      if (/moq|minimum|qty|quantity/.test(m))
+        return { text: "MOQ (Minimum Order Quantity) is the minimum quantity your vendor requires per order line. Items below MOQ are flagged — you can override if you have a waiver from the vendor." }
+      return { text: "Good question! Could you give me a bit more context about what you'd like to know? I can help with vendors, budget, approval routing, GL codes, or item specifications." }
+    }
+    // Default: nudge toward adding items
+    if (!hasItems) {
+      return {
+        text: "I couldn't quite catch that. To get started, describe what you need to purchase — or open the item picker to search your item master.",
+        actions:[{ label:"Open item picker", primary:true, action:"open-picker" }],
+      }
+    }
+    return {
+      text: `You have ${confirmedItems.length} item${confirmedItems.length !== 1 ? "s" : ""} in your cart. Ready to proceed to vendor matching, or do you want to adjust anything?`,
+      actions:[
+        { label:"Yes, proceed →", primary:true, action:"proceed-to-vendor" },
+        { label:"Edit items", action:"edit-items" },
+      ],
+    }
+  }
+
+  // ── Round A done, Round B in progress ──
+  if (roundAComplete && !roundBComplete) {
+    if (intent === "affirm") {
+      return {
+        text: "✓ Vendor grouping confirmed. Moving to Round C — budget code, delivery details, and urgency flag.",
+        actions:[{ label:"Continue to Round C →", primary:true, action:"confirm-vendors" }],
+        sideEffect: "confirm-vendors",
+      }
+    }
+    if (intent === "edit" || /vendor|change|override|different/.test(m)) {
+      return { text: "You can override vendor per item using the 'from approved list' button on each item line in the vendor grouping below. Any change will automatically regroup the sub-PRs." }
+    }
+    if (/why|split|2 pr|two pr/.test(m)) {
+      return { text: "Sub-PRs are split when items from the same vendor have different approval tiers — e.g. lines above RM 50k need Finance Manager approval, while lower lines only need Dept Head sign-off. This is enforced by your approvalMatrix.md." }
+    }
+    if (/myinvois|e.invoice|tax|sst/.test(m)) {
+      return { text: "MyInvois is Malaysia's e-invoicing system under LHDN. Vendors not registered on MyInvois can't issue validated e-invoices, which affects your SST input credit claim (S38, SST Act 2018). You should request the vendor's registration before the PO is issued." }
+    }
+    return {
+      text: "Happy with the vendor grouping? Confirm to proceed to Round C where we'll add budget code, delivery date, and urgency.",
+      actions:[
+        { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
+        { label:"I want to change a vendor", action:"edit-items" },
+      ],
+    }
+  }
+
+  return { text: "Let me know if there's anything you'd like to change or if you have any questions before submitting." }
 }
 
 // ─── Sub-PR grouping (dynamic, from confirmed items) ─────────────────────────
@@ -560,6 +706,61 @@ function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInvento
   )
 }
 
+// ─── Slash command popover ────────────────────────────────────────────────────
+
+const SLASH_COMMANDS = [
+  { cmd: "/add-item", desc: "Search & add items to your PR cart", icon: "+" },
+]
+
+interface SlashPopoverProps {
+  query: string          // everything after "/"
+  selectedIndex: number
+  onSelect: (cmd: string) => void
+  onClose: () => void
+}
+
+function SlashPopover({ query, selectedIndex, onSelect, onClose: _onClose }: SlashPopoverProps) {
+  const filtered = SLASH_COMMANDS.filter(c =>
+    c.cmd.toLowerCase().includes(query.toLowerCase()) ||
+    c.desc.toLowerCase().includes(query.toLowerCase())
+  )
+  if (filtered.length === 0) return null
+  return (
+    <div
+      className="absolute bottom-full mb-2 left-0 right-0 rounded-xl overflow-hidden shadow-2xl z-50"
+      style={{ background:"#1A1740", border:"1px solid rgba(103,100,136,0.6)" }}>
+      <div className="px-3 py-1.5 border-b" style={{ borderColor:"rgba(103,100,136,0.25)" }}>
+        <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color:"rgba(255,255,255,0.3)" }}>
+          Commands
+        </span>
+      </div>
+      {filtered.map((c, i) => (
+        <button
+          key={c.cmd}
+          onClick={() => onSelect(c.cmd)}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors cursor-pointer"
+          style={{ background: i === selectedIndex ? "rgba(93,94,244,0.2)" : "transparent" }}
+          onMouseEnter={e => { if (i !== selectedIndex) e.currentTarget.style.background = "rgba(255,255,255,0.05)" }}
+          onMouseLeave={e => { if (i !== selectedIndex) e.currentTarget.style.background = "transparent" }}>
+          <div className="size-6 rounded-md flex items-center justify-center shrink-0"
+            style={{ background:"rgba(93,94,244,0.2)", fontSize:14, color:"#A5A6F6", fontWeight:700 }}>
+            {c.icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-semibold text-white">{c.cmd}</div>
+            <div className="text-[10px]" style={{ color:"rgba(255,255,255,0.4)" }}>{c.desc}</div>
+          </div>
+          {i === selectedIndex && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0" style={{ background:"rgba(93,94,244,0.25)", color:"#A5A6F6" }}>
+              ↵ Enter
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ─── Item picker popup ─────────────────────────────────────────────────────────
 
 interface NewItemFormData { name: string; spec: string; unitPrice: string; uom: string; itemType: ItemType }
@@ -571,9 +772,10 @@ interface ItemPickerProps {
   onRequestNew: (data: NewItemFormData) => void
   onClose: () => void
   confirmedCodes: Set<string>
+  fullHeight?: boolean
 }
 
-function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose, confirmedCodes }: ItemPickerProps) {
+function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose, confirmedCodes, fullHeight }: ItemPickerProps) {
   const [showNewForm, setShowNewForm] = React.useState(false)
   const [newForm, setNewForm] = React.useState<NewItemFormData>({ name: query, spec: "", unitPrice: "", uom: "unit", itemType: "standard" })
 
@@ -597,10 +799,10 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
   }
 
   return (
-    <div className="rounded-xl overflow-hidden shadow-2xl"
-      style={{ background:"#1A1740", border:"1px solid rgba(103,100,136,0.6)" }}>
+    <div className={fullHeight ? "flex flex-col min-h-0 h-full" : "rounded-xl overflow-hidden shadow-2xl"}
+      style={fullHeight ? {} : { background:"#1A1740", border:"1px solid rgba(103,100,136,0.6)" }}>
       {/* Search input */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ borderColor:"rgba(103,100,136,0.3)" }}>
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b shrink-0" style={{ borderColor:"rgba(103,100,136,0.3)", background: fullHeight ? "rgba(255,255,255,0.03)" : undefined }}>
         <Search size={13} style={{ color:"rgba(255,255,255,0.4)", flexShrink:0 }}/>
         <input
           autoFocus
@@ -616,7 +818,7 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
       </div>
 
       {/* BOM placeholder banner */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor:"rgba(103,100,136,0.15)", background:"rgba(93,94,244,0.06)" }}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0" style={{ borderColor:"rgba(103,100,136,0.15)", background:"rgba(93,94,244,0.06)" }}>
         <div className="size-4 rounded flex items-center justify-center shrink-0" style={{ background:"rgba(93,94,244,0.2)" }}>
           <Package size={9} style={{ color:"#A5A6F6" }}/>
         </div>
@@ -631,7 +833,7 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
 
       {/* Results list */}
       {!showNewForm && (
-        <div className="overflow-y-auto" style={{ maxHeight:256 }}>
+        <div className={fullHeight ? "flex-1 overflow-y-auto min-h-0 jomie-scrollbar" : "overflow-y-auto"} style={fullHeight ? {} : { maxHeight:256 }}>
           {filtered.length === 0 ? (
             <div className="px-4 pt-5 pb-4 flex flex-col items-center gap-3">
               <div className="size-8 rounded-full flex items-center justify-center" style={{ background:"rgba(255,255,255,0.06)" }}>
@@ -810,6 +1012,158 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
   )
 }
 
+// ─── Cart panel (right panel — item-picking mode) ─────────────────────────────
+
+interface CartPanelProps {
+  items: ConfirmedItem[]
+  onQtyChange: (code: string, qty: number) => void
+  onRemove: (code: string) => void
+  onConfirm: () => void
+}
+
+function CartPanel({ items, onQtyChange, onRemove, onConfirm }: CartPanelProps) {
+  const total = items.reduce((s, i) => s + i.qty * i.unitPrice, 0)
+  const typeConfig: Record<ItemType,{ bg:string; fg:string }> = {
+    standard:     { bg:"rgba(100,100,120,0.1)",  fg:"#9CA3AF" },
+    capex:        { bg:"#EFF6FF",                fg:"#1D4ED8" },
+    service:      { bg:"#ECFDF5",               fg:"#059669"  },
+    subscription: { bg:"#EEF2FF",               fg:"#4F46E5"  },
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b" style={{ borderColor:"#E5E3F0" }}>
+        <div className="flex items-center gap-2">
+          <div className="size-6 rounded-lg flex items-center justify-center" style={{ background:"#EEEDFE" }}>
+            <Package size={13} style={{ color:"#5D5EF4" }}/>
+          </div>
+          <span className="text-[13px] font-semibold" style={{ color:"#1C1B4B" }}>Item Cart</span>
+        </div>
+        {items.length > 0 && (
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background:"#EEEDFE", color:"#5D5EF4" }}>
+            {items.length} item{items.length !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Empty state */}
+      {items.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6" style={{ color:"#9CA3AF" }}>
+          <div className="size-12 rounded-2xl flex items-center justify-center" style={{ background:"#F0EFF8" }}>
+            <Package size={22} style={{ color:"#C4C2E0" }}/>
+          </div>
+          <div className="text-center">
+            <div className="text-[13px] font-medium mb-1" style={{ color:"#6B7280" }}>Cart is empty</div>
+            <div className="text-[11px] leading-relaxed" style={{ color:"#9CA3AF" }}>
+              Search for items on the left and tap{" "}
+              <span className="font-bold" style={{ color:"#5D5EF4" }}>+</span>{" "}
+              to add them here
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Items list */}
+          <div className="flex-1 overflow-y-auto min-h-0 jomie-scrollbar" style={{ padding:"8px 12px", display:"flex", flexDirection:"column", gap:8 }}>
+            {items.map(item => {
+              const tc = typeConfig[item.itemType ?? "standard"]
+              return (
+                <div key={item.code} className="rounded-xl overflow-hidden"
+                  style={{ background:"#FFFFFF", border:"0.5px solid #E8E6F4", boxShadow:"0 1px 3px rgba(93,94,244,0.06)" }}>
+                  {/* Item info row */}
+                  <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
+                    <div className="size-6 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                      style={{ background: tc.bg }}>
+                      <Package size={11} style={{ color: tc.fg }}/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-1">
+                        <span className="text-[11px] font-semibold leading-tight" style={{ color:"#1C1B4B" }}>{item.name}</span>
+                        <button
+                          onClick={() => onRemove(item.code)}
+                          className="size-4 rounded flex items-center justify-center shrink-0 cursor-pointer transition-colors hover:bg-red-50 mt-0.5">
+                          <X size={9} style={{ color:"#D1C9E8" }}/>
+                        </button>
+                      </div>
+                      <div className="text-[9px] font-mono mt-0.5" style={{ color:"#9B97C0" }}>{item.code}</div>
+                      {item.isNew && (
+                        <span className="text-[8px] font-bold px-1 py-0.5 rounded mt-0.5 inline-block"
+                          style={{ background:"#FAEEDA", color:"#633806" }}>NEW REQUEST</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Qty + price row */}
+                  <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
+                    <div className="flex items-center gap-1 rounded-lg overflow-hidden" style={{ border:"0.5px solid #DDD9F0" }}>
+                      <button
+                        onClick={() => onQtyChange(item.code, Math.max(0, item.qty - 1))}
+                        className="size-6 flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50">
+                        <Minus size={9} style={{ color:"#6B7280" }}/>
+                      </button>
+                      <span className="text-[11px] font-mono font-semibold px-1 min-w-[20px] text-center" style={{ color:"#1C1B4B" }}>
+                        {item.qty}
+                      </span>
+                      <button
+                        onClick={() => onQtyChange(item.code, item.qty + 1)}
+                        className="size-6 flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50">
+                        <Plus size={9} style={{ color:"#6B7280" }}/>
+                      </button>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-[10px]" style={{ color:"#9B97C0" }}>RM</span>
+                      <span className="text-[13px] font-bold font-mono" style={{ color:"#1C1B4B" }}>
+                        {(item.qty * item.unitPrice).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                  {/* MOQ warning */}
+                  {item.qty < item.moq && (
+                    <div className="px-3 pb-2 flex items-center gap-1 text-[9px]" style={{ color:"#BA7517" }}>
+                      <AlertCircle size={9}/> Min. order qty: {item.moq} {item.uom}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Footer: total + confirm */}
+          <div className="shrink-0 border-t px-4 py-3 flex flex-col gap-2.5" style={{ borderColor:"#E5E3F0" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium" style={{ color:"#6B7280" }}>
+                {items.length} item{items.length !== 1 ? "s" : ""} · est. total
+              </span>
+              <span className="text-[16px] font-bold font-mono" style={{ color:"#1C1B4B" }}>
+                RM {total.toLocaleString()}
+              </span>
+            </div>
+            {items.some(i => i.itemType === "subscription") && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
+                style={{ background:"#EEF2FF", border:"0.5px solid #C7D2FE" }}>
+                <RefreshCw size={9} style={{ color:"#4F46E5" }}/>
+                <span className="text-[9px]" style={{ color:"#4338CA" }}>Subscriptions detected — duplicate check on submit</span>
+              </div>
+            )}
+            <button
+              onClick={onConfirm}
+              disabled={items.some(i => i.qty < i.moq || i.qty === 0)}
+              className="w-full h-10 rounded-xl flex items-center justify-center gap-2 text-[12px] font-semibold text-white transition-all cursor-pointer"
+              style={{
+                background: items.every(i => i.qty >= i.moq && i.qty > 0) ? "#5D5EF4" : "rgba(93,94,244,0.35)",
+                opacity: items.some(i => i.qty < i.moq || i.qty === 0) ? 0.6 : 1,
+              }}>
+              <Check size={13} strokeWidth={2.5}/>
+              Confirm {items.length} item{items.length !== 1 ? "s" : ""} — proceed to vendor matching
+              <ArrowRight size={13}/>
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Sub-PR card (right panel) ─────────────────────────────────────────────────
 
 function SubPRCard({ sub }: { sub: typeof SUB_PRS[0] }) {
@@ -913,6 +1267,17 @@ export default function NewPRPage() {
   const [browsePlatform, setBrowsePlatform]               = React.useState<"google" | "shopee" | "lazada" | "1688">("shopee")
   const [browseLoading, setBrowseLoading]                 = React.useState(false)
 
+  // ── Slash command state ──
+  const [slashOpen, setSlashOpen]           = React.useState(false)
+  const [slashQuery, setSlashQuery]         = React.useState("")
+  const [slashSelectedIdx, setSlashSelectedIdx] = React.useState(0)
+
+  // ── Item picker panel state ──
+  const prevChatStateRef    = React.useRef<ChatState>("questioning")
+  const [itemPickerSnapshot, setItemPickerSnapshot] = React.useState<ConfirmedItem[]>([])
+  const [widgetHeight, setWidgetHeight]             = React.useState(340)
+  const widgetDragging = React.useRef(false)
+
   // null = fill remaining space | 0 = closed | >0 = fixed px width
   const [rightWidth, setRightWidth] = React.useState<number | null>(0)
   const [isPanelLoading, setIsPanelLoading] = React.useState(false)
@@ -968,6 +1333,27 @@ export default function NewPRPage() {
         return w
       })
     }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup",   onUp)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup",   onUp)
+    }
+  }, [])
+
+  // ── Widget vertical drag (item picker height) ──
+  const onWidgetDragMouseDown = (e: React.MouseEvent) => {
+    widgetDragging.current = true
+    e.preventDefault()
+  }
+  React.useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!widgetDragging.current || !wrapperRef.current) return
+      const wrapperRect = wrapperRef.current.getBoundingClientRect()
+      const newH = Math.max(200, Math.min(wrapperRect.height * 0.75, wrapperRect.bottom - e.clientY))
+      setWidgetHeight(newH)
+    }
+    const onUp = () => { widgetDragging.current = false }
     window.addEventListener("mousemove", onMove)
     window.addEventListener("mouseup",   onUp)
     return () => {
@@ -1053,7 +1439,22 @@ export default function NewPRPage() {
     const finalProject = projectName.trim() || autoGenerateName(inputValue) || "New Purchase Request"
     setSubmittedProject(finalProject)
     setInputValue("")
-    setChatMessages([])
+    // Build initial Jomie response
+    const initialMsg: ChatMsg = detected.length > 0
+      ? {
+          role: "ai",
+          text: `I found ${detected.length} item${detected.length !== 1 ? "s" : ""} from your description:\n\n${buildItemSummaryText(detected)}\n\nDoes this look right? You can adjust quantities, add more items, or proceed.`,
+          actions: [
+            { label:"Open item picker to review / add more", action:"open-picker" },
+            { label:"Looks right — proceed to vendor matching →", primary:true, action:"proceed-to-vendor" },
+          ],
+        }
+      : {
+          role: "ai",
+          text: "I couldn't detect specific items from your description. Use the item picker to search your item master and add what you need.",
+          actions: [{ label:"Open item picker", primary:true, action:"open-picker" }],
+        }
+    setChatMessages([initialMsg])
     setFollowUp({ delivery: "", budgetCode: "", budgetCustom: "" })
     setChatState("questioning")
   }
@@ -1068,7 +1469,9 @@ export default function NewPRPage() {
     const delay = 1200 + Math.floor(msg.length * 8)       // longer msgs get slightly longer "think"
     setTimeout(() => {
       setIsChatThinking(false)
-      setChatMessages(prev => [...prev, { role: "ai", text: generateReply(msg) }])
+      const ctx: JomieContext = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
+      const reply = smartReply(msg, ctx)
+      setChatMessages(prev => [...prev, { role: "ai", text: reply.text, actions: reply.actions }])
     }, Math.min(delay, 2400))
   }
 
@@ -1151,13 +1554,140 @@ export default function NewPRPage() {
     setRoundBComplete(true)
   }
 
-  // ── Questioning input handler (detects /item command) ──
+  // ── Item picker widget handlers ──
+  const handleOpenItemPicker = () => {
+    prevChatStateRef.current = chatState as Exclude<ChatState, "item-picking">
+    setItemPickerSnapshot([...confirmedItems])
+    if (roundAComplete) { setRoundAComplete(false); setRoundBComplete(false) }
+    setItemPickerQuery("")
+    setRightWidth(null)    // open right panel → cart view
+    setBrowseItem(null)    // exit browse mode if active
+    setChatState("item-picking")
+  }
+  const handleDoneItemPicker = () => {
+    setChatState(prevChatStateRef.current)
+    // Post Jomie cart-summary message after picker closes
+    if (confirmedItems.length > 0) {
+      const msg: ChatMsg = {
+        role: "ai",
+        text: `Updated! Here's your cart:\n\n${buildItemSummaryText(confirmedItems)}\n\nReady to proceed to vendor matching, or want to add more items?`,
+        actions: [
+          { label:"Yes, proceed to vendor matching →", primary:true, action:"proceed-to-vendor" },
+          { label:"Add more items", action:"open-picker" },
+        ],
+      }
+      setChatMessages(prev => [...prev, msg])
+    }
+  }
+  const handleProceedToVendor = () => {
+    const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
+    setConfirmedItems(valid)
+    setRoundAComplete(true)
+    const groups = buildSubPRGroups(valid)
+    const vendorMsg: ChatMsg = {
+      role: "ai",
+      text: `I've grouped your ${valid.length} item${valid.length !== 1 ? "s" : ""} into ${groups.length} sub-PR${groups.length !== 1 ? "s" : ""} by vendor and approval tier:\n\n${buildVendorSummaryText(groups, valid)}\n\nHappy with this grouping? You can override vendor per item if needed.`,
+      actions: [
+        { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
+        { label:"I want to change a vendor", action:"edit-items" },
+      ],
+    }
+    setChatMessages(prev => [...prev, { role:"user", text:"Yes, proceed to vendor matching" }, vendorMsg])
+  }
+
+  const handleConfirmVendorMatching = () => {
+    setRoundBComplete(true)
+    handleConfirmVendors()
+    const doneMsg: ChatMsg = {
+      role: "ai",
+      text: "✓ Vendor grouping confirmed. All sub-PRs are ready.\n\nNext up: Round C — budget code, delivery date, and urgency flag. This tells Finance and the approvers when and where items are needed.\n\nReady to continue?",
+      actions: [{ label:"Continue to Round C →", primary:true, action:"confirm-vendors" }],
+    }
+    setChatMessages(prev => [...prev, { role:"user", text:"Confirmed" }, doneMsg])
+  }
+
+  const handleCancelItemPicker = () => {
+    // Restore snapshot (undo picker changes) — only if no items were previously confirmed
+    if (itemPickerSnapshot.length === 0 && confirmedItems.length > 0) {
+      setConfirmedItems([])
+    } else {
+      setConfirmedItems(itemPickerSnapshot)
+    }
+    setChatState(prevChatStateRef.current)
+  }
+
+  // ── Questioning input handler ──
   const handleQuestioningInput = (val: string) => {
     setQuestioningInput(val)
-    if (val.endsWith("/item") || val.endsWith("@item")) {
-      setShowItemPicker(true)
-      setItemPickerQuery("")
+    // Detect slash command: val starts with "/" or has " /" pattern
+    const trimmed = val.trim()
+    if (trimmed.startsWith("/")) {
+      setSlashOpen(true)
+      setSlashQuery(trimmed.slice(1))  // everything after "/"
+      setSlashSelectedIdx(0)
+    } else {
+      setSlashOpen(false)
+    }
+  }
+  const handleQuestioningSend = () => {
+    const val = questioningInput.trim()
+    if (!val) return
+    setSlashOpen(false)
+    const isPickerTrigger = val === "/add-item" || val === "/item"
+    if (isPickerTrigger) {
+      setChatMessages(prev => [
+        ...prev,
+        { role:"user", text:"/add-item" },
+        { role:"ai", text:`Opening the item picker — search below and tap + to add items to your cart on the right. Hit Done when you're finished.${confirmedItems.length > 0 ? ` You already have ${confirmedItems.length} item${confirmedItems.length !== 1 ? "s" : ""} in your cart.` : ""}` },
+      ])
       setQuestioningInput("")
+      setTimeout(handleOpenItemPicker, 80)
+    } else {
+      const ctx: JomieContext = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
+      const reply = smartReply(val, ctx)
+      setChatMessages(prev => [...prev, { role:"user", text:val }])
+      setQuestioningInput("")
+      setIsChatThinking(true)
+      const delay = Math.min(900 + val.length * 6, 1800)
+      setTimeout(() => {
+        setIsChatThinking(false)
+        const msg: ChatMsg = { role:"ai", text: reply.text, actions: reply.actions }
+        setChatMessages(prev => [...prev, msg])
+        // Handle side effects
+        if (reply.sideEffect === "open-picker") setTimeout(handleOpenItemPicker, 100)
+        if (reply.sideEffect === "proceed-to-vendor") handleProceedToVendor()
+        if (reply.sideEffect === "confirm-vendors") handleConfirmVendorMatching()
+      }, delay)
+    }
+  }
+  const handleQuestioningKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashOpen) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setSlashSelectedIdx(i => i + 1) }
+      if (e.key === "ArrowUp")   { e.preventDefault(); setSlashSelectedIdx(i => Math.max(0, i - 1)) }
+      if (e.key === "Escape")    { e.preventDefault(); setSlashOpen(false) }
+      if (e.key === "Enter") {
+        e.preventDefault()
+        const cmds = SLASH_COMMANDS.filter(c => c.cmd.includes(slashQuery))
+        if (cmds[slashSelectedIdx]) {
+          setQuestioningInput(cmds[slashSelectedIdx].cmd)
+          setSlashOpen(false)
+          setTimeout(() => handleQuestioningSend(), 10)
+        }
+        return
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleQuestioningSend() }
+  }
+
+  const handleMessageAction = (action: ChatActionType) => {
+    if (action === "open-picker") {
+      handleOpenItemPicker()
+    } else if (action === "proceed-to-vendor") {
+      handleProceedToVendor()
+    } else if (action === "confirm-vendors") {
+      handleConfirmVendorMatching()
+    } else if (action === "edit-items") {
+      handleOpenItemPicker()
     }
   }
 
@@ -1302,7 +1832,7 @@ export default function NewPRPage() {
       {/* ── Chat — flex:1, content centered at max 600px ── */}
       <div className="flex flex-col min-h-0 flex-1 min-w-[500px] relative">
         <div className="flex flex-col min-h-0 h-full w-full max-w-[700px] mx-auto"
-          style={{ padding: chatState === "idle" ? "0 16px 16px" : "24px 16px 16px", gap:0 }}>
+          style={{ padding: chatState === "idle" ? "0 16px 16px" : "24px 16px 0", gap:0 }}>
 
         {/* ══ IDLE: Starter screen ══ */}
         {chatState === "idle" ? (
@@ -1534,393 +2064,7 @@ export default function NewPRPage() {
               </div>
 
               {chatState === "questioning" ? (
-                /* ── Round A + B UI ── */
-                <div className="flex flex-col gap-4">
-
-                  {/* Progress strip */}
-                  <ProgressStrip roundADone={roundAComplete} roundBDone={roundBComplete}/>
-
-                  {/* ── Round A: Item Identification ── */}
-                  {!roundAComplete ? (
-                    <div className="flex flex-col gap-3 p-4 rounded-xl"
-                      style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
-                      <div className="text-[13px] text-white leading-5">
-                        {confirmedItems.length > 0 ? (
-                          <>I found <strong>{confirmedItems.length} item{confirmedItems.length !== 1 ? "s" : ""}</strong> from your description. Confirm quantities and check stock before we proceed.</>
-                        ) : (
-                          <>I couldn{"'"}t detect specific items from your description. Use <strong>/item</strong> below to search the item master, or describe what you need more specifically.</>
-                        )}
-                      </div>
-
-                      {/* Item cards */}
-                      {confirmedItems.map(item => (
-                        <ItemCard
-                          key={item.code}
-                          item={item}
-                          inventorySkipped={inventorySkipped}
-                          onQtyChange={handleItemQtyChange}
-                          onRemove={handleItemRemove}
-                          onSkipInventory={() => setInventorySkipped(true)}
-                        />
-                      ))}
-
-                      {/* Add item button */}
-                      <button
-                        onClick={() => { setShowItemPicker(true); setItemPickerQuery("") }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] cursor-pointer transition-colors w-fit"
-                        style={{ background:"rgba(93,94,244,0.1)", color:"#A5A6F6", border:"0.5px solid rgba(93,94,244,0.35)" }}>
-                        <Plus size={12}/>
-                        Add item <span className="font-mono opacity-60 text-[11px]">· type /item to search</span>
-                      </button>
-
-                      {/* Subscription duplicate warning */}
-                      {confirmedItems.some(i => i.itemType === "subscription") && (
-                        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
-                          style={{ background:"rgba(93,94,244,0.08)", border:"0.5px solid rgba(93,94,244,0.3)" }}>
-                          <RefreshCw size={10} style={{ color:"#A5A6F6", flexShrink:0, marginTop:1 }}/>
-                          <div className="text-[10px]" style={{ color:"rgba(255,255,255,0.55)" }}>
-                            <span className="font-semibold" style={{ color:"#A5A6F6" }}>Subscription detected</span>
-                            {" "}— Jomie will check for active duplicates before submission. Renewal date shown on each item.
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Service no-delivery note */}
-                      {confirmedItems.some(i => i.noPhysicalDelivery) && (
-                        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
-                          style={{ background:"rgba(29,158,117,0.06)", border:"0.5px solid rgba(29,158,117,0.25)" }}>
-                          <Link2 size={10} style={{ color:"#1D9E75", flexShrink:0, marginTop:1 }}/>
-                          <div className="text-[10px]" style={{ color:"rgba(255,255,255,0.5)" }}>
-                            <span className="font-semibold" style={{ color:"#1D9E75" }}>Service / subscription items</span>
-                            {" "}have no physical delivery — delivery address will be skipped for these lines in vendor matching.
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Confirm button */}
-                      {confirmedItems.length > 0 && (
-                        <button
-                          onClick={handleConfirmAllItems}
-                          disabled={confirmedItems.some(i => i.qty < i.moq || i.qty === 0)}
-                          className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-semibold text-white transition-all cursor-pointer"
-                          style={{
-                            background: confirmedItems.every(i => i.qty >= i.moq && i.qty > 0) ? T.purple : "rgba(93,94,244,0.3)",
-                            opacity: confirmedItems.some(i => i.qty < i.moq || i.qty === 0) ? 0.5 : 1,
-                          }}>
-                          <Check size={14} strokeWidth={2.5}/>
-                          Confirm {confirmedItems.length} item{confirmedItems.length !== 1 ? "s" : ""} — proceed to vendor matching
-                          <ArrowRight size={14}/>
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    /* Round A complete — collapsed summary with edit link */
-                    <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl"
-                      style={{ background:"rgba(29,158,117,0.08)", border:"0.5px solid rgba(29,158,117,0.3)" }}>
-                      <div className="flex items-center gap-2.5">
-                        <div className="size-4 rounded-full flex items-center justify-center shrink-0" style={{ background: T.teal }}>
-                          <Check size={8} color="#fff" strokeWidth={3}/>
-                        </div>
-                        <span className="text-[12px]" style={{ color: T.dimText }}>
-                          <span className="text-white font-medium">{confirmedItems.length} items confirmed</span>
-                          <span className="mx-1.5" style={{ color:"rgba(255,255,255,0.2)" }}>·</span>
-                          Total <span className="font-mono text-white">RM {confirmedItems.reduce((s,i) => s+i.qty*i.unitPrice, 0).toLocaleString()}</span>
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => { setRoundAComplete(false); setRoundBComplete(false) }}
-                        className="text-[10px] font-medium cursor-pointer transition-opacity hover:opacity-70 shrink-0"
-                        style={{ color:"#A5A6F6" }}>
-                        Edit items
-                      </button>
-                    </div>
-                  )}
-
-                  {/* ── Round B: Vendor Matching ── */}
-                  {roundAComplete && !roundBComplete && (() => {
-                    const groups = buildSubPRGroups(confirmedItems)
-                    const hasMyInvoisIssue = groups.some(g => !g.myInvois && !!g.vendorCode && g.vendorCode !== "" && !(vendorOverrides[g.id]?.approved === true))
-                    return (
-                      <div className="flex flex-col gap-3 p-4 rounded-xl"
-                        style={{ background:"rgba(255,255,255,0.04)", border:"0.5px solid rgba(103,100,136,0.4)" }}>
-                        <div className="text-[13px] text-white leading-5">
-                          I{"'"}ve grouped your {confirmedItems.length} item{confirmedItems.length !== 1 ? "s" : ""} into{" "}
-                          <strong>{groups.length} sub-PR{groups.length !== 1 ? "s" : ""}</strong> by vendor and approval tier.
-                          Review and suggest a different vendor if needed — final decision is confirmed during Phase C.
-                        </div>
-
-                        {/* Sub-PR cards (flat, one per group) */}
-                        {groups.map(group => {
-                          // vendor display comes from group (already resolved via effectiveVendorCode on items)
-                          const displayName     = group.vendorName
-                          const displayApproved = group.isApproved
-                          const isPickerOpen    = vendorPickerOpen === group.id
-                          // Has any item in this group a manual vendor preference set?
-                          const hasItemOverride = group.items.some(i => !!i.preferredVendorCode)
-
-                          // Relevant vendors: those that supply any item in this group (by original item master code)
-                          const relevantCodes = new Set(group.items.map(i => i.vendorCode).filter(Boolean))
-                          const sLower = vendorSearchQuery.toLowerCase()
-                          const relevantVendors = VENDOR_MASTER.filter(v =>
-                            relevantCodes.has(v.code) && v.name.toLowerCase().includes(sLower)
-                          )
-                          const otherVendors = VENDOR_MASTER.filter(v =>
-                            !relevantCodes.has(v.code) && v.name.toLowerCase().includes(sLower)
-                          )
-                          const tierColor = group.tier === "FM + CFO" ? { bg:"#EFF6FF", fg:"#1D4ED8" }
-                                          : group.tier === "Finance Manager" ? { bg:"#EEF4FF", fg:"#3538CD" }
-                                          : { bg:"#F0FDF4", fg:"#16A34A" }
-
-                          return (
-                            <div key={group.id} className="rounded-xl overflow-hidden"
-                              style={{ border:"0.5px solid rgba(103,100,136,0.3)", background:"rgba(255,255,255,0.03)" }}>
-
-                              {/* Sub-PR header */}
-                              <div className="flex items-center justify-between px-3 py-2.5 border-b"
-                                style={{ borderColor:"rgba(103,100,136,0.15)" }}>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[9px] font-mono font-semibold" style={{ color:"rgba(255,255,255,0.4)" }}>{group.id}</span>
-                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                                    style={{ background: tierColor.bg, color: tierColor.fg }}>
-                                    {group.tier}
-                                  </span>
-                                </div>
-                                <span className="text-[12px] font-mono font-semibold text-white">
-                                  RM {group.total.toLocaleString()}
-                                </span>
-                              </div>
-
-                              {/* Item lines — each item has its own per-item vendor button */}
-                              <div className="flex flex-col px-3 py-2">
-                                {group.items.map(item => {
-                                  const itemPickerOpen = itemVendorPickerOpen === item.code
-                                  const hasOverride = !!item.preferredVendorCode
-                                  const iLower = itemVendorSearchQuery.toLowerCase()
-                                  // For per-item picker: all vendors are shown (any can supply any item as a preference)
-                                  const pickerVendors = VENDOR_MASTER.filter(v =>
-                                    !iLower || v.name.toLowerCase().includes(iLower)
-                                  )
-                                  return (
-                                    <div key={item.code} className="flex flex-col py-1.5 border-b last:border-0"
-                                      style={{ borderColor:"rgba(103,100,136,0.1)" }}>
-                                      <div className="flex items-center gap-1.5 text-[10px]">
-                                        {item.isNew
-                                          ? <AlertCircle size={8} style={{ color:"#BA7517", flexShrink:0 }}/>
-                                          : <div className="size-1 rounded-full shrink-0" style={{ background:"rgba(255,255,255,0.3)" }}/>
-                                        }
-                                        <span className="flex-1 truncate" style={{ color: item.isNew ? "#BA7517" : "rgba(255,255,255,0.65)" }}>
-                                          {item.name}
-                                          {item.isNew && <span className="ml-1 text-[8px]">(new item request)</span>}
-                                        </span>
-                                        <span className="font-mono shrink-0" style={{ color:"rgba(255,255,255,0.35)" }}>×{item.qty}</span>
-                                        <span className="font-mono shrink-0" style={{ color:"rgba(255,255,255,0.5)" }}>
-                                          {item.unitPrice > 0 ? `RM ${(item.qty * item.unitPrice).toLocaleString()}` : "Price TBD"}
-                                        </span>
-                                      </div>
-                                      {/* Per-item vendor hint + change buttons */}
-                                      <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-0.5 ml-3">
-                                        {hasOverride && (
-                                          <span className="text-[8px] font-semibold px-1 py-0.5 rounded"
-                                            style={{ background:"rgba(93,94,244,0.2)", color:"#A5A6F6" }}>
-                                            → {item.preferredVendorName}
-                                          </span>
-                                        )}
-                                        {/* Approved-vendor picker toggle */}
-                                        <button
-                                          onClick={() => {
-                                            setItemVendorPickerOpen(itemPickerOpen ? null : item.code)
-                                            setItemVendorSearchQuery("")
-                                          }}
-                                          className="text-[8px] cursor-pointer transition-opacity hover:opacity-70"
-                                          style={{ color: hasOverride ? "rgba(255,255,255,0.3)" : "#A5A6F6" }}>
-                                          {hasOverride ? "change vendor" : "from approved list"}
-                                        </button>
-                                        {/* Browse online */}
-                                        <button
-                                          onClick={() => handleOpenBrowse(item)}
-                                          className="flex items-center gap-0.5 text-[8px] cursor-pointer transition-opacity hover:opacity-70"
-                                          style={{ color:"rgba(255,255,255,0.45)" }}>
-                                          <Search size={7}/>
-                                          browse Shopee / Lazada / 1688
-                                        </button>
-                                        {hasOverride && (
-                                          <button
-                                            onClick={() => {
-                                              setConfirmedItems(prev => prev.map(i =>
-                                                i.code === item.code
-                                                  ? { ...i, preferredVendorCode: undefined, preferredVendorName: undefined }
-                                                  : i
-                                              ))
-                                              setVendorOverrides({})
-                                            }}
-                                            className="text-[8px] cursor-pointer transition-opacity hover:opacity-70"
-                                            style={{ color:"rgba(255,255,255,0.2)" }}>
-                                            ✕ reset
-                                          </button>
-                                        )}
-                                      </div>
-                                      {/* Per-item vendor picker dropdown */}
-                                      {itemPickerOpen && (
-                                        <div className="mt-1.5 ml-3 rounded-lg overflow-hidden"
-                                          style={{ border:"0.5px solid rgba(103,100,136,0.5)", background:"#1A1740" }}>
-                                          <div className="flex items-center gap-1.5 px-2 py-1.5 border-b"
-                                            style={{ borderColor:"rgba(103,100,136,0.3)" }}>
-                                            <Search size={10} style={{ color:"rgba(255,255,255,0.3)" }}/>
-                                            <input
-                                              autoFocus
-                                              type="text"
-                                              value={itemVendorSearchQuery}
-                                              onChange={e => setItemVendorSearchQuery(e.target.value)}
-                                              placeholder="Search vendor to source from…"
-                                              className="flex-1 bg-transparent text-[11px] text-white placeholder-gray-500 border-0 focus:outline-none"
-                                            />
-                                          </div>
-                                          <div className="px-2 pt-1.5 pb-0.5">
-                                            <span className="text-[8px] font-semibold uppercase tracking-wider"
-                                              style={{ color:"rgba(255,255,255,0.25)" }}>
-                                              Select preferred vendor for this item
-                                            </span>
-                                          </div>
-                                          <div className="overflow-y-auto" style={{ maxHeight:130 }}>
-                                            {pickerVendors.map(v => (
-                                              <button key={v.code}
-                                                onClick={() => handleItemVendorOverride(item.code, v.code, v.name, v.approved)}
-                                                className="w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors"
-                                                style={{ background:"transparent" }}
-                                                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                                <div className="size-1.5 rounded-full shrink-0"
-                                                  style={{ background: v.approved ? "#1D9E75" : "#BA7517" }}/>
-                                                <span className="text-[11px] text-white flex-1 truncate">{v.name}</span>
-                                                {v.approved
-                                                  ? <span className="text-[8px] shrink-0" style={{ color:T.teal }}>Approved</span>
-                                                  : <span className="text-[8px] shrink-0" style={{ color:"#BA7517" }}>Unapproved</span>
-                                                }
-                                              </button>
-                                            ))}
-                                            {/* Custom vendor */}
-                                            {itemVendorSearchQuery.length > 2 && !VENDOR_MASTER.some(v => v.name.toLowerCase() === itemVendorSearchQuery.toLowerCase()) && (
-                                              <button
-                                                onClick={() => handleItemVendorOverride(item.code, itemVendorSearchQuery, itemVendorSearchQuery, false)}
-                                                className="w-full flex items-center gap-2 px-2 py-1.5 border-t transition-colors"
-                                                style={{ borderColor:"rgba(103,100,136,0.2)", background:"transparent" }}
-                                                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                                <Plus size={9} style={{ color:"#BA7517" }}/>
-                                                <span className="text-[11px]" style={{ color:"#BA7517" }}>
-                                                  Suggest "{itemVendorSearchQuery}"
-                                                </span>
-                                                <span className="text-[9px] ml-auto" style={{ color:"rgba(255,255,255,0.3)" }}>Unapproved</span>
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-
-                              {/* Vendor row — read-only, Jomie suggestion */}
-                              <div className="px-3 py-2 border-t" style={{ borderColor:"rgba(103,100,136,0.15)", background:"rgba(0,0,0,0.12)" }}>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[8px] font-semibold uppercase tracking-wider shrink-0"
-                                    style={{ color:"rgba(255,255,255,0.25)" }}>
-                                    Jomie suggests
-                                  </span>
-                                  <div className="size-1.5 rounded-full shrink-0"
-                                    style={{ background: displayApproved ? "#1D9E75" : group.vendorCode ? "#BA7517" : "rgba(255,255,255,0.3)" }}/>
-                                  <span className="text-[10px] font-medium truncate"
-                                    style={{ color: hasItemOverride ? "#A5A6F6" : group.vendorCode ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.3)" }}>
-                                    {displayName}
-                                  </span>
-                                  {displayApproved && !hasItemOverride && (
-                                    <span className="text-[8px] shrink-0" style={{ color:T.teal }}>✓ Approved</span>
-                                  )}
-                                  {hasItemOverride && (
-                                    <span className="text-[8px] font-semibold shrink-0px-1 py-0.5 rounded"
-                                      style={{ color:"#A5A6F6" }}>
-                                      (overridden per item)
-                                    </span>
-                                  )}
-                                </div>
-                                {!displayApproved && group.vendorCode && (
-                                  <div className="flex items-center gap-1 mt-1 text-[9px]" style={{ color:"#BA7517" }}>
-                                    <AlertCircle size={8}/> Not on approved list — sourcing approval required
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-
-                        {/* MyInvois warning */}
-                        {hasMyInvoisIssue && (
-                          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg"
-                            style={{ background:T.amberLight, border:`0.5px solid ${T.amber}55` }}>
-                            <TriangleAlert size={11} style={{ color:T.amber, marginTop:1, flexShrink:0 }}/>
-                            <span className="text-[11px]" style={{ color:T.amberText }}>
-                              One or more vendors are not registered on MyInvois. Request e-invoice confirmation before PO issuance to protect your SST input credit claim.
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Service / subscription — no delivery note */}
-                        {confirmedItems.some(i => i.noPhysicalDelivery) && (
-                          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg"
-                            style={{ background:"rgba(29,158,117,0.06)", border:"0.5px solid rgba(29,158,117,0.25)" }}>
-                            <Link2 size={11} style={{ color:"#1D9E75", marginTop:1, flexShrink:0 }}/>
-                            <span className="text-[11px]" style={{ color:"rgba(255,255,255,0.5)" }}>
-                              <span style={{ color:"#1D9E75", fontWeight:600 }}>Service / subscription lines</span>
-                              {" "}have no physical delivery — delivery address will be skipped for these items during Phase C.
-                            </span>
-                          </div>
-                        )}
-
-                        <button
-                          onClick={handleConfirmVendors}
-                          className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-semibold text-white transition-all cursor-pointer"
-                          style={{ background: T.teal }}>
-                          <Check size={14} strokeWidth={2.5}/>
-                          Confirm vendor & sub-PR grouping
-                          <ArrowRight size={14}/>
-                        </button>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Round B complete — show Analyse button */}
-                  {roundBComplete && (
-                    <>
-                      <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl"
-                        style={{ background:"rgba(29,158,117,0.08)", border:"0.5px solid rgba(29,158,117,0.3)" }}>
-                        <div className="flex items-center gap-2.5">
-                          <div className="size-4 rounded-full flex items-center justify-center shrink-0" style={{ background: T.teal }}>
-                            <Check size={8} color="#fff" strokeWidth={3}/>
-                          </div>
-                          <span className="text-[12px]" style={{ color: T.dimText }}>
-                            Vendor confirmed — <span className="text-white font-medium">{[...new Set(confirmedItems.map(i=>i.vendorCode))].map(vc=>VENDOR_MASTER.find(v=>v.code===vc)?.name).join(", ")}</span>
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => setRoundBComplete(false)}
-                          className="text-[10px] font-medium cursor-pointer transition-opacity hover:opacity-70 shrink-0"
-                          style={{ color:"#A5A6F6" }}>
-                          Edit vendor
-                        </button>
-                      </div>
-                      <button
-                        onClick={startProcessing}
-                        className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-semibold text-white transition-all cursor-pointer"
-                        style={{ background: T.teal }}>
-                        <Sparkles size={14} strokeWidth={2}/>
-                        Analyse request
-                        <ArrowRight size={14} strokeWidth={2}/>
-                      </button>
-                    </>
-                  )}
-
-                </div>
+                <ProgressStrip roundADone={roundAComplete} roundBDone={roundBComplete}/>
               ) : (
                 /* ── Collapsed summary (shown after questioning → processing) ── */
                 <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl"
@@ -2111,7 +2255,26 @@ export default function NewPRPage() {
                     <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                     <span className="text-[12px] font-light" style={{ color: T.dimText }}>Just now</span>
                   </div>
-                  <div className="text-[14px] text-white leading-5">{msg.text}</div>
+                  <div className="text-[14px] text-white leading-5 whitespace-pre-line">{msg.text}</div>
+                  {msg.actions && msg.actions.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {msg.actions.map((act, ai) => (
+                        <button
+                          key={ai}
+                          onClick={() => handleMessageAction(act.action)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium cursor-pointer transition-all"
+                          style={{
+                            background: act.primary ? T.purple : "rgba(255,255,255,0.07)",
+                            color: act.primary ? "#fff" : "rgba(255,255,255,0.65)",
+                            border: `1px solid ${act.primary ? T.purple : "rgba(103,100,136,0.4)"}`,
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.opacity = "0.85" }}
+                          onMouseLeave={e => { e.currentTarget.style.opacity = "1" }}>
+                          {act.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -2137,21 +2300,211 @@ export default function NewPRPage() {
         </div>
         </div>{/* end fade wrapper */}
 
+        {/* ── Item picker widget (inline at bottom, replaces input) ── */}
+        {chatState === "item-picking" && (
+          <>
+            {/* Drag handle */}
+            <div
+              onMouseDown={onWidgetDragMouseDown}
+              className="shrink-0 flex items-center justify-center"
+              style={{ height:12, cursor:"row-resize", touchAction:"none" }}>
+              <div className="w-10 h-1 rounded-full" style={{ background:"rgba(103,100,136,0.5)" }}/>
+            </div>
+
+            {/* Widget panel */}
+            <div className="shrink-0 flex flex-col rounded-t-2xl overflow-hidden"
+              style={{ height:widgetHeight, background:"#1A1740", border:`1px solid rgba(103,100,136,0.5)`, borderBottom:"none" }}>
+
+              {/* Widget header */}
+              <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b"
+                style={{ borderColor:"rgba(103,100,136,0.3)" }}>
+                <div className="flex items-center gap-2">
+                  <div className="size-5 rounded-md flex items-center justify-center" style={{ background:"rgba(93,94,244,0.2)" }}>
+                    <Search size={11} style={{ color:"#A5A6F6" }}/>
+                  </div>
+                  <span className="text-[13px] font-semibold text-white">Add Items</span>
+                  <span className="text-[10px]" style={{ color:"rgba(255,255,255,0.3)" }}>
+                    · type /add-item anytime to reopen
+                  </span>
+                </div>
+                <button
+                  onClick={handleDoneItemPicker}
+                  className="flex items-center gap-1.5 px-3 h-7 rounded-lg text-[11px] font-semibold cursor-pointer transition-all"
+                  style={{
+                    background: confirmedItems.length > 0 ? "rgba(29,158,117,0.15)" : "rgba(255,255,255,0.06)",
+                    color: confirmedItems.length > 0 ? "#1D9E75" : "rgba(255,255,255,0.4)",
+                    border:`1px solid ${confirmedItems.length > 0 ? "rgba(29,158,117,0.4)" : "rgba(103,100,136,0.3)"}`,
+                  }}>
+                  <Check size={10} strokeWidth={2.5}/>
+                  Done{confirmedItems.length > 0 ? ` — ${confirmedItems.length} in cart` : ""}
+                </button>
+              </div>
+
+              {/* Search input */}
+              <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b"
+                style={{ borderColor:"rgba(103,100,136,0.25)" }}>
+                <Search size={13} style={{ color:"rgba(255,255,255,0.35)", flexShrink:0 }}/>
+                <input
+                  autoFocus
+                  type="text"
+                  value={itemPickerQuery}
+                  onChange={e => { setItemPickerQuery(e.target.value) }}
+                  placeholder="Search by item name, code, or type…"
+                  className="flex-1 bg-transparent text-[13px] text-white placeholder-gray-500 border-0 focus:outline-none"
+                />
+                {itemPickerQuery && (
+                  <button onClick={() => setItemPickerQuery("")} className="cursor-pointer hover:opacity-70">
+                    <X size={12} style={{ color:"rgba(255,255,255,0.35)" }}/>
+                  </button>
+                )}
+              </div>
+
+              {/* BOM banner */}
+              <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b"
+                style={{ borderColor:"rgba(103,100,136,0.15)", background:"rgba(93,94,244,0.05)" }}>
+                <Package size={9} style={{ color:"#A5A6F6" }}/>
+                <span className="text-[10px]" style={{ color:"rgba(255,255,255,0.35)" }}>
+                  Manufacturing / F&B / Construction?
+                </span>
+                <span className="ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0"
+                  style={{ background:"rgba(93,94,244,0.15)", color:"#A5A6F6" }}>
+                  BOM / BOQ — Phase B
+                </span>
+              </div>
+
+              {/* Results list */}
+              <div className="flex-1 overflow-y-auto min-h-0 jomie-scrollbar">
+                {(() => {
+                  const lower = itemPickerQuery.toLowerCase()
+                  const filtered = ITEM_MASTER.filter(item =>
+                    !lower || item.name.toLowerCase().includes(lower) ||
+                    item.code.toLowerCase().includes(lower) ||
+                    item.spec.toLowerCase().includes(lower)
+                  )
+                  const confirmedCodes = new Set(confirmedItems.map(i => i.code))
+                  const ITEM_TYPE_META: Record<ItemType,{ label:string; bg:string; fg:string }> = {
+                    standard:     { label:"STANDARD",     bg:"rgba(255,255,255,0.08)", fg:"rgba(255,255,255,0.45)" },
+                    capex:        { label:"CAPEX",        bg:"#EFF6FF",                fg:"#1D4ED8"                },
+                    service:      { label:"SERVICE",      bg:"rgba(29,158,117,0.15)",  fg:"#1D9E75"                },
+                    subscription: { label:"SUBSCRIPTION", bg:"rgba(93,94,244,0.15)",   fg:"#A5A6F6"                },
+                  }
+                  if (filtered.length === 0) return (
+                    <div className="flex flex-col items-center gap-3 px-4 pt-8 pb-4">
+                      <Search size={20} style={{ color:"rgba(255,255,255,0.15)" }}/>
+                      <div className="text-center">
+                        <div className="text-[12px] font-medium text-white mb-0.5">
+                          {itemPickerQuery ? `No match for "${itemPickerQuery}"` : "Start typing to search the item master"}
+                        </div>
+                        {itemPickerQuery.length > 0 && (
+                          <button
+                            onClick={() => handleRequestNew({ name:itemPickerQuery, spec:"", unitPrice:"", uom:"unit", itemType:"standard" })}
+                            className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer mx-auto"
+                            style={{ background:"rgba(186,117,23,0.15)", color:"#BA7517", border:"0.5px solid rgba(186,117,23,0.4)" }}>
+                            <Plus size={10}/> Request new item: "{itemPickerQuery}"
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                  return (
+                    <>
+                      {filtered.map(item => {
+                        const inCart = confirmedCodes.has(item.code)
+                        const cartItem = confirmedItems.find(i => i.code === item.code)
+                        const typeMeta = ITEM_TYPE_META[item.itemType]
+                        return (
+                          <div key={item.code}
+                            className="flex items-center gap-3 px-4 py-2.5 border-b"
+                            style={{ borderColor:"rgba(103,100,136,0.12)" }}>
+                            {/* Type icon */}
+                            <div className="size-7 rounded-lg shrink-0 flex items-center justify-center"
+                              style={{ background: typeMeta.bg }}>
+                              <Package size={12} style={{ color: typeMeta.fg }}/>
+                            </div>
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[12px] font-medium text-white truncate">{item.name}</span>
+                                <span className="text-[8px] font-bold px-1 py-0.5 rounded shrink-0"
+                                  style={{ background: typeMeta.bg, color: typeMeta.fg }}>
+                                  {typeMeta.label}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[9px] font-mono" style={{ color:"rgba(255,255,255,0.3)" }}>{item.code}</span>
+                                <span style={{ color:"rgba(255,255,255,0.2)" }}>·</span>
+                                <span className="text-[10px] font-mono font-semibold" style={{ color:"rgba(255,255,255,0.55)" }}>
+                                  RM {item.unitPrice.toLocaleString()}/{item.uom}
+                                </span>
+                              </div>
+                            </div>
+                            {/* Add / in-cart control */}
+                            {inCart && cartItem ? (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() => handleItemQtyChange(item.code, Math.max(0, cartItem.qty - 1))}
+                                  className="size-6 rounded-md flex items-center justify-center cursor-pointer transition-colors"
+                                  style={{ background:"rgba(255,255,255,0.08)" }}
+                                  onMouseEnter={e => e.currentTarget.style.background="rgba(255,255,255,0.15)"}
+                                  onMouseLeave={e => e.currentTarget.style.background="rgba(255,255,255,0.08)"}>
+                                  <Minus size={9} color="rgba(255,255,255,0.7)"/>
+                                </button>
+                                <span className="text-[11px] font-mono font-semibold text-white w-5 text-center">{cartItem.qty}</span>
+                                <button
+                                  onClick={() => handleItemQtyChange(item.code, cartItem.qty + 1)}
+                                  className="size-6 rounded-md flex items-center justify-center cursor-pointer transition-colors"
+                                  style={{ background:"rgba(93,94,244,0.2)" }}
+                                  onMouseEnter={e => e.currentTarget.style.background="rgba(93,94,244,0.35)"}
+                                  onMouseLeave={e => e.currentTarget.style.background="rgba(93,94,244,0.2)"}>
+                                  <Plus size={9} color="#A5A6F6"/>
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleItemAdd(item)}
+                                className="size-7 rounded-lg flex items-center justify-center cursor-pointer transition-all shrink-0"
+                                style={{ background:"rgba(93,94,244,0.15)", border:"1px solid rgba(93,94,244,0.4)" }}
+                                onMouseEnter={e => { e.currentTarget.style.background="rgba(93,94,244,0.3)"; e.currentTarget.style.borderColor="rgba(93,94,244,0.7)" }}
+                                onMouseLeave={e => { e.currentTarget.style.background="rgba(93,94,244,0.15)"; e.currentTarget.style.borderColor="rgba(93,94,244,0.4)" }}>
+                                <Plus size={13} color="#A5A6F6"/>
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                      {/* Request new item footer */}
+                      <div className="px-4 py-3 border-t" style={{ borderColor:"rgba(103,100,136,0.15)" }}>
+                        <button
+                          onClick={() => handleRequestNew({ name: itemPickerQuery || "New item", spec:"", unitPrice:"", uom:"unit", itemType:"standard" })}
+                          className="flex items-center gap-1.5 text-[11px] cursor-pointer transition-opacity hover:opacity-70"
+                          style={{ color:"rgba(255,255,255,0.3)" }}>
+                          <Plus size={10}/> Can&apos;t find what you need? Request a new item
+                        </button>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+            </div>
+          </>
+        )}
+
         {/* ── Bottom sticky: questioning + confirmed/submitted ── */}
         {(chatState === "questioning" || chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
         <div className="shrink-0 pt-4 flex flex-col gap-2">
-          {/* Item picker popup — floats above input during questioning */}
-          {chatState === "questioning" && showItemPicker && (
-            <ItemPickerPopup
-              query={itemPickerQuery}
-              onQueryChange={setItemPickerQuery}
-              onSelect={handleItemAdd}
-              onRequestNew={handleRequestNew}
-              onClose={() => { setShowItemPicker(false); setItemPickerQuery("") }}
-              confirmedCodes={new Set(confirmedItems.map(i => i.code))}
-            />
-          )}
-
+          <div className="relative">
+            {slashOpen && chatState === "questioning" && (
+              <SlashPopover
+                query={slashQuery}
+                selectedIndex={slashSelectedIdx}
+                onSelect={(cmd) => {
+                  setQuestioningInput(cmd)
+                  setSlashOpen(false)
+                  setTimeout(() => handleQuestioningSend(), 10)
+                }}
+                onClose={() => setSlashOpen(false)}
+              />
+            )}
           <div className="flex flex-col" style={{
             background:"#FFFFFF", border:`2px solid ${T.border}`,
             borderRadius:20, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
@@ -2159,8 +2512,8 @@ export default function NewPRPage() {
             <textarea
               value={chatState === "questioning" ? questioningInput : inputValue}
               onChange={e => chatState === "questioning" ? handleQuestioningInput(e.target.value) : setInputValue(e.target.value)}
-              onKeyDown={chatState === "questioning" ? undefined : handleChatKeyDown}
-              placeholder={chatState === "questioning" ? "Type a message or /item to add items from the master list…" : "Ask Jomie anything about this PR… (↵ to send, ⇧↵ for new line)"}
+              onKeyDown={chatState === "questioning" ? handleQuestioningKeyDown : handleChatKeyDown}
+              placeholder={chatState === "questioning" ? "Ask Jomie anything, or type /add-item + Send to open item picker…" : "Ask Jomie anything about this PR… (↵ to send, ⇧↵ for new line)"}
               rows={3}
               className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
               style={{ fontFamily:"Inter, sans-serif" }}
@@ -2177,11 +2530,11 @@ export default function NewPRPage() {
                   <ChevronDown size={16} style={{ color: T.purpleDark }}/>
                 </button>
                 <button
-                  onClick={handleSend}
+                  onClick={chatState === "questioning" ? handleQuestioningSend : handleSend}
                   className="flex items-center justify-center px-3.5 h-8 rounded-lg text-[14px] font-medium text-white transition-all cursor-pointer"
                   style={{
-                    background: inputValue.trim() && !isChatThinking ? T.purple : "rgba(93,94,244,0.35)",
-                    border:`1px solid ${inputValue.trim() && !isChatThinking ? T.purple : "transparent"}`,
+                    background: (chatState === "questioning" ? questioningInput.trim() : inputValue.trim()) && !isChatThinking ? T.purple : "rgba(93,94,244,0.35)",
+                    border:`1px solid ${(chatState === "questioning" ? questioningInput.trim() : inputValue.trim()) && !isChatThinking ? T.purple : "transparent"}`,
                     boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
                     opacity: isChatThinking ? 0.5 : 1,
                   }}>
@@ -2189,7 +2542,8 @@ export default function NewPRPage() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>{/* end textarea container */}
+          </div>{/* end relative wrapper */}
 
           <div className="flex justify-center">
           <div className="inline-flex items-center p-1 gap-2"
@@ -2240,11 +2594,18 @@ export default function NewPRPage() {
         </button>
       </div>
 
-      {/* ── Right — Live PR Preview / Browse ── */}
+      {/* ── Right — Cart / Browse / PR Preview ── */}
       <div style={rightPanelStyle}>
 
-        {/* ══ Browse mode ══ */}
-        {browseItem ? (
+        {/* ══ Cart mode (item-picking) ══ */}
+        {chatState === "item-picking" ? (
+          <CartPanel
+            items={confirmedItems}
+            onQtyChange={handleItemQtyChange}
+            onRemove={handleItemRemove}
+            onConfirm={() => { handleConfirmAllItems(); handleDoneItemPicker() }}
+          />
+        ) : browseItem ? (
           <div className="flex flex-col h-full">
             {/* Browse header */}
             <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
@@ -2552,7 +2913,7 @@ export default function NewPRPage() {
             </div>
           )}
 
-        </>)}
+        </>)}{/* end browseItem ternary */}
 
       </div>{/* end rightPanelStyle */}
 
