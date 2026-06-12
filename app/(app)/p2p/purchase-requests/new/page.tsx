@@ -1821,130 +1821,32 @@ export default function NewPRPage() {
                                 })}
                               </div>
 
-                              {/* Vendor row */}
+                              {/* Vendor row — read-only, Jomie suggestion */}
                               <div className="px-3 py-2 border-t" style={{ borderColor:"rgba(103,100,136,0.15)", background:"rgba(0,0,0,0.12)" }}>
-                                <div className="flex items-center justify-between gap-2 mb-1">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <div className="size-1.5 rounded-full shrink-0"
-                                      style={{ background: displayApproved ? "#1D9E75" : group.vendorCode ? "#BA7517" : "rgba(255,255,255,0.3)" }}/>
-                                    <span className="text-[10px] font-medium truncate"
-                                      style={{ color: hasItemOverride ? "#A5A6F6" : group.vendorCode ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.35)" }}>
-                                      {displayName}
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[8px] font-semibold uppercase tracking-wider shrink-0"
+                                    style={{ color:"rgba(255,255,255,0.25)" }}>
+                                    Jomie suggests
+                                  </span>
+                                  <div className="size-1.5 rounded-full shrink-0"
+                                    style={{ background: displayApproved ? "#1D9E75" : group.vendorCode ? "#BA7517" : "rgba(255,255,255,0.3)" }}/>
+                                  <span className="text-[10px] font-medium truncate"
+                                    style={{ color: hasItemOverride ? "#A5A6F6" : group.vendorCode ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.3)" }}>
+                                    {displayName}
+                                  </span>
+                                  {displayApproved && !hasItemOverride && (
+                                    <span className="text-[8px] shrink-0" style={{ color:T.teal }}>✓ Approved</span>
+                                  )}
+                                  {hasItemOverride && (
+                                    <span className="text-[8px] font-semibold shrink-0px-1 py-0.5 rounded"
+                                      style={{ color:"#A5A6F6" }}>
+                                      (overridden per item)
                                     </span>
-                                    {hasItemOverride && (
-                                      <span className="text-[8px] font-semibold shrink-0 px-1 py-0.5 rounded"
-                                        style={{ background:"rgba(93,94,244,0.2)", color:"#A5A6F6" }}>
-                                        Your preference
-                                      </span>
-                                    )}
-                                    {!hasItemOverride && displayApproved && (
-                                      <span className="text-[8px] shrink-0" style={{ color:T.teal }}>✓ Approved</span>
-                                    )}
-                                  </div>
-                                  <button
-                                    onClick={() => {
-                                      setVendorPickerOpen(isPickerOpen ? null : group.id)
-                                      setVendorSearchQuery("")
-                                    }}
-                                    className="text-[9px] font-medium cursor-pointer transition-opacity hover:opacity-70 shrink-0"
-                                    style={{ color:"#A5A6F6" }}>
-                                    {hasItemOverride ? "Change" : "Suggest vendor"}
-                                  </button>
+                                  )}
                                 </div>
-
-                                {hasItemOverride && !displayApproved && (
-                                  <div className="flex items-center gap-1 text-[9px]" style={{ color:"#BA7517" }}>
+                                {!displayApproved && group.vendorCode && (
+                                  <div className="flex items-center gap-1 mt-1 text-[9px]" style={{ color:"#BA7517" }}>
                                     <AlertCircle size={8}/> Not on approved list — sourcing approval required
-                                  </div>
-                                )}
-                                {hasItemOverride && (
-                                  <div className="text-[9px] mt-0.5" style={{ color:"rgba(255,255,255,0.25)" }}>
-                                    Final vendor confirmed by approver in Phase C
-                                  </div>
-                                )}
-
-                                {/* Vendor picker */}
-                                {isPickerOpen && (
-                                  <div className="mt-2 rounded-lg overflow-hidden" style={{ border:"0.5px solid rgba(103,100,136,0.5)", background:"#1A1740" }}>
-                                    <div className="flex items-center gap-1.5 px-2 py-1.5 border-b" style={{ borderColor:"rgba(103,100,136,0.3)" }}>
-                                      <Search size={10} style={{ color:"rgba(255,255,255,0.3)" }}/>
-                                      <input
-                                        autoFocus
-                                        type="text"
-                                        value={vendorSearchQuery}
-                                        onChange={e => setVendorSearchQuery(e.target.value)}
-                                        placeholder="Search vendors…"
-                                        className="flex-1 bg-transparent text-[11px] text-white placeholder-gray-500 border-0 focus:outline-none"
-                                      />
-                                    </div>
-                                    <div className="overflow-y-auto" style={{ maxHeight:160 }}>
-                                      {/* Suggested: vendors that supply items in this group */}
-                                      {relevantVendors.length > 0 && (
-                                        <>
-                                          <div className="px-2 pt-2 pb-1">
-                                            <span className="text-[8px] font-semibold uppercase tracking-wider"
-                                              style={{ color:"rgba(255,255,255,0.3)" }}>
-                                              Suggested — supply these items
-                                            </span>
-                                          </div>
-                                          {relevantVendors.map(v => (
-                                            <button key={v.code}
-                                              onClick={() => handleVendorOverride(group.id, v.code, v.name)}
-                                              className="w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors"
-                                              style={{ background:"transparent" }}
-                                              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                                              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                              <div className="size-1.5 rounded-full shrink-0"
-                                                style={{ background: v.approved ? "#1D9E75" : "#BA7517" }}/>
-                                              <span className="text-[11px] text-white flex-1 truncate">{v.name}</span>
-                                              {v.approved
-                                                ? <span className="text-[8px] shrink-0" style={{ color:T.teal }}>Approved</span>
-                                                : <span className="text-[8px] shrink-0" style={{ color:"#BA7517" }}>Unapproved</span>
-                                              }
-                                            </button>
-                                          ))}
-                                        </>
-                                      )}
-                                      {/* Other vendors */}
-                                      {otherVendors.length > 0 && (
-                                        <>
-                                          <div className="px-2 pt-2 pb-1 border-t" style={{ borderColor:"rgba(103,100,136,0.15)" }}>
-                                            <span className="text-[8px] font-semibold uppercase tracking-wider"
-                                              style={{ color:"rgba(255,255,255,0.2)" }}>
-                                              Other vendors
-                                            </span>
-                                          </div>
-                                          {otherVendors.map(v => (
-                                            <button key={v.code}
-                                              onClick={() => handleVendorOverride(group.id, v.code, v.name)}
-                                              className="w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors"
-                                              style={{ background:"transparent", opacity:0.7 }}
-                                              onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.opacity = "1" }}
-                                              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.opacity = "0.7" }}>
-                                              <div className="size-1.5 rounded-full shrink-0"
-                                                style={{ background: v.approved ? "#1D9E75" : "#BA7517" }}/>
-                                              <span className="text-[11px] text-white flex-1 truncate">{v.name}</span>
-                                              {!v.approved && <span className="text-[8px] shrink-0" style={{ color:"#BA7517" }}>Unapproved</span>}
-                                            </button>
-                                          ))}
-                                        </>
-                                      )}
-                                      {/* Custom vendor */}
-                                      {vendorSearchQuery.length > 2 && !VENDOR_MASTER.some(v => v.name.toLowerCase() === vendorSearchQuery.toLowerCase()) && (
-                                        <button
-                                          onClick={() => handleVendorOverride(group.id, vendorSearchQuery, vendorSearchQuery)}
-                                          className="w-full flex items-center gap-2 px-2 py-1.5 text-left border-t transition-colors"
-                                          style={{ borderColor:"rgba(103,100,136,0.2)", background:"transparent" }}
-                                          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                          <Plus size={9} style={{ color:"#BA7517" }}/>
-                                          <span className="text-[11px]" style={{ color:"#BA7517" }}>
-                                            Suggest "{vendorSearchQuery}"
-                                          </span>
-                                          <span className="text-[9px] ml-auto shrink-0" style={{ color:"rgba(255,255,255,0.3)" }}>Unapproved</span>
-                                        </button>
-                                      )}
-                                    </div>
                                   </div>
                                 )}
                               </div>
