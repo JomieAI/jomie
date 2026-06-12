@@ -386,28 +386,54 @@ function smartReply(msg: string, ctx: JomieContext): JomieReply {
 
   // ── Round A done, Round B in progress ──
   if (roundAComplete && !roundBComplete) {
-    if (intent === "affirm") {
+    const groups = buildSubPRGroups(confirmedItems)
+    const vendorSummary = buildVendorSummaryText(groups, confirmedItems)
+    const confirmActions: ChatMsgAction[] = [
+      { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
+      { label:"I want to change a vendor", action:"change-vendor" },
+    ]
+
+    // Only auto-confirm when user is EXPLICITLY about vendors — never from generic "yes/proceed/ok"
+    if (/\b(confirm vendor|vendor confirm|confirmed vendor|approve vendor|lock vendor|finalise vendor|finalize vendor)\b/.test(m)) {
       return {
-        text: "✓ Vendor grouping confirmed. Moving to Round C — budget code, delivery details, and urgency flag.",
+        text: "✓ Vendors confirmed.",
         actions:[{ label:"Continue to Round C →", primary:true, action:"confirm-vendors" }],
         sideEffect: "confirm-vendors",
       }
     }
+
+    // "Show / where is / what is" the grouping
+    if (/\b(show|where|see|view|display|grouping|sub.?pr|breakdown|which vendor|what vendor)\b/.test(m)) {
+      return {
+        text: `Here's the current vendor grouping:\n\n${vendorSummary}\n\nHappy with this? Confirm to proceed, or override a vendor if needed.`,
+        actions: confirmActions,
+      }
+    }
+
+    // General affirm ("yes", "ok", "proceed") — show grouping, guide to button
+    if (intent === "affirm") {
+      return {
+        text: `Here's how your items are grouped:\n\n${vendorSummary}\n\nIf that looks right, tap 'Confirm vendors →' to lock it in.`,
+        actions: confirmActions,
+      }
+    }
+
     if (intent === "edit" || /vendor|change|override|different/.test(m)) {
-      return { text: "You can override vendor per item using the 'from approved list' button on each item line in the vendor grouping below. Any change will automatically regroup the sub-PRs." }
+      return {
+        text: "Open the vendor override panel to change the vendor for any sub-PR.",
+        actions:[{ label:"Override vendors →", primary:true, action:"change-vendor" }],
+      }
     }
     if (/why|split|2 pr|two pr/.test(m)) {
-      return { text: "Sub-PRs are split when items from the same vendor have different approval tiers — e.g. lines above RM 50k need Finance Manager approval, while lower lines only need Dept Head sign-off. This is enforced by your approvalMatrix.md." }
+      return { text: "Sub-PRs are split when items from the same vendor have different approval tiers — lines above RM 50k need Finance Manager approval, while lower-value lines only need Dept Head sign-off. This enforces your approval matrix automatically." }
     }
     if (/myinvois|e.invoice|tax|sst/.test(m)) {
-      return { text: "MyInvois is Malaysia's e-invoicing system under LHDN. Vendors not registered on MyInvois can't issue validated e-invoices, which affects your SST input credit claim (S38, SST Act 2018). You should request the vendor's registration before the PO is issued." }
+      return { text: "MyInvois is Malaysia's e-invoicing system under LHDN. Vendors not registered on MyInvois can't issue validated e-invoices, which affects your SST input credit claim (S38, SST Act 2018). Request the vendor's registration before the PO is issued." }
     }
+    // Default — show grouping
     return {
-      text: "Happy with the vendor grouping? Confirm to proceed to Round C where we'll add budget code, delivery date, and urgency.",
-      actions:[
-        { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
-        { label:"I want to change a vendor", action:"change-vendor" },
-      ],
+      text: `Current vendor grouping:\n\n${vendorSummary}\n\nConfirm to proceed to Round C, or override a vendor if needed.`,
+      actions: confirmActions,
     }
   }
 
