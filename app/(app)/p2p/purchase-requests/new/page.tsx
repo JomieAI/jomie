@@ -8,6 +8,7 @@ import {
   Building2, TriangleAlert, ArrowRight, Loader2, ShieldCheck,
   CircleDot, Package, Briefcase, RefreshCw, ChevronDown, Pencil,
   Search, X, Minus, AlertCircle, Link2, Warehouse, ChevronUp,
+  Store, Globe,
 } from "lucide-react"
 import { InlineEditableTitle } from "@/components/ui/inline-editable-title"
 import { savePR, buildNextPRId, getSavedPRs } from "@/lib/pr-store"
@@ -1012,6 +1013,182 @@ function ItemPickerPopup({ query, onQueryChange, onSelect, onRequestNew, onClose
   )
 }
 
+// ─── Vendor override panel (right panel — change-vendor mode) ───────────────
+
+const T_LIGHT = {
+  bg: "#F7F7FE",
+  border: "#E4E4FB",
+  text: "#1C1B4B",
+  dimText: "#6B6CA8",
+  purple: "#5D5EF4",
+  purpleLight: "rgba(93,94,244,0.08)",
+}
+
+interface VendorOverridePanelProps {
+  confirmedItems: ConfirmedItem[]
+  vendorPickerOpen: string | null
+  vendorSearchQuery: string
+  onVendorPickerOpen: (subPRId: string) => void
+  onVendorSearchChange: (q: string) => void
+  onVendorSelect: (subPRId: string, code: string, name: string) => void
+  onBrowse: (item: ConfirmedItem) => void
+  onConfirm: () => void
+}
+
+function VendorOverridePanel({
+  confirmedItems, vendorPickerOpen, vendorSearchQuery,
+  onVendorPickerOpen, onVendorSearchChange, onVendorSelect,
+  onBrowse, onConfirm,
+}: VendorOverridePanelProps) {
+  const groups = buildSubPRGroups(confirmedItems)
+  const totalItems = confirmedItems.reduce((s, i) => s + i.qty, 0)
+
+  const tierColor = (tier: string) => {
+    if (tier === "FM + CFO") return { bg:"#FFF0F0", fg:"#DC2626" }
+    if (tier === "FM") return { bg:"#FFF7ED", fg:"#EA580C" }
+    return { bg:"#F0FDF4", fg:"#16A34A" }
+  }
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: T_LIGHT.bg }}>
+      {/* Header */}
+      <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: T_LIGHT.border }}>
+        <div>
+          <div className="text-[14px] font-bold" style={{ color: T_LIGHT.text }}>Vendor Override</div>
+          <div className="text-[11px] mt-0.5" style={{ color: T_LIGHT.dimText }}>{groups.length} sub-PR{groups.length !== 1 ? "s" : ""} · {totalItems} item{totalItems !== 1 ? "s" : ""}</div>
+        </div>
+        <button
+          onClick={onConfirm}
+          className="flex items-center gap-1.5 px-4 h-8 rounded-lg text-[12px] font-semibold cursor-pointer transition-all"
+          style={{ background: T_LIGHT.purple, color:"#fff" }}>
+          <Check size={12} strokeWidth={2.5}/>
+          Confirm grouping
+        </button>
+      </div>
+
+      {/* Sub-PR groups */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+        {groups.map(group => {
+          const tc = tierColor(group.tier)
+          const filteredVendors = VENDOR_MASTER.filter(v =>
+            v.name.toLowerCase().includes(vendorSearchQuery.toLowerCase()) ||
+            v.code.toLowerCase().includes(vendorSearchQuery.toLowerCase())
+          )
+          return (
+            <div key={group.id} className="rounded-xl border overflow-hidden" style={{ background:"#fff", borderColor: T_LIGHT.border }}>
+              {/* Group header */}
+              <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: T_LIGHT.border, background: T_LIGHT.purpleLight }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-bold font-mono" style={{ color: T_LIGHT.purple }}>{group.id}</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: tc.bg, color: tc.fg }}>{group.tier}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-mono font-semibold" style={{ color: T_LIGHT.text }}>RM {group.total.toLocaleString()}</span>
+                </div>
+              </div>
+
+              {/* Vendor row */}
+              <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor:"#F0F0FA" }}>
+                <div className="flex items-center gap-2">
+                  <div className="size-6 rounded-md flex items-center justify-center" style={{ background:"rgba(93,94,244,0.08)" }}>
+                    <Store size={11} style={{ color: T_LIGHT.purple }}/>
+                  </div>
+                  <div>
+                    <div className="text-[12px] font-semibold" style={{ color: T_LIGHT.text }}>{group.vendorName || "Vendor TBD"}</div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {group.isApproved && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>✓ Approved</span>}
+                      {!group.isApproved && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FFF7ED", color:"#EA580C" }}>⚠ Unapproved</span>}
+                      {!group.myInvois && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF9C3", color:"#A16207" }}>No MyInvois</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="relative">
+                  <button
+                    onClick={() => onVendorPickerOpen(vendorPickerOpen === group.id ? "" : group.id)}
+                    className="flex items-center gap-1.5 px-3 h-7 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
+                    style={{
+                      background: vendorPickerOpen === group.id ? T_LIGHT.purple : "transparent",
+                      color: vendorPickerOpen === group.id ? "#fff" : T_LIGHT.purple,
+                      border: `1px solid ${T_LIGHT.purple}`,
+                    }}>
+                    <RefreshCw size={10}/>
+                    Override vendor
+                  </button>
+                  {vendorPickerOpen === group.id && (
+                    <div className="absolute right-0 top-full mt-1 w-64 rounded-xl shadow-xl z-50 overflow-hidden"
+                      style={{ background:"#fff", border:`1px solid ${T_LIGHT.border}` }}>
+                      <div className="px-3 py-2 border-b" style={{ borderColor: T_LIGHT.border }}>
+                        <input
+                          autoFocus
+                          type="text"
+                          value={vendorSearchQuery}
+                          onChange={e => onVendorSearchChange(e.target.value)}
+                          placeholder="Search vendors…"
+                          className="w-full text-[12px] bg-transparent focus:outline-none"
+                          style={{ color: T_LIGHT.text }}/>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        {filteredVendors.map(v => (
+                          <button
+                            key={v.code}
+                            onClick={() => onVendorSelect(group.id, v.code, v.name)}
+                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 cursor-pointer">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{v.name}</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {v.approved && <span className="text-[9px] px-1 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>Approved</span>}
+                                {v.myInvois && <span className="text-[9px] px-1 rounded" style={{ background:"#EFF6FF", color:"#1D4ED8" }}>MyInvois</span>}
+                              </div>
+                            </div>
+                            <ChevronRight size={12} style={{ color:"#CBD5E1", flexShrink:0 }}/>
+                          </button>
+                        ))}
+                        {filteredVendors.length === 0 && (
+                          <div className="px-3 py-4 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No vendors found</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Item rows */}
+              {group.items.map(item => (
+                <div key={item.code} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-0" style={{ borderColor:"#F0F0FA" }}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{item.name}</div>
+                    <div className="text-[10px] mt-0.5" style={{ color: T_LIGHT.dimText }}>
+                      {item.qty} × RM {item.unitPrice.toLocaleString()} = RM {(item.qty * item.unitPrice).toLocaleString()}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onBrowse(item)}
+                    className="flex items-center gap-1 px-2.5 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
+                    style={{ background:"rgba(93,94,244,0.08)", color: T_LIGHT.purple, border:"1px solid rgba(93,94,244,0.15)" }}>
+                    <Globe size={9}/>
+                    Browse
+                  </button>
+                </div>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="shrink-0 px-4 py-3 border-t" style={{ borderColor: T_LIGHT.border }}>
+        <button
+          onClick={onConfirm}
+          className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold cursor-pointer transition-all"
+          style={{ background: T_LIGHT.purple, color:"#fff" }}>
+          <Check size={14} strokeWidth={2.5}/>
+          Confirm vendor grouping →
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Cart panel (right panel — item-picking mode) ─────────────────────────────
 
 interface CartPanelProps {
@@ -1259,6 +1436,7 @@ export default function NewPRPage() {
   const [newItemCounter, setNewItemCounter] = React.useState(0)
   // vendorOverrides: subPRId → { vendorName, isApproved }
   const [vendorOverrides, setVendorOverrides] = React.useState<Record<string, { name: string; approved: boolean }>>({})
+  const [showVendorOverride, setShowVendorOverride] = React.useState(false)
   const [vendorPickerOpen, setVendorPickerOpen]         = React.useState<string | null>(null)
   const [vendorSearchQuery, setVendorSearchQuery]         = React.useState("")
   const [itemVendorPickerOpen, setItemVendorPickerOpen]   = React.useState<string | null>(null)  // item code
@@ -1626,6 +1804,27 @@ export default function NewPRPage() {
     setChatMessages(prev => [...prev, { role:"user", text:"Confirmed" }, doneMsg])
   }
 
+  const handleConfirmVendorOverride = () => {
+    setShowVendorOverride(false)
+    setVendorPickerOpen(null)
+    setVendorSearchQuery("")
+    // Re-run grouping with updated preferred vendors
+    const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
+    setConfirmedItems(valid)
+    setRoundAComplete(true)
+    setRoundBComplete(false)
+    const groups = buildSubPRGroups(valid)
+    const vendorMsg: ChatMsg = {
+      role: "ai",
+      text: `Updated vendor grouping — ${valid.length} item${valid.length !== 1 ? "s" : ""} in ${groups.length} sub-PR${groups.length !== 1 ? "s" : ""}:\n\n${buildVendorSummaryText(groups, valid)}\n\nHappy with this grouping?`,
+      actions: [
+        { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
+        { label:"I want to change a vendor", action:"change-vendor" },
+      ],
+    }
+    setChatMessages(prev => [...prev, { role:"user", text:"Confirmed vendor changes" }, vendorMsg])
+  }
+
   const handleCancelItemPicker = () => {
     // Restore snapshot (undo picker changes) — only if no items were previously confirmed
     if (itemPickerSnapshot.length === 0 && confirmedItems.length > 0) {
@@ -1718,12 +1917,12 @@ export default function NewPRPage() {
     } else if (action === "confirm-vendors") {
       handleConfirmVendorMatching()
     } else if (action === "change-vendor") {
-      // Post guiding message then open picker (rounds are preserved — Done will re-group)
+      setShowVendorOverride(true)
+      setRightWidth(null)   // ensure right panel is open
       setChatMessages(prev => [...prev, {
         role: "ai",
-        text: "To change a vendor, adjust item quantities or remove items from your cart. When you tap Done, I'll re-run the vendor grouping with your changes.",
+        text: "Vendor override panel is open on the right. Override a vendor per sub-PR, or browse platforms to compare prices. Hit 'Confirm vendor grouping' when you're done.",
       }])
-      setTimeout(handleOpenItemPicker, 80)
     }
   }
 
@@ -2636,6 +2835,17 @@ export default function NewPRPage() {
             onQtyChange={handleItemQtyChange}
             onRemove={handleItemRemove}
             onConfirm={() => { handleConfirmAllItems(); handleDoneItemPicker() }}
+          />
+        ) : showVendorOverride && roundAComplete ? (
+          <VendorOverridePanel
+            confirmedItems={confirmedItems}
+            vendorPickerOpen={vendorPickerOpen}
+            vendorSearchQuery={vendorSearchQuery}
+            onVendorPickerOpen={(id) => setVendorPickerOpen(id === vendorPickerOpen ? null : id)}
+            onVendorSearchChange={setVendorSearchQuery}
+            onVendorSelect={handleVendorOverride}
+            onBrowse={(item) => { setBrowseItem(item); setShowVendorOverride(false) }}
+            onConfirm={handleConfirmVendorOverride}
           />
         ) : browseItem ? (
           <div className="flex flex-col h-full">
