@@ -242,7 +242,7 @@ function autoGenerateName(desc: string): string {
 
 // ─── Jomie contextual reply generator ────────────────────────────────────────
 
-type ChatActionType = "open-picker" | "proceed-to-vendor" | "edit-items" | "confirm-vendors"
+type ChatActionType = "open-picker" | "proceed-to-vendor" | "edit-items" | "confirm-vendors" | "change-vendor"
 
 interface ChatMsgAction {
   label: string
@@ -405,7 +405,7 @@ function smartReply(msg: string, ctx: JomieContext): JomieReply {
       text: "Happy with the vendor grouping? Confirm to proceed to Round C where we'll add budget code, delivery date, and urgency.",
       actions:[
         { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
-        { label:"I want to change a vendor", action:"edit-items" },
+        { label:"I want to change a vendor", action:"change-vendor" },
       ],
     }
   }
@@ -1274,6 +1274,7 @@ export default function NewPRPage() {
 
   // ── Item picker panel state ──
   const prevChatStateRef    = React.useRef<ChatState>("questioning")
+  const wasAtVendorStepRef  = React.useRef(false)   // true if picker was opened from Round B vendor step
   const [itemPickerSnapshot, setItemPickerSnapshot] = React.useState<ConfirmedItem[]>([])
   const [widgetHeight, setWidgetHeight]             = React.useState(340)
   const widgetDragging = React.useRef(false)
@@ -1557,8 +1558,9 @@ export default function NewPRPage() {
   // ── Item picker widget handlers ──
   const handleOpenItemPicker = () => {
     prevChatStateRef.current = chatState as Exclude<ChatState, "item-picking">
+    wasAtVendorStepRef.current = roundAComplete   // remember if we came from vendor step
     setItemPickerSnapshot([...confirmedItems])
-    if (roundAComplete) { setRoundAComplete(false); setRoundBComplete(false) }
+    // Do NOT reset roundAComplete — preserves vendor-step context across the picker session
     setItemPickerQuery("")
     setRightWidth(null)    // open right panel → cart view
     setBrowseItem(null)    // exit browse mode if active
@@ -1566,8 +1568,26 @@ export default function NewPRPage() {
   }
   const handleDoneItemPicker = () => {
     setChatState(prevChatStateRef.current)
-    // Post Jomie cart-summary message after picker closes
-    if (confirmedItems.length > 0) {
+    if (wasAtVendorStepRef.current && confirmedItems.length > 0) {
+      // Came from vendor step — re-run grouping immediately
+      const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
+      if (valid.length > 0) {
+        setConfirmedItems(valid)
+        setRoundAComplete(true)
+        setRoundBComplete(false)
+        const groups = buildSubPRGroups(valid)
+        const vendorMsg: ChatMsg = {
+          role: "ai",
+          text: `Re-grouped ${valid.length} item${valid.length !== 1 ? "s" : ""} into ${groups.length} sub-PR${groups.length !== 1 ? "s" : ""}:\n\n${buildVendorSummaryText(groups, valid)}\n\nHappy with this grouping?`,
+          actions: [
+            { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
+            { label:"I want to change a vendor", action:"change-vendor" },
+          ],
+        }
+        setChatMessages(prev => [...prev, vendorMsg])
+      }
+    } else if (confirmedItems.length > 0) {
+      // Came from initial item-add flow — show cart summary
       const msg: ChatMsg = {
         role: "ai",
         text: `Updated! Here's your cart:\n\n${buildItemSummaryText(confirmedItems)}\n\nReady to proceed to vendor matching, or want to add more items?`,
@@ -1589,7 +1609,7 @@ export default function NewPRPage() {
       text: `I've grouped your ${valid.length} item${valid.length !== 1 ? "s" : ""} into ${groups.length} sub-PR${groups.length !== 1 ? "s" : ""} by vendor and approval tier:\n\n${buildVendorSummaryText(groups, valid)}\n\nHappy with this grouping? You can override vendor per item if needed.`,
       actions: [
         { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
-        { label:"I want to change a vendor", action:"edit-items" },
+        { label:"I want to change a vendor", action:"change-vendor" },
       ],
     }
     setChatMessages(prev => [...prev, { role:"user", text:"Yes, proceed to vendor matching" }, vendorMsg])
@@ -1691,14 +1711,19 @@ export default function NewPRPage() {
   }
 
   const handleMessageAction = (action: ChatActionType) => {
-    if (action === "open-picker") {
+    if (action === "open-picker" || action === "edit-items") {
       handleOpenItemPicker()
     } else if (action === "proceed-to-vendor") {
       handleProceedToVendor()
     } else if (action === "confirm-vendors") {
       handleConfirmVendorMatching()
-    } else if (action === "edit-items") {
-      handleOpenItemPicker()
+    } else if (action === "change-vendor") {
+      // Post guiding message then open picker (rounds are preserved — Done will re-group)
+      setChatMessages(prev => [...prev, {
+        role: "ai",
+        text: "To change a vendor, adjust item quantities or remove items from your cart. When you tap Done, I'll re-run the vendor grouping with your changes.",
+      }])
+      setTimeout(handleOpenItemPicker, 80)
     }
   }
 
