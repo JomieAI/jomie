@@ -393,8 +393,11 @@ function smartReply(msg: string, ctx: JomieContext): JomieReply {
       { label:"I want to change a vendor", action:"change-vendor" },
     ]
 
-    // Only auto-confirm when user is EXPLICITLY about vendors — never from generic "yes/proceed/ok"
-    if (/\b(confirm vendor|vendor confirm|confirmed vendor|approve vendor|lock vendor|finalise vendor|finalize vendor)\b/.test(m)) {
+    // Confirm when user is explicit — standalone "confirm/confirmed/done" counts in Round B context
+    const isExplicitConfirm =
+      /^(confirm|confirmed|done|lock it in|looks good|approve|finalize|finalise)$/.test(m) ||
+      /\b(confirm vendor|vendor confirm|confirmed vendor|approve vendor|lock vendor|finalise vendor|finalize vendor)\b/.test(m)
+    if (isExplicitConfirm) {
       return {
         text: "✓ Vendors confirmed.",
         actions:[{ label:"Continue to Round C →", primary:true, action:"confirm-vendors" }],
@@ -1821,13 +1824,15 @@ export default function NewPRPage() {
 
   const handleConfirmVendorMatching = () => {
     setRoundBComplete(true)
+    setShowVendorOverride(false)   // close vendor override panel if open
+    setVendorPickerOpen(null)
     handleConfirmVendors()
     const doneMsg: ChatMsg = {
       role: "ai",
       text: "✓ Vendor grouping confirmed. All sub-PRs are ready.\n\nNext up: Round C — budget code, delivery date, and urgency flag. This tells Finance and the approvers when and where items are needed.\n\nReady to continue?",
       actions: [{ label:"Continue to Round C →", primary:true, action:"confirm-vendors" }],
     }
-    setChatMessages(prev => [...prev, { role:"user", text:"Confirmed" }, doneMsg])
+    setChatMessages(prev => [...prev, { role:"user", text:"Confirmed vendors" }, doneMsg])
   }
 
   const handleConfirmVendorOverride = () => {
