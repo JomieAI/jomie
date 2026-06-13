@@ -1928,15 +1928,11 @@ export default function NewPRPage() {
     setShowItemPicker(false)
     setItemPickerQuery("")
   }
-  const handleItemVendorOverride = (itemCode: string, vendorCode: string, vendorName: string, approved: boolean) => {
+  const handleItemVendorOverride = (itemCode: string, vendorCode: string, vendorName: string, _approved: boolean) => {
     setConfirmedItems(prev => prev.map(i => i.code === itemCode
-      ? { ...i, preferredVendorCode: vendorCode || vendorName, preferredVendorName: vendorName }
+      ? { ...i, preferredVendorCode: vendorCode || undefined, preferredVendorName: vendorName || undefined }
       : i
     ))
-    setItemVendorPickerOpen(null)
-    setItemVendorSearchQuery("")
-    // Reset group-level vendor overrides since grouping has changed
-    setVendorOverrides({})
   }
   // Sub-PR level vendor change → propagates preferred vendor to ALL items in that group
   // so buildSubPRGroups naturally re-evaluates and merges/splits accordingly
