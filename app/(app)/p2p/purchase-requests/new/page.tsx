@@ -2012,12 +2012,12 @@ export default function NewPRPage() {
     setChatMessages(prev => [...prev, userMsg])
     setIsChatThinking(true)
 
-    callGroqJomie(userText, ctx, [...currentHistory, userMsg], isReEdit ? "proceed-to-vendor" : null).then(reply => {
+    callGroqJomie(userText, ctx, [...currentHistory, userMsg]).then(reply => {
       setIsChatThinking(false)
       const aiMsg: ChatMsg = { role:"ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }
       setChatMessages(prev => [...prev, aiMsg])
-      if (reply.action === "proceed-to-vendor") handleProceedToVendor()
-      if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
+      // Do NOT auto-fire proceed-to-vendor or confirm-vendors here —
+      // Jomie should ask the user first; actions fire only when user clicks the button
       if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
     }).catch(() => {
