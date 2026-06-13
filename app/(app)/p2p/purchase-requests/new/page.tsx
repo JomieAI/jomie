@@ -2197,7 +2197,7 @@ export default function NewPRPage() {
           handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
         if (reply.action === "reset-vendor" && reply.payload?.itemCode)
           handleItemVendorOverride(reply.payload.itemCode, "", "", false)
-      }).catch(() => {
+      }).catch((err) => {
         setIsChatThinking(false)
         setChatMessages(prev => [...prev, { role:"ai", text: jomieErrorMessage(err) }])
       })
