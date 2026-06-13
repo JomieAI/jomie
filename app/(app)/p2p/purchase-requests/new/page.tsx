@@ -340,7 +340,7 @@ function buildJomieSystemPrompt(ctx: {
     const groupDesc = groups.map(g =>
       `  - ${g.id}: ${g.vendorName} (${g.isApproved ? "approved" : "UNAPPROVED"}) — RM${g.total.toLocaleString()} — ${g.tier}${!g.myInvois ? " [NOT on MyInvois]" : ""}`
     ).join("\n")
-    stateDesc = `CURRENT STATE: Round B — vendor grouping review. Items are grouped into ${groups.length} sub-PR(s):\n${groupDesc}\nHelp the user confirm the vendor grouping or override individual vendors.`
+    stateDesc = `CURRENT STATE: Round B — vendor grouping review. Items are grouped into ${groups.length} sub-PR(s):\n${groupDesc}\n\nIMPORTANT — VENDOR CHANGES IN ROUND B:\nThe RIGHT PANEL already shows each item with a "Change vendor" button and inline search. Vendor changes are done there — NOT in chat. When user wants to change a vendor:\n- Do NOT ask them which vendor or show vendor options/lists in chat.\n- Do NOT generate buttons like "Search Vendors", "Approved Vendors", or specific vendor name buttons.\n- Simply acknowledge and tell them to use the right panel (e.g. "You can change the vendor per item directly in the right panel on the right — click 'Change vendor' next to the item you want to update.")\n- Set action: null. Do NOT set action: "change-vendor" (that opens the old panel).\nOnly valid actions in Round B are: confirm-vendors, or null.`
   } else {
     stateDesc = "CURRENT STATE: Round B complete. Vendor grouping is confirmed. Guide user toward Round C (budget code, delivery date, urgency)."
   }
@@ -371,7 +371,6 @@ AVAILABLE ACTIONS — fire these when you're confident of the user's intent:
 - "open-picker" — open item search/add picker. Fire when user wants to add, search, or browse items.
 - "proceed-to-vendor" — advance to vendor grouping (Round B). Fire when user is ready to move past the item list.
 - "confirm-vendors" — lock vendor grouping. ONLY fire when user clearly and explicitly confirms (e.g. "confirm", "looks good", "lock it in", "done"). NOT for "proceed" or "yes" in Round B — those should show the grouping first.
-- "change-vendor" — open vendor override panel. Fire when user wants to switch, change, or override any vendor.
 
 HOW TO HANDLE AMBIGUITY — this is important:
 - If a message is short or vague (e.g. "open", "change", "yes", "next"), use the conversation history to infer intent. Don't ask for clarification if context makes it obvious.
@@ -383,14 +382,14 @@ CRITICAL ACTION RULES:
 - If roundAComplete is FALSE and you are describing vendor grouping or sub-PRs to the user → you MUST set action: "proceed-to-vendor". Do not just describe grouping without triggering it.
 - If roundAComplete is FALSE and user expresses intent to proceed (e.g. "proceed", "go ahead", "next", "yes", "match vendors") AND they have items → set action: "proceed-to-vendor".
 - If roundBComplete is FALSE and user clearly confirms vendors (e.g. "confirm", "confirmed", "looks good", "lock it in") → set action: "confirm-vendors".
-- If user wants to switch/override a vendor → set action: "change-vendor".
+- If user wants to switch/override a vendor → set action: null. Tell them to use the "Change vendor" button per item in the right panel. Do NOT set action: "change-vendor".
 - If user wants to add/search items → set action: "open-picker".
 
 RESPONSE FORMAT — always return valid JSON, nothing else:
 {
   "thinking": "1-2 sentences: what you understood from the user's message and why you're responding this way",
   "text": "Your conversational reply (max 4 lines, use \\n for line breaks)",
-  "action": "open-picker | proceed-to-vendor | confirm-vendors | change-vendor | null",
+  "action": "open-picker | proceed-to-vendor | confirm-vendors | null",
   "buttons": [
     { "label": "Short button label", "primary": true, "action": "action-string" }
   ]
@@ -399,7 +398,7 @@ RESPONSE FORMAT — always return valid JSON, nothing else:
 - "thinking" is always required — briefly explain your reasoning (shown to user as collapsible context).
 - "action" triggers automatically in the UI — must match one of the 4 valid actions or null.
 - "buttons" are shown as clickable chips — always include relevant next-step buttons.
-- action in buttons must be one of: open-picker, proceed-to-vendor, confirm-vendors, change-vendor, edit-items.
+- action in buttons must be one of: open-picker, proceed-to-vendor, confirm-vendors, edit-items. (change-vendor is NOT a valid button action — vendor changes are handled in the right panel UI, not via chat buttons)
 - Respond ONLY with the JSON object. No markdown fences, no explanation outside it.`
 }
 
