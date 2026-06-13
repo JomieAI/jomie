@@ -1959,8 +1959,6 @@ export default function NewPRPage() {
     // Only lock item list — roundAComplete is set exclusively by handleProceedToVendor
     const valid = confirmedItems.filter(i => i.qty >= i.moq)
     setConfirmedItems(valid)
-    // Show item summary in right panel after user confirms cart
-    if (!roundAComplete) setRightPanelView("items")
   }
   const handleConfirmVendors = () => {
     setRoundBComplete(true)
@@ -1979,38 +1977,69 @@ export default function NewPRPage() {
   }
   const handleDoneItemPicker = () => {
     setChatState(prevChatStateRef.current)
-    if (wasAtVendorStepRef.current && confirmedItems.length > 0) {
-      // Came from vendor step — re-run grouping immediately
-      const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
-      if (valid.length > 0) {
-        setConfirmedItems(valid)
-        setRoundAComplete(true)
-        setRoundBComplete(false)
-        setShowVendorOverride(true)
-        setRightWidth(null)
-        const groups = buildSubPRGroups(valid)
-        const vendorMsg: ChatMsg = {
-          role: "ai",
-          text: `Re-grouped ${valid.length} item${valid.length !== 1 ? "s" : ""} into ${groups.length} sub-PR${groups.length !== 1 ? "s" : ""}:\n\n${buildVendorSummaryText(groups, valid)}\n\nHappy with this grouping?`,
-          actions: [
-            { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
-            { label:"I want to change a vendor", action:"change-vendor" },
-          ],
-        }
-        setChatMessages(prev => [...prev, vendorMsg])
-      }
-    } else if (confirmedItems.length > 0) {
-      // Came from initial item-add flow — show cart summary
-      const msg: ChatMsg = {
+    const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
+    if (valid.length === 0) return
+
+    const isReEdit = wasAtVendorStepRef.current
+
+    if (isReEdit) {
+      // Re-edit after vendor step — rebuild grouping and re-confirm
+      setConfirmedItems(valid)
+      setRoundAComplete(true)
+      setRoundBComplete(false)
+      setShowVendorOverride(true)
+      setRightWidth(null)
+      setRightPanelView("vendors")
+    } else {
+      // Initial item-add — show items in right panel
+      setRightPanelView("items")
+    }
+
+    // 1. Post user message describing what they did
+    const userText = isReEdit
+      ? `I've updated my item list — ${valid.length} item${valid.length !== 1 ? "s" : ""} now.`
+      : `Done! I've added ${valid.length} item${valid.length !== 1 ? "s" : ""} to the cart.`
+    const userMsg: ChatMsg = { role: "user", text: userText }
+
+    // 2. Call Groq so Jomie acknowledges and responds intelligently
+    const ctx = {
+      roundAComplete: isReEdit ? true : roundAComplete,
+      roundBComplete: false,
+      confirmedItems: valid,
+      submittedMessage,
+    }
+    const currentHistory = [...chatMessages]
+    setChatMessages(prev => [...prev, userMsg])
+    setIsChatThinking(true)
+
+    callGroqJomie(userText, ctx, [...currentHistory, userMsg], isReEdit ? "proceed-to-vendor" : null).then(reply => {
+      setIsChatThinking(false)
+      const aiMsg: ChatMsg = { role:"ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }
+      setChatMessages(prev => [...prev, aiMsg])
+      if (reply.action === "proceed-to-vendor") handleProceedToVendor()
+      if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
+      if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
+        handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
+    }).catch(() => {
+      setIsChatThinking(false)
+      // Fallback: static message if Groq fails
+      const fallback: ChatMsg = isReEdit ? {
         role: "ai",
-        text: `Updated! Here's your cart:\n\n${buildItemSummaryText(confirmedItems)}\n\nReady to proceed to vendor matching, or want to add more items?`,
+        text: `Got it — I've re-grouped your updated ${valid.length} item${valid.length !== 1 ? "s" : ""}. Check the right panel for the new vendor grouping. Happy with it?`,
+        actions: [
+          { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
+          { label:"I want to change a vendor", action:"proceed-to-vendor" },
+        ],
+      } : {
+        role: "ai",
+        text: `Updated! Here's your cart:\n\n${buildItemSummaryText(valid)}\n\nReady to proceed to vendor matching, or want to add more items?`,
         actions: [
           { label:"Yes, proceed to vendor matching →", primary:true, action:"proceed-to-vendor" },
           { label:"Add more items", action:"open-picker" },
         ],
       }
-      setChatMessages(prev => [...prev, msg])
-    }
+      setChatMessages(prev => [...prev, fallback])
+    })
   }
   const handleProceedToVendor = () => {
     const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
