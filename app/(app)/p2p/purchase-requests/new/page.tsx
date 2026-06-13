@@ -1292,7 +1292,13 @@ function VendorOverridePanel({
               </div>
 
               {/* Item rows — each with Change vendor + Browse */}
-              {group.items.map(item => (
+              {group.items.map(item => {
+                // Active vendor for this item: user override takes priority, else group's Jomie suggestion
+                const activeVendorCode = item.preferredVendorCode || group.vendorCode
+                const isOverridden = !!item.preferredVendorName
+                // Exclude active vendor from picker so user can't re-select the same one
+                const availableVendors = filteredVendors.filter(v => v.code !== activeVendorCode)
+                return (
                 <div key={item.code} style={{ borderBottom:"1px solid #F0F0FA" }}>
                   {/* Item row */}
                   <div className="flex items-center gap-3 px-4 py-2.5">
@@ -1300,12 +1306,23 @@ function VendorOverridePanel({
                       <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{item.name}</div>
                       <div className="text-[10px] mt-0.5" style={{ color: T_LIGHT.dimText }}>
                         {item.qty} × RM {item.unitPrice.toLocaleString()} = RM {(item.qty * item.unitPrice).toLocaleString()}
-                        {item.preferredVendorName && (
+                        {isOverridden && (
                           <span className="ml-1.5 font-medium" style={{ color: T_LIGHT.purple }}>· {item.preferredVendorName}</span>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Reset to Jomie's suggestion — only shown when item has been overridden */}
+                      {isOverridden && (
+                        <button
+                          onClick={() => onVendorSelect(item.code, "", "")}
+                          className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all"
+                          style={{ background:"transparent", color:"#94A3B8", border:"1px solid #E2E8F0" }}
+                          title="Reset to Jomie's suggestion">
+                          <X size={8}/>
+                          Reset
+                        </button>
+                      )}
                       <button
                         onClick={() => { setItemPickerOpen(itemPickerOpen === item.code ? null : item.code); setItemSearch("") }}
                         className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all"
@@ -1315,7 +1332,7 @@ function VendorOverridePanel({
                           border:`1px solid ${T_LIGHT.purple}`,
                         }}>
                         <RefreshCw size={8}/>
-                        {item.preferredVendorName ? "Change" : "Change vendor"}
+                        {isOverridden ? "Change" : "Change vendor"}
                       </button>
                       <button
                         onClick={() => onBrowse(item)}
@@ -1345,7 +1362,7 @@ function VendorOverridePanel({
                         </button>
                       </div>
                       <div className="max-h-44 overflow-y-auto bg-white">
-                        {filteredVendors.map(v => (
+                        {availableVendors.map(v => (
                           <button
                             key={v.code}
                             onClick={() => { onVendorSelect(item.code, v.code, v.name); setItemPickerOpen(null); setItemSearch("") }}
@@ -1360,14 +1377,15 @@ function VendorOverridePanel({
                             <ChevronRight size={11} style={{ color:"#CBD5E1", flexShrink:0 }}/>
                           </button>
                         ))}
-                        {filteredVendors.length === 0 && (
-                          <div className="px-3 py-3 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No vendors found</div>
+                        {availableVendors.length === 0 && (
+                          <div className="px-3 py-3 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No other vendors found</div>
                         )}
                       </div>
                     </div>
                   )}
                 </div>
-              ))}
+              )
+              })}
             </div>
           )
         })}
