@@ -317,7 +317,8 @@ function buildVendorSummaryText(groups: SubPRGroup[], _items: ConfirmedItem[]): 
 interface GroqReply {
   thinking?: string
   text: string
-  action?: "open-picker" | "proceed-to-vendor" | "confirm-vendors" | "change-vendor" | null
+  action?: "open-picker" | "proceed-to-vendor" | "confirm-vendors" | "apply-vendor" | "reset-vendor" | null
+  payload?: { itemCode?: string; vendorCode?: string; vendorName?: string }
   buttons?: ChatMsgAction[]
 }
 
@@ -338,9 +339,10 @@ function buildJomieSystemPrompt(ctx: {
   } else if (roundAComplete && !roundBComplete) {
     const groups = buildSubPRGroups(confirmedItems)
     const groupDesc = groups.map(g =>
-      `  - ${g.id}: ${g.vendorName} (${g.isApproved ? "approved" : "UNAPPROVED"}) — RM${g.total.toLocaleString()} — ${g.tier}${!g.myInvois ? " [NOT on MyInvois]" : ""}`
+      `  - ${g.id}: vendor="${g.vendorName || "TBD"}" (${g.isApproved ? "approved" : "UNAPPROVED"}) — RM${g.total.toLocaleString()} — ${g.tier}${!g.myInvois ? " [NOT on MyInvois]" : ""}\n    Items: ${g.items.map(i => `${i.name} [code:${i.code}]${i.preferredVendorName ? ` (user chose: ${i.preferredVendorName})` : ""}`).join(", ")}`
     ).join("\n")
-    stateDesc = `CURRENT STATE: Round B — vendor grouping review. Items are grouped into ${groups.length} sub-PR(s):\n${groupDesc}\n\nIMPORTANT — VENDOR CHANGES IN ROUND B:\nThe RIGHT PANEL already shows each item with a "Change vendor" button and inline search. Vendor changes are done there — NOT in chat. When user wants to change a vendor:\n- Do NOT ask them which vendor or show vendor options/lists in chat.\n- Do NOT generate buttons like "Search Vendors", "Approved Vendors", or specific vendor name buttons.\n- Simply acknowledge and tell them to use the right panel (e.g. "You can change the vendor per item directly in the right panel on the right — click 'Change vendor' next to the item you want to update.")\n- Set action: null. Do NOT set action: "change-vendor" (that opens the old panel).\nOnly valid actions in Round B are: confirm-vendors, or null.`
+    const vendorList = `V001=Tech Solutions MY Sdn Bhd (approved, no MyInvois), V002=Digital Hub Malaysia Sdn Bhd (approved, MyInvois), V003=Office World Trading Sdn Bhd (approved, MyInvois), V004=Paper Plus Trading (NOT approved, no MyInvois), V005=Microsoft Malaysia Sdn Bhd (approved, MyInvois), V006=Logitech Authorised Reseller (approved, MyInvois)`
+    stateDesc = `CURRENT STATE: Round B — vendor grouping review. Items grouped into ${groups.length} sub-PR(s):\n${groupDesc}\n\nAVAILABLE VENDORS:\n${vendorList}\n\nYOUR ROLE AS AGENT IN ROUND B:\nYou can directly apply vendor changes — you don't just redirect to the UI. When user asks you to change or suggest a vendor:\n1. If you know which item they mean (from context), proceed directly. If not, ask which item with buttons for each item name.\n2. Recommend the best vendor from the available list based on: approval status, MyInvois status, and what makes sense for the item category. Explain your reasoning briefly.\n3. Ask user to confirm with a button, then set action: "apply-vendor" with payload: { itemCode, vendorCode, vendorName }.\n4. To reset an item back to Jomie's original suggestion, use action: "reset-vendor" with payload: { itemCode }.\n5. You can also just apply immediately if the user's intent is clear and they've already confirmed.\nOnly other valid action in Round B: confirm-vendors (when user confirms the whole grouping).`
   } else {
     stateDesc = "CURRENT STATE: Round B complete. Vendor grouping is confirmed. Guide user toward Round C (budget code, delivery date, urgency)."
   }
@@ -382,23 +384,26 @@ CRITICAL ACTION RULES:
 - If roundAComplete is FALSE and you are describing vendor grouping or sub-PRs to the user → you MUST set action: "proceed-to-vendor". Do not just describe grouping without triggering it.
 - If roundAComplete is FALSE and user expresses intent to proceed (e.g. "proceed", "go ahead", "next", "yes", "match vendors") AND they have items → set action: "proceed-to-vendor".
 - If roundBComplete is FALSE and user clearly confirms vendors (e.g. "confirm", "confirmed", "looks good", "lock it in") → set action: "confirm-vendors".
-- If user wants to switch/override a vendor → set action: null. Tell them to use the "Change vendor" button per item in the right panel. Do NOT set action: "change-vendor".
+- If user wants to change/suggest a vendor for an item → clarify which item if needed, suggest the best vendor with reasoning, confirm with user, then set action: "apply-vendor" + payload. Act as an agent — do the change, don't just redirect.
+- If user wants to reset a vendor back to Jomie's original suggestion → set action: "reset-vendor" + payload with itemCode.
 - If user wants to add/search items → set action: "open-picker".
 
 RESPONSE FORMAT — always return valid JSON, nothing else:
 {
   "thinking": "1-2 sentences: what you understood from the user's message and why you're responding this way",
   "text": "Your conversational reply (max 4 lines, use \\n for line breaks)",
-  "action": "open-picker | proceed-to-vendor | confirm-vendors | null",
+  "action": "open-picker | proceed-to-vendor | confirm-vendors | apply-vendor | reset-vendor | null",
   "buttons": [
     { "label": "Short button label", "primary": true, "action": "action-string" }
   ]
 }
 
 - "thinking" is always required — briefly explain your reasoning (shown to user as collapsible context).
-- "action" triggers automatically in the UI — must match one of the 4 valid actions or null.
+- "action" triggers automatically in the UI — must match one of the valid actions or null.
+- For apply-vendor: also include "payload": { "itemCode": "<item code string>", "vendorCode": "<V00X>", "vendorName": "<full vendor name>" }
+- For reset-vendor: also include "payload": { "itemCode": "<item code string>" }
 - "buttons" are shown as clickable chips — always include relevant next-step buttons.
-- action in buttons must be one of: open-picker, proceed-to-vendor, confirm-vendors, edit-items. (change-vendor is NOT a valid button action — vendor changes are handled in the right panel UI, not via chat buttons)
+- action in buttons must be one of: open-picker, proceed-to-vendor, confirm-vendors, edit-items.
 - Respond ONLY with the JSON object. No markdown fences, no explanation outside it.`
 }
 
@@ -460,7 +465,7 @@ async function callGroqJomie(
   const parsed = JSON.parse(raw) as GroqReply
 
   // Validate action field
-  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "change-vendor"]
+  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "apply-vendor", "reset-vendor"]
   if (parsed.action && !validActions.includes(parsed.action)) {
     parsed.action = null
   }
@@ -1870,7 +1875,10 @@ export default function NewPRPage() {
       if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
       if (reply.action === "proceed-to-vendor") handleProceedToVendor()
       if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
-      if (reply.action === "change-vendor") setShowVendorOverride(true)
+      if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
+        handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
+      if (reply.action === "reset-vendor" && reply.payload?.itemCode)
+        handleItemVendorOverride(reply.payload.itemCode, "", "", false)
     }).catch(() => {
       setIsChatThinking(false)
       setChatMessages(prev => [...prev, { role: "ai", text:"Sorry, I had trouble processing that. Please try again." }])
@@ -2107,7 +2115,10 @@ export default function NewPRPage() {
         if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
         if (reply.action === "proceed-to-vendor") handleProceedToVendor()
         if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
-        if (reply.action === "change-vendor") setShowVendorOverride(true)
+        if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
+          handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
+        if (reply.action === "reset-vendor" && reply.payload?.itemCode)
+          handleItemVendorOverride(reply.payload.itemCode, "", "", false)
       }).catch(() => {
         setIsChatThinking(false)
         setChatMessages(prev => [...prev, { role:"ai", text:"Sorry, I had trouble processing that. Please try again." }])
@@ -2166,7 +2177,10 @@ export default function NewPRPage() {
       if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
       if (reply.action === "proceed-to-vendor") handleProceedToVendor()
       if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
-      if (reply.action === "change-vendor") { setShowVendorOverride(true); setRightWidth(null) }
+      if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
+        handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
+      if (reply.action === "reset-vendor" && reply.payload?.itemCode)
+        handleItemVendorOverride(reply.payload.itemCode, "", "", false)
     }).catch(() => {
       setIsChatThinking(false)
       setChatMessages(prev => [...prev, { role:"ai", text:"Sorry, something went wrong. Please try again." }])
