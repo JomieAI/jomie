@@ -1952,6 +1952,8 @@ export default function NewPRPage() {
     // Only lock item list — roundAComplete is set exclusively by handleProceedToVendor
     const valid = confirmedItems.filter(i => i.qty >= i.moq)
     setConfirmedItems(valid)
+    // Show item summary in right panel after user confirms cart
+    if (!roundAComplete) setRightPanelView("items")
   }
   const handleConfirmVendors = () => {
     setRoundBComplete(true)
