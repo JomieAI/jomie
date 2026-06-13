@@ -407,6 +407,29 @@ RESPONSE FORMAT — always return valid JSON, nothing else:
 - Respond ONLY with the JSON object. No markdown fences, no explanation outside it.`
 }
 
+// ── LLM provider config ──────────────────────────────────────────────────────
+// Set NEXT_PUBLIC_LLM_PROVIDER to "openrouter" to use OpenRouter instead of Groq.
+// Set NEXT_PUBLIC_OPENROUTER_API_KEY with your OpenRouter key.
+// OpenRouter free models: meta-llama/llama-3.3-70b-instruct:free, google/gemini-flash-1.5-8b
+const LLM_CONFIG = {
+  groq: {
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    model: "llama-3.3-70b-versatile",
+    getKey: () => process.env.NEXT_PUBLIC_GROQ_API_KEY ?? "",
+  },
+  openrouter: {
+    url: "https://openrouter.ai/api/v1/chat/completions",
+    model: "meta-llama/llama-3.3-70b-instruct:free",
+    getKey: () => process.env.NEXT_PUBLIC_OPENROUTER_API_KEY ?? "",
+  },
+}
+
+class LLMError extends Error {
+  constructor(public code: "rate_limit" | "auth" | "network" | "parse", message: string) {
+    super(message)
+  }
+}
+
 async function callGroqJomie(
   userMessage: string,
   ctx: {
@@ -418,59 +441,84 @@ async function callGroqJomie(
   history: ChatMsg[],
   hintAction?: string | null
 ): Promise<GroqReply> {
-  const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY
+  const provider = (process.env.NEXT_PUBLIC_LLM_PROVIDER ?? "groq") as "groq" | "openrouter"
+  const cfg = LLM_CONFIG[provider] ?? LLM_CONFIG.groq
+  const apiKey = cfg.getKey()
+
   if (!apiKey || apiKey === "your_groq_api_key_here") {
-    // Fallback to smartReply if no key configured
     const legacyCtx: JomieContext = { roundAComplete: ctx.roundAComplete, roundBComplete: ctx.roundBComplete, confirmedItems: ctx.confirmedItems, submittedMessage: ctx.submittedMessage }
     const r = smartReply(userMessage, legacyCtx)
     return { text: r.text, action: r.sideEffect ?? null, buttons: r.actions }
   }
 
-  // Build conversation history (last 10 messages)
-  const historyMessages = history.slice(-10).map(m => ({
+  const historyMessages = history.slice(-8).map(m => ({
     role: m.role === "ai" ? "assistant" : "user" as "user" | "assistant",
     content: m.text,
   }))
 
   const systemPrompt = buildJomieSystemPrompt(ctx) +
-    (hintAction ? `\n\nIMPORTANT: The user just clicked a UI button. The button's intended action is "${hintAction}". You MUST set "action": "${hintAction}" in your response. Write a short natural confirmation message, then execute that action.` : "")
+    (hintAction ? `\n\nIMPORTANT: User clicked a button with intended action "${hintAction}". Set "action": "${hintAction}" in your response.` : "")
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...historyMessages,
-        { role: "user", content: userMessage },
-      ],
-      temperature: 0.3,
-      max_tokens: 600,
-      response_format: { type: "json_object" },
-    }),
-  })
+  let response: Response
+  try {
+    response = await fetch(cfg.url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...(provider === "openrouter" ? { "HTTP-Referer": "https://jomie.app", "X-Title": "Jomie" } : {}),
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...historyMessages,
+          { role: "user", content: userMessage },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+        response_format: { type: "json_object" },
+      }),
+    })
+  } catch {
+    throw new LLMError("network", "Network error — check your connection.")
+  }
 
   if (!response.ok) {
-    const err = await response.text()
-    console.error("Groq API error:", err)
-    throw new Error(`Groq API ${response.status}`)
+    const errText = await response.text().catch(() => "")
+    const isRateLimit = response.status === 429 || errText.includes("rate_limit")
+    // Try to extract reset time from Groq's error message
+    const timeMatch = errText.match(/try again in (\d+m[\d.]+s)/i)
+    const resetIn = timeMatch ? ` Try again in ${timeMatch[1]}.` : ""
+    if (isRateLimit) throw new LLMError("rate_limit", `Daily token limit reached.${resetIn}`)
+    if (response.status === 401) throw new LLMError("auth", "Invalid API key.")
+    throw new LLMError("network", `API error ${response.status}.`)
   }
 
   const data = await response.json()
   const raw = data.choices?.[0]?.message?.content ?? "{}"
-  const parsed = JSON.parse(raw) as GroqReply
 
-  // Validate action field
-  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "apply-vendor", "reset-vendor"]
-  if (parsed.action && !validActions.includes(parsed.action)) {
-    parsed.action = null
+  let parsed: GroqReply
+  try {
+    parsed = JSON.parse(raw) as GroqReply
+  } catch {
+    throw new LLMError("parse", "Jomie returned an unexpected response.")
   }
 
+  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "apply-vendor", "reset-vendor"]
+  if (parsed.action && !validActions.includes(parsed.action)) parsed.action = null
+
   return parsed
+}
+
+function jomieErrorMessage(err: unknown): string {
+  if (err instanceof LLMError) {
+    if (err.code === "rate_limit") return `⏳ Jomie's daily AI quota is used up. ${err.message} You can still use the right panel to manage vendors manually.`
+    if (err.code === "auth") return "🔑 Jomie can't connect — API key issue. Check your .env.local."
+    if (err.code === "network") return "📡 Can't reach Jomie's AI right now. Check your connection and try again."
+    if (err.code === "parse") return "Jomie got confused by the response format. Please try again."
+  }
+  return "Sorry, I had trouble processing that. Please try again."
 }
 
 // ─── Smart Jomie reply engine (legacy fallback) ───────────────────────────────
@@ -1879,9 +1927,9 @@ export default function NewPRPage() {
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
       if (reply.action === "reset-vendor" && reply.payload?.itemCode)
         handleItemVendorOverride(reply.payload.itemCode, "", "", false)
-    }).catch(() => {
+    }).catch((err) => {
       setIsChatThinking(false)
-      setChatMessages(prev => [...prev, { role: "ai", text:"Sorry, I had trouble processing that. Please try again." }])
+      setChatMessages(prev => [...prev, { role: "ai", text: jomieErrorMessage(err) }])
     })
   }
 
@@ -2016,9 +2064,14 @@ export default function NewPRPage() {
       // Jomie should ask the user first; actions fire only when user clicks the button
       if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
-    }).catch(() => {
+    }).catch((err) => {
       setIsChatThinking(false)
-      // Fallback: static message if Groq fails
+      // For rate-limit / auth errors, show the error message directly
+      if (err instanceof LLMError && (err.code === "rate_limit" || err.code === "auth")) {
+        setChatMessages(prev => [...prev, { role:"ai", text: jomieErrorMessage(err) }])
+        return
+      }
+      // For other errors, fall back to static messages so the flow continues
       const fallback: ChatMsg = isReEdit ? {
         role: "ai",
         text: `Got it — I've re-grouped your updated ${valid.length} item${valid.length !== 1 ? "s" : ""}. Check the right panel for the new vendor grouping. Happy with it?`,
@@ -2146,7 +2199,7 @@ export default function NewPRPage() {
           handleItemVendorOverride(reply.payload.itemCode, "", "", false)
       }).catch(() => {
         setIsChatThinking(false)
-        setChatMessages(prev => [...prev, { role:"ai", text:"Sorry, I had trouble processing that. Please try again." }])
+        setChatMessages(prev => [...prev, { role:"ai", text: jomieErrorMessage(err) }])
       })
     }
   }
@@ -2206,9 +2259,9 @@ export default function NewPRPage() {
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
       if (reply.action === "reset-vendor" && reply.payload?.itemCode)
         handleItemVendorOverride(reply.payload.itemCode, "", "", false)
-    }).catch(() => {
+    }).catch((err) => {
       setIsChatThinking(false)
-      setChatMessages(prev => [...prev, { role:"ai", text:"Sorry, something went wrong. Please try again." }])
+      setChatMessages(prev => [...prev, { role:"ai", text: jomieErrorMessage(err) }])
     })
   }
 
