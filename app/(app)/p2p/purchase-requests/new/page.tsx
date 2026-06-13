@@ -8,7 +8,7 @@ import {
   Building2, TriangleAlert, ArrowRight, Loader2, ShieldCheck,
   CircleDot, Package, Briefcase, RefreshCw, ChevronDown, Pencil,
   Search, X, Minus, AlertCircle, Link2, Warehouse, ChevronUp,
-  Store, Globe,
+  Store, Globe, Lock, PanelRightClose,
 } from "lucide-react"
 import { InlineEditableTitle } from "@/components/ui/inline-editable-title"
 import { savePR, buildNextPRId, getSavedPRs } from "@/lib/pr-store"
@@ -254,6 +254,7 @@ interface ChatMsgAction {
 interface ChatMsg {
   role: "user" | "ai"
   text: string
+  thinking?: string
   actions?: ChatMsgAction[]
 }
 
@@ -310,6 +311,165 @@ function buildVendorSummaryText(groups: SubPRGroup[], _items: ConfirmedItem[]): 
     warnings.push("⚠ Some vendors are not on the approved list — sourcing approval will be required.")
   return lines.join("\n") + (warnings.length ? "\n\n" + warnings.join("\n") : "")
 }
+
+// ─── Groq LLM integration ────────────────────────────────────────────────────
+
+interface GroqReply {
+  thinking?: string
+  text: string
+  action?: "open-picker" | "proceed-to-vendor" | "confirm-vendors" | "change-vendor" | null
+  buttons?: ChatMsgAction[]
+}
+
+function buildJomieSystemPrompt(ctx: {
+  roundAComplete: boolean
+  roundBComplete: boolean
+  confirmedItems: ConfirmedItem[]
+  submittedMessage: string
+}): string {
+  const { roundAComplete, roundBComplete, confirmedItems, submittedMessage } = ctx
+  const hasItems = confirmedItems.length > 0
+
+  let stateDesc = ""
+  if (!roundAComplete) {
+    stateDesc = hasItems
+      ? `CURRENT STATE: Round A — user is building their item list. They have ${confirmedItems.length} item(s) in cart:\n${confirmedItems.map(i => `  - ${i.name} x${i.qty} @ RM${i.unitPrice} (${i.code})`).join("\n")}\nHelp them confirm or adjust the cart, then guide them to vendor matching.`
+      : "CURRENT STATE: Round A — user has no items yet. Help them add items via the item picker."
+  } else if (roundAComplete && !roundBComplete) {
+    const groups = buildSubPRGroups(confirmedItems)
+    const groupDesc = groups.map(g =>
+      `  - ${g.id}: ${g.vendorName} (${g.isApproved ? "approved" : "UNAPPROVED"}) — RM${g.total.toLocaleString()} — ${g.tier}${!g.myInvois ? " [NOT on MyInvois]" : ""}`
+    ).join("\n")
+    stateDesc = `CURRENT STATE: Round B — vendor grouping review. Items are grouped into ${groups.length} sub-PR(s):\n${groupDesc}\nHelp the user confirm the vendor grouping or override individual vendors.`
+  } else {
+    stateDesc = "CURRENT STATE: Round B complete. Vendor grouping is confirmed. Guide user toward Round C (budget code, delivery date, urgency)."
+  }
+
+  return `You are Jomie, an intelligent AI procurement assistant inside a Malaysian audit firm's ERP system. You are warm, sharp, and conversational — like a knowledgeable colleague who happens to know procurement inside out.
+
+${stateDesc}
+
+ORIGINAL PR REQUEST: "${submittedMessage || "(none yet)"}"
+
+YOUR PERSONALITY:
+- You understand what people *mean*, not just what they *say*. Read context and intent.
+- When unsure, ask a short clarifying question with 2–3 button options — never just give a generic "I don't understand" response.
+- Be proactive: if you know the next logical step, suggest it naturally. Don't wait for the user to ask.
+- Keep replies short and conversational (2–4 lines max). No walls of text.
+- Light Malaysian professional tone is fine — direct, helpful, no jargon overload.
+- You never approve/reject PRs — you guide and inform.
+
+WHAT YOU KNOW (Malaysian procurement context):
+- Approval tiers: <RM5k = Dept Head only · RM5k–RM50k = Dept Head + Finance Manager · >RM50k = Dept Head + FM + CFO
+- MyInvois: vendors must be on Malaysia's e-invoice platform. If not, flag it and recommend requesting e-invoice before PO.
+- Approved vendor list: unapproved vendors trigger a sourcing approval step — warn the user proactively.
+- CAPEX (single unit >RM1k or tagged capex): GL-7200-CAPEX, may need asset registration.
+- Services/subscriptions: non-physical, GL-6300-OPEX.
+- MOQ: minimum order quantity — items below MOQ are flagged; user can override with vendor waiver.
+
+AVAILABLE ACTIONS — fire these when you're confident of the user's intent:
+- "open-picker" — open item search/add picker. Fire when user wants to add, search, or browse items.
+- "proceed-to-vendor" — advance to vendor grouping (Round B). Fire when user is ready to move past the item list.
+- "confirm-vendors" — lock vendor grouping. ONLY fire when user clearly and explicitly confirms (e.g. "confirm", "looks good", "lock it in", "done"). NOT for "proceed" or "yes" in Round B — those should show the grouping first.
+- "change-vendor" — open vendor override panel. Fire when user wants to switch, change, or override any vendor.
+
+HOW TO HANDLE AMBIGUITY — this is important:
+- If a message is short or vague (e.g. "open", "change", "yes", "next"), use the conversation history to infer intent. Don't ask for clarification if context makes it obvious.
+- If genuinely unclear, respond with a friendly question and 2–3 button options. Example: user says "change" in Round B → you could ask "What would you like to change?" with buttons like ["Change a vendor", "Edit items", "Something else"].
+- Never repeat the same response twice. If the user seems stuck, offer a different angle or a direct suggestion.
+- If the user asks something off-topic (weather, jokes, etc.), gently redirect: acknowledge briefly, then guide back to the PR.
+
+CRITICAL ACTION RULES:
+- If roundAComplete is FALSE and you are describing vendor grouping or sub-PRs to the user → you MUST set action: "proceed-to-vendor". Do not just describe grouping without triggering it.
+- If roundAComplete is FALSE and user expresses intent to proceed (e.g. "proceed", "go ahead", "next", "yes", "match vendors") AND they have items → set action: "proceed-to-vendor".
+- If roundBComplete is FALSE and user clearly confirms vendors (e.g. "confirm", "confirmed", "looks good", "lock it in") → set action: "confirm-vendors".
+- If user wants to switch/override a vendor → set action: "change-vendor".
+- If user wants to add/search items → set action: "open-picker".
+
+RESPONSE FORMAT — always return valid JSON, nothing else:
+{
+  "thinking": "1-2 sentences: what you understood from the user's message and why you're responding this way",
+  "text": "Your conversational reply (max 4 lines, use \\n for line breaks)",
+  "action": "open-picker | proceed-to-vendor | confirm-vendors | change-vendor | null",
+  "buttons": [
+    { "label": "Short button label", "primary": true, "action": "action-string" }
+  ]
+}
+
+- "thinking" is always required — briefly explain your reasoning (shown to user as collapsible context).
+- "action" triggers automatically in the UI — must match one of the 4 valid actions or null.
+- "buttons" are shown as clickable chips — always include relevant next-step buttons.
+- action in buttons must be one of: open-picker, proceed-to-vendor, confirm-vendors, change-vendor, edit-items.
+- Respond ONLY with the JSON object. No markdown fences, no explanation outside it.`
+}
+
+async function callGroqJomie(
+  userMessage: string,
+  ctx: {
+    roundAComplete: boolean
+    roundBComplete: boolean
+    confirmedItems: ConfirmedItem[]
+    submittedMessage: string
+  },
+  history: ChatMsg[],
+  hintAction?: string | null
+): Promise<GroqReply> {
+  const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY
+  if (!apiKey || apiKey === "your_groq_api_key_here") {
+    // Fallback to smartReply if no key configured
+    const legacyCtx: JomieContext = { roundAComplete: ctx.roundAComplete, roundBComplete: ctx.roundBComplete, confirmedItems: ctx.confirmedItems, submittedMessage: ctx.submittedMessage }
+    const r = smartReply(userMessage, legacyCtx)
+    return { text: r.text, action: r.sideEffect ?? null, buttons: r.actions }
+  }
+
+  // Build conversation history (last 10 messages)
+  const historyMessages = history.slice(-10).map(m => ({
+    role: m.role === "ai" ? "assistant" : "user" as "user" | "assistant",
+    content: m.text,
+  }))
+
+  const systemPrompt = buildJomieSystemPrompt(ctx) +
+    (hintAction ? `\n\nIMPORTANT: The user just clicked a UI button. The button's intended action is "${hintAction}". You MUST set "action": "${hintAction}" in your response. Write a short natural confirmation message, then execute that action.` : "")
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...historyMessages,
+        { role: "user", content: userMessage },
+      ],
+      temperature: 0.3,
+      max_tokens: 600,
+      response_format: { type: "json_object" },
+    }),
+  })
+
+  if (!response.ok) {
+    const err = await response.text()
+    console.error("Groq API error:", err)
+    throw new Error(`Groq API ${response.status}`)
+  }
+
+  const data = await response.json()
+  const raw = data.choices?.[0]?.message?.content ?? "{}"
+  const parsed = JSON.parse(raw) as GroqReply
+
+  // Validate action field
+  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "change-vendor"]
+  if (parsed.action && !validActions.includes(parsed.action)) {
+    parsed.action = null
+  }
+
+  return parsed
+}
+
+// ─── Smart Jomie reply engine (legacy fallback) ───────────────────────────────
 
 function smartReply(msg: string, ctx: JomieContext): JomieReply {
   const m = msg.toLowerCase()
@@ -1055,22 +1215,19 @@ const T_LIGHT = {
 
 interface VendorOverridePanelProps {
   confirmedItems: ConfirmedItem[]
-  vendorPickerOpen: string | null
-  vendorSearchQuery: string
-  onVendorPickerOpen: (subPRId: string) => void
-  onVendorSearchChange: (q: string) => void
-  onVendorSelect: (subPRId: string, code: string, name: string) => void
+  onVendorSelect: (itemCode: string, vendorCode: string, vendorName: string) => void
   onBrowse: (item: ConfirmedItem) => void
   onConfirm: () => void
+  hideHeader?: boolean
 }
 
 function VendorOverridePanel({
-  confirmedItems, vendorPickerOpen, vendorSearchQuery,
-  onVendorPickerOpen, onVendorSearchChange, onVendorSelect,
-  onBrowse, onConfirm,
+  confirmedItems, onVendorSelect, onBrowse, onConfirm, hideHeader,
 }: VendorOverridePanelProps) {
   const groups = buildSubPRGroups(confirmedItems)
   const totalItems = confirmedItems.reduce((s, i) => s + i.qty, 0)
+  const [itemPickerOpen, setItemPickerOpen] = React.useState<string | null>(null)
+  const [itemSearch, setItemSearch] = React.useState("")
 
   const tierColor = (tier: string) => {
     if (tier === "FM + CFO") return { bg:"#FFF0F0", fg:"#DC2626" }
@@ -1078,90 +1235,121 @@ function VendorOverridePanel({
     return { bg:"#F0FDF4", fg:"#16A34A" }
   }
 
+  const filteredVendors = VENDOR_MASTER.filter(v =>
+    v.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
+    v.code.toLowerCase().includes(itemSearch.toLowerCase())
+  )
+
   return (
     <div className="flex flex-col h-full" style={{ background: T_LIGHT.bg }}>
-      {/* Header */}
-      <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: T_LIGHT.border }}>
-        <div>
-          <div className="text-[14px] font-bold" style={{ color: T_LIGHT.text }}>Vendor Override</div>
-          <div className="text-[11px] mt-0.5" style={{ color: T_LIGHT.dimText }}>{groups.length} sub-PR{groups.length !== 1 ? "s" : ""} · {totalItems} item{totalItems !== 1 ? "s" : ""}</div>
+      {/* Header — hidden when universal nav header is present */}
+      {!hideHeader && (
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: T_LIGHT.border }}>
+          <div>
+            <div className="text-[14px] font-bold" style={{ color: T_LIGHT.text }}>Vendor Grouping</div>
+            <div className="text-[11px] mt-0.5" style={{ color: T_LIGHT.dimText }}>{groups.length} sub-PR{groups.length !== 1 ? "s" : ""} · {totalItems} item{totalItems !== 1 ? "s" : ""}</div>
+          </div>
+          <button onClick={onConfirm}
+            className="flex items-center gap-1.5 px-4 h-8 rounded-lg text-[12px] font-semibold cursor-pointer"
+            style={{ background: T_LIGHT.purple, color:"#fff" }}>
+            <Check size={12} strokeWidth={2.5}/> Confirm grouping
+          </button>
         </div>
-        <button
-          onClick={onConfirm}
-          className="flex items-center gap-1.5 px-4 h-8 rounded-lg text-[12px] font-semibold cursor-pointer transition-all"
-          style={{ background: T_LIGHT.purple, color:"#fff" }}>
-          <Check size={12} strokeWidth={2.5}/>
-          Confirm grouping
-        </button>
-      </div>
+      )}
 
       {/* Sub-PR groups */}
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
         {groups.map(group => {
           const tc = tierColor(group.tier)
-          const filteredVendors = VENDOR_MASTER.filter(v =>
-            v.name.toLowerCase().includes(vendorSearchQuery.toLowerCase()) ||
-            v.code.toLowerCase().includes(vendorSearchQuery.toLowerCase())
-          )
           return (
             <div key={group.id} className="rounded-xl border overflow-hidden" style={{ background:"#fff", borderColor: T_LIGHT.border }}>
+
               {/* Group header */}
               <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: T_LIGHT.border, background: T_LIGHT.purpleLight }}>
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-bold font-mono" style={{ color: T_LIGHT.purple }}>{group.id}</span>
                   <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: tc.bg, color: tc.fg }}>{group.tier}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px] font-mono font-semibold" style={{ color: T_LIGHT.text }}>RM {group.total.toLocaleString()}</span>
+                <span className="text-[12px] font-mono font-semibold" style={{ color: T_LIGHT.text }}>RM {group.total.toLocaleString()}</span>
+              </div>
+
+              {/* Jomie's vendor suggestion row */}
+              <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor:"#F0F0FA", background:"#FAFAFF" }}>
+                <div className="size-5 rounded flex items-center justify-center shrink-0" style={{ background:"rgba(93,94,244,0.08)" }}>
+                  <Store size={10} style={{ color: T_LIGHT.purple }}/>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-semibold truncate" style={{ color: T_LIGHT.text }}>
+                    {group.vendorName || "Vendor TBD"}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className="text-[9px] font-medium" style={{ color: T_LIGHT.dimText }}>Jomie's suggestion</span>
+                    {group.isApproved && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>✓ Approved</span>}
+                    {!group.isApproved && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FFF7ED", color:"#EA580C" }}>⚠ Unapproved</span>}
+                    {!group.myInvois && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF9C3", color:"#A16207" }}>No MyInvois</span>}
+                  </div>
                 </div>
               </div>
 
-              {/* Vendor row */}
-              <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor:"#F0F0FA" }}>
-                <div className="flex items-center gap-2">
-                  <div className="size-6 rounded-md flex items-center justify-center" style={{ background:"rgba(93,94,244,0.08)" }}>
-                    <Store size={11} style={{ color: T_LIGHT.purple }}/>
-                  </div>
-                  <div>
-                    <div className="text-[12px] font-semibold" style={{ color: T_LIGHT.text }}>{group.vendorName || "Vendor TBD"}</div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {group.isApproved && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>✓ Approved</span>}
-                      {!group.isApproved && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FFF7ED", color:"#EA580C" }}>⚠ Unapproved</span>}
-                      {!group.myInvois && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF9C3", color:"#A16207" }}>No MyInvois</span>}
+              {/* Item rows — each with Change vendor + Browse */}
+              {group.items.map(item => (
+                <div key={item.code} style={{ borderBottom:"1px solid #F0F0FA" }}>
+                  {/* Item row */}
+                  <div className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{item.name}</div>
+                      <div className="text-[10px] mt-0.5" style={{ color: T_LIGHT.dimText }}>
+                        {item.qty} × RM {item.unitPrice.toLocaleString()} = RM {(item.qty * item.unitPrice).toLocaleString()}
+                        {item.preferredVendorName && (
+                          <span className="ml-1.5 font-medium" style={{ color: T_LIGHT.purple }}>· {item.preferredVendorName}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => { setItemPickerOpen(itemPickerOpen === item.code ? null : item.code); setItemSearch("") }}
+                        className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all"
+                        style={{
+                          background: itemPickerOpen === item.code ? T_LIGHT.purple : "transparent",
+                          color: itemPickerOpen === item.code ? "#fff" : T_LIGHT.purple,
+                          border:`1px solid ${T_LIGHT.purple}`,
+                        }}>
+                        <RefreshCw size={8}/>
+                        {item.preferredVendorName ? "Change" : "Change vendor"}
+                      </button>
+                      <button
+                        onClick={() => onBrowse(item)}
+                        className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
+                        style={{ background:"rgba(93,94,244,0.08)", color: T_LIGHT.purple, border:"1px solid rgba(93,94,244,0.15)" }}>
+                        <Globe size={8}/>
+                        Browse
+                      </button>
                     </div>
                   </div>
-                </div>
-                <div className="relative">
-                  <button
-                    onClick={() => onVendorPickerOpen(vendorPickerOpen === group.id ? "" : group.id)}
-                    className="flex items-center gap-1.5 px-3 h-7 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
-                    style={{
-                      background: vendorPickerOpen === group.id ? T_LIGHT.purple : "transparent",
-                      color: vendorPickerOpen === group.id ? "#fff" : T_LIGHT.purple,
-                      border: `1px solid ${T_LIGHT.purple}`,
-                    }}>
-                    <RefreshCw size={10}/>
-                    Override vendor
-                  </button>
-                  {vendorPickerOpen === group.id && (
-                    <div className="absolute right-0 top-full mt-1 w-64 rounded-xl shadow-xl z-50 overflow-hidden"
-                      style={{ background:"#fff", border:`1px solid ${T_LIGHT.border}` }}>
-                      <div className="px-3 py-2 border-b" style={{ borderColor: T_LIGHT.border }}>
+
+                  {/* Inline vendor search — shown when this item's picker is open */}
+                  {itemPickerOpen === item.code && (
+                    <div className="mx-3 mb-2.5 rounded-lg overflow-hidden border" style={{ borderColor: T_LIGHT.border }}>
+                      <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: T_LIGHT.border, background:"#F7F7FE" }}>
+                        <Search size={11} style={{ color: T_LIGHT.dimText, flexShrink:0 }}/>
                         <input
                           autoFocus
                           type="text"
-                          value={vendorSearchQuery}
-                          onChange={e => onVendorSearchChange(e.target.value)}
+                          value={itemSearch}
+                          onChange={e => setItemSearch(e.target.value)}
                           placeholder="Search vendors…"
-                          className="w-full text-[12px] bg-transparent focus:outline-none"
+                          className="flex-1 text-[12px] bg-transparent focus:outline-none"
                           style={{ color: T_LIGHT.text }}/>
+                        <button onClick={() => setItemPickerOpen(null)}>
+                          <X size={11} style={{ color: T_LIGHT.dimText }}/>
+                        </button>
                       </div>
-                      <div className="max-h-48 overflow-y-auto">
+                      <div className="max-h-44 overflow-y-auto bg-white">
                         {filteredVendors.map(v => (
                           <button
                             key={v.code}
-                            onClick={() => onVendorSelect(group.id, v.code, v.name)}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 cursor-pointer">
+                            onClick={() => { onVendorSelect(item.code, v.code, v.name); setItemPickerOpen(null); setItemSearch("") }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-gray-50 cursor-pointer">
                             <div className="flex-1 min-w-0">
                               <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{v.name}</div>
                               <div className="flex items-center gap-1.5 mt-0.5">
@@ -1169,34 +1357,15 @@ function VendorOverridePanel({
                                 {v.myInvois && <span className="text-[9px] px-1 rounded" style={{ background:"#EFF6FF", color:"#1D4ED8" }}>MyInvois</span>}
                               </div>
                             </div>
-                            <ChevronRight size={12} style={{ color:"#CBD5E1", flexShrink:0 }}/>
+                            <ChevronRight size={11} style={{ color:"#CBD5E1", flexShrink:0 }}/>
                           </button>
                         ))}
                         {filteredVendors.length === 0 && (
-                          <div className="px-3 py-4 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No vendors found</div>
+                          <div className="px-3 py-3 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No vendors found</div>
                         )}
                       </div>
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* Item rows */}
-              {group.items.map(item => (
-                <div key={item.code} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-0" style={{ borderColor:"#F0F0FA" }}>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{item.name}</div>
-                    <div className="text-[10px] mt-0.5" style={{ color: T_LIGHT.dimText }}>
-                      {item.qty} × RM {item.unitPrice.toLocaleString()} = RM {(item.qty * item.unitPrice).toLocaleString()}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => onBrowse(item)}
-                    className="flex items-center gap-1 px-2.5 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
-                    style={{ background:"rgba(93,94,244,0.08)", color: T_LIGHT.purple, border:"1px solid rgba(93,94,244,0.15)" }}>
-                    <Globe size={9}/>
-                    Browse
-                  </button>
                 </div>
               ))}
             </div>
@@ -1206,8 +1375,7 @@ function VendorOverridePanel({
 
       {/* Footer */}
       <div className="shrink-0 px-4 py-3 border-t" style={{ borderColor: T_LIGHT.border }}>
-        <button
-          onClick={onConfirm}
+        <button onClick={onConfirm}
           className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold cursor-pointer transition-all"
           style={{ background: T_LIGHT.purple, color:"#fff" }}>
           <Check size={14} strokeWidth={2.5}/>
@@ -1489,6 +1657,10 @@ export default function NewPRPage() {
   // null = fill remaining space | 0 = closed | >0 = fixed px width
   const [rightWidth, setRightWidth] = React.useState<number | null>(0)
   const [isPanelLoading, setIsPanelLoading] = React.useState(false)
+  type RightPanelView = "items" | "vendors" | "budget" | "context" | "review"
+  const [rightPanelView, setRightPanelView] = React.useState<RightPanelView>("review")
+  const [rightNavOpen, setRightNavOpen] = React.useState(false)
+  const rightNavRef = React.useRef<HTMLDivElement>(null)
   const endRef     = React.useRef<HTMLDivElement>(null)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
   const nameInputRef = React.useRef<HTMLInputElement>(null)
@@ -1673,14 +1845,19 @@ export default function NewPRPage() {
     setInputValue("")
     setChatMessages(prev => [...prev, { role: "user", text: msg }])
     setIsChatThinking(true)
-    // Simulate Jomie thinking, then reply
-    const delay = 1200 + Math.floor(msg.length * 8)       // longer msgs get slightly longer "think"
-    setTimeout(() => {
+    const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
+    const currentHistory = [...chatMessages]
+    callGroqJomie(msg, ctx, currentHistory).then(reply => {
       setIsChatThinking(false)
-      const ctx: JomieContext = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
-      const reply = smartReply(msg, ctx)
-      setChatMessages(prev => [...prev, { role: "ai", text: reply.text, actions: reply.actions }])
-    }, Math.min(delay, 2400))
+      setChatMessages(prev => [...prev, { role: "ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }])
+      if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+      if (reply.action === "proceed-to-vendor") handleProceedToVendor()
+      if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
+      if (reply.action === "change-vendor") setShowVendorOverride(true)
+    }).catch(() => {
+      setIsChatThinking(false)
+      setChatMessages(prev => [...prev, { role: "ai", text:"Sorry, I had trouble processing that. Please try again." }])
+    })
   }
 
   const handleChatKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1754,9 +1931,9 @@ export default function NewPRPage() {
     setVendorOverrides({})
   }
   const handleConfirmAllItems = () => {
+    // Only lock item list — roundAComplete is set exclusively by handleProceedToVendor
     const valid = confirmedItems.filter(i => i.qty >= i.moq)
     setConfirmedItems(valid)
-    setRoundAComplete(true)
   }
   const handleConfirmVendors = () => {
     setRoundBComplete(true)
@@ -1782,6 +1959,8 @@ export default function NewPRPage() {
         setConfirmedItems(valid)
         setRoundAComplete(true)
         setRoundBComplete(false)
+        setShowVendorOverride(true)
+        setRightWidth(null)
         const groups = buildSubPRGroups(valid)
         const vendorMsg: ChatMsg = {
           role: "ai",
@@ -1809,7 +1988,10 @@ export default function NewPRPage() {
   const handleProceedToVendor = () => {
     const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
     setConfirmedItems(valid)
-    setRoundAComplete(true)
+    setRoundAComplete(true)       // single place this is set
+    setShowVendorOverride(true)
+    setRightPanelView("vendors")  // single place the right panel switches to vendors
+    setRightWidth(null)           // ensure right panel is open/visible
     const groups = buildSubPRGroups(valid)
     const vendorMsg: ChatMsg = {
       role: "ai",
@@ -1819,7 +2001,7 @@ export default function NewPRPage() {
         { label:"I want to change a vendor", action:"change-vendor" },
       ],
     }
-    setChatMessages(prev => [...prev, { role:"user", text:"Yes, proceed to vendor matching" }, vendorMsg])
+    setChatMessages(prev => [...prev, vendorMsg])
   }
 
   const handleConfirmVendorMatching = () => {
@@ -1832,7 +2014,7 @@ export default function NewPRPage() {
       text: "✓ Vendor grouping confirmed. All sub-PRs are ready.\n\nNext up: Round C — budget code, delivery date, and urgency flag. This tells Finance and the approvers when and where items are needed.\n\nReady to continue?",
       actions: [{ label:"Continue to Round C →", primary:true, action:"confirm-vendors" }],
     }
-    setChatMessages(prev => [...prev, { role:"user", text:"Confirmed vendors" }, doneMsg])
+    setChatMessages(prev => [...prev, doneMsg])
   }
 
   const handleConfirmVendorOverride = () => {
@@ -1853,7 +2035,7 @@ export default function NewPRPage() {
         { label:"I want to change a vendor", action:"change-vendor" },
       ],
     }
-    setChatMessages(prev => [...prev, { role:"user", text:"Confirmed vendor changes" }, vendorMsg])
+    setChatMessages(prev => [...prev, vendorMsg])
   }
 
   const handleCancelItemPicker = () => {
@@ -1893,21 +2075,24 @@ export default function NewPRPage() {
       setQuestioningInput("")
       setTimeout(handleOpenItemPicker, 80)
     } else {
-      const ctx: JomieContext = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
-      const reply = smartReply(val, ctx)
+      const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
+      const currentHistory = [...chatMessages]
       setChatMessages(prev => [...prev, { role:"user", text:val }])
       setQuestioningInput("")
       setIsChatThinking(true)
-      const delay = Math.min(900 + val.length * 6, 1800)
-      setTimeout(() => {
+      callGroqJomie(val, ctx, currentHistory).then(reply => {
         setIsChatThinking(false)
-        const msg: ChatMsg = { role:"ai", text: reply.text, actions: reply.actions }
+        const msg: ChatMsg = { role:"ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }
         setChatMessages(prev => [...prev, msg])
         // Handle side effects
-        if (reply.sideEffect === "open-picker") setTimeout(handleOpenItemPicker, 100)
-        if (reply.sideEffect === "proceed-to-vendor") handleProceedToVendor()
-        if (reply.sideEffect === "confirm-vendors") handleConfirmVendorMatching()
-      }, delay)
+        if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+        if (reply.action === "proceed-to-vendor") handleProceedToVendor()
+        if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
+        if (reply.action === "change-vendor") setShowVendorOverride(true)
+      }).catch(() => {
+        setIsChatThinking(false)
+        setChatMessages(prev => [...prev, { role:"ai", text:"Sorry, I had trouble processing that. Please try again." }])
+      })
     }
   }
   // Execute a slash command directly (bypasses state timing issues)
@@ -1940,26 +2125,51 @@ export default function NewPRPage() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleQuestioningSend() }
   }
 
-  const handleMessageAction = (action: ChatActionType) => {
+  const handleMessageAction = (action: ChatActionType, label?: string) => {
+    if (isChatThinking) return
+    // Special case: open-picker and edit-items don't go through LLM — open directly
     if (action === "open-picker" || action === "edit-items") {
-      handleOpenItemPicker()
-    } else if (action === "proceed-to-vendor") {
-      handleProceedToVendor()
-    } else if (action === "confirm-vendors") {
-      handleConfirmVendorMatching()
-    } else if (action === "change-vendor") {
-      setShowVendorOverride(true)
-      setRightWidth(null)   // ensure right panel is open
-      setChatMessages(prev => [...prev, {
-        role: "ai",
-        text: "Vendor override panel is open on the right. Override a vendor per sub-PR, or browse platforms to compare prices. Hit 'Confirm vendor grouping' when you're done.",
-      }])
+      const userText = label || (action === "edit-items" ? "Edit items" : "Open item picker")
+      setChatMessages(prev => [...prev, { role:"user", text: userText }])
+      setTimeout(handleOpenItemPicker, 80)
+      return
     }
+    // All other actions: post button label as user message, route through Groq
+    const userText = label || action
+    const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
+    const currentHistory = [...chatMessages]
+    setChatMessages(prev => [...prev, { role:"user", text: userText }])
+    setIsChatThinking(true)
+    callGroqJomie(userText, ctx, [...currentHistory, { role:"user", text: userText }], action).then(reply => {
+      setIsChatThinking(false)
+      const msg: ChatMsg = { role:"ai", text: reply.text, actions: reply.buttons }
+      setChatMessages(prev => [...prev, msg])
+      if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+      if (reply.action === "proceed-to-vendor") handleProceedToVendor()
+      if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
+      if (reply.action === "change-vendor") { setShowVendorOverride(true); setRightWidth(null) }
+    }).catch(() => {
+      setIsChatThinking(false)
+      setChatMessages(prev => [...prev, { role:"ai", text:"Sorry, something went wrong. Please try again." }])
+    })
   }
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior:"smooth" })
-  }, [chatState, processStep, chatMessages])
+  }, [chatState, processStep, chatMessages, isChatThinking])
+
+  // rightPanelView is switched explicitly inside handleProceedToVendor — no auto-effect needed
+
+  // Close right nav dropdown on outside click
+  React.useEffect(() => {
+    if (!rightNavOpen) return
+    const handler = (e: MouseEvent) => {
+      if (rightNavRef.current && !rightNavRef.current.contains(e.target as Node))
+        setRightNavOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [rightNavOpen])
 
   const tabs = [
     { key:"ai",      label:"AI Chat" },
@@ -2521,13 +2731,29 @@ export default function NewPRPage() {
                     <span className="text-[12px] font-bold" style={{ color: T.purple }}>Jomie AI</span>
                     <span className="text-[12px] font-light" style={{ color: T.dimText }}>Just now</span>
                   </div>
+                  {/* Thinking thread — collapsible */}
+                  {msg.thinking && (
+                    <details className="group w-fit max-w-full">
+                      <summary className="flex items-center gap-1.5 cursor-pointer list-none select-none mb-1"
+                        style={{ color: "rgba(255,255,255,0.35)" }}>
+                        <svg className="size-3 transition-transform group-open:rotate-90" viewBox="0 0 12 12" fill="none">
+                          <path d="M4 2.5l4 3.5-4 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        <span className="text-[11px] font-medium">Jomie's thinking</span>
+                      </summary>
+                      <div className="px-3 py-2 rounded-lg text-[12px] leading-5 italic"
+                        style={{ background:"rgba(255,255,255,0.04)", color:"rgba(255,255,255,0.45)", borderLeft:"2px solid rgba(93,94,244,0.3)" }}>
+                        {msg.thinking}
+                      </div>
+                    </details>
+                  )}
                   <div className="text-[14px] text-white leading-5 whitespace-pre-line">{msg.text}</div>
                   {msg.actions && msg.actions.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {msg.actions.map((act, ai) => (
                         <button
                           key={ai}
-                          onClick={() => handleMessageAction(act.action)}
+                          onClick={() => handleMessageAction(act.action, act.label)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium cursor-pointer transition-all"
                           style={{
                             background: act.primary ? T.purple : "rgba(255,255,255,0.07)",
@@ -2859,6 +3085,106 @@ export default function NewPRPage() {
       {/* ── Right — Cart / Browse / PR Preview ── */}
       <div style={rightPanelStyle}>
 
+        {/* ══ Universal nav header — shown on all views except item-picking and browse ══ */}
+        {chatState !== "item-picking" && !browseItem && (() => {
+          const NAV_TABS: { key: RightPanelView; label: string; enabled: boolean }[] = [
+            { key: "items",   label: "Items",   enabled: confirmedItems.length > 0 },
+            { key: "vendors", label: "Vendors", enabled: roundAComplete },
+            { key: "budget",  label: "Budget",  enabled: false },
+            { key: "context", label: "Context", enabled: false },
+            { key: "review",  label: "Review",  enabled: true },
+          ]
+          const activeLabel = NAV_TABS.find(t => t.key === rightPanelView)?.label ?? "Review"
+          return (
+            <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-100 shrink-0 bg-white relative z-10">
+              {/* Left: icon + current view label */}
+              <div className="flex items-center gap-2">
+                <div className="size-5 rounded-md flex items-center justify-center" style={{ background: T.purpleLight }}>
+                  <CircleDot size={11} style={{ color: T.purple }}/>
+                </div>
+                <span className="text-[12px] font-semibold text-gray-700" style={{ fontFamily:"var(--font-pjs)" }}>
+                  {activeLabel}
+                </span>
+                {chatState !== "idle" && chatState !== "questioning" && rightPanelView === "review" && (
+                  <div className="flex items-center gap-1">
+                    <div className="size-1.5 rounded-full animate-pulse" style={{ background: T.purple }}/>
+                    <span className="text-[9px] font-mono font-semibold tracking-wider" style={{ color: T.purple }}>LIVE</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Right: collapse + nav dropdown button group */}
+              <div className="relative flex flex-row items-center h-8" ref={rightNavRef}>
+                {/* Collapse button */}
+                <button
+                  onClick={() => setRightWidth(w => w === 0 ? null : 0)}
+                  className="flex items-center justify-center rounded-lg cursor-pointer transition-all"
+                  style={{ width:32, height:32, background:"transparent", borderRadius:8 }}
+                  title="Collapse panel"
+                  onMouseEnter={e => (e.currentTarget.style.background="rgba(0,0,0,0.06)")}
+                  onMouseLeave={e => (e.currentTarget.style.background="transparent")}
+                  onMouseDown={e => (e.currentTarget.style.background="rgba(0,0,0,0.1)")}
+                  onMouseUp={e => (e.currentTarget.style.background="rgba(0,0,0,0.06)")}>
+                  <PanelRightClose size={16} style={{ color:"#6B7280" }}/>
+                </button>
+
+                {/* Dropdown chevron button */}
+                <button
+                  onClick={() => setRightNavOpen(o => !o)}
+                  className="flex items-center justify-center cursor-pointer transition-all"
+                  style={{
+                    width:28, height:32,
+                    background: rightNavOpen ? "rgba(0,0,0,0.08)" : "transparent",
+                    borderRadius:8,
+                  }}
+                  onMouseEnter={e => { if (!rightNavOpen) e.currentTarget.style.background="rgba(0,0,0,0.06)" }}
+                  onMouseLeave={e => { e.currentTarget.style.background = rightNavOpen ? "rgba(0,0,0,0.08)" : "transparent" }}
+                  onMouseDown={e => (e.currentTarget.style.background="rgba(0,0,0,0.1)")}
+                  onMouseUp={e => (e.currentTarget.style.background="rgba(0,0,0,0.08)")}>
+                  <ChevronDown size={13} style={{ color:"#6B7280" }} strokeWidth={2}/>
+                </button>
+
+                {/* Dropdown menu */}
+                {rightNavOpen && (
+                  <div className="absolute z-50"
+                    style={{
+                      right:0, top:36,
+                      width:121,
+                      background:"#101828",
+                      border:"1px solid #101828",
+                      boxShadow:"0px 12px 16px -4px rgba(99,86,228,0.08), 0px 4px 6px -2px rgba(99,86,228,0.03)",
+                      borderRadius:8,
+                      overflow:"hidden",
+                    }}>
+                    <div className="flex flex-col p-1">
+                      {NAV_TABS.map(tab => (
+                        <button
+                          key={tab.key}
+                          disabled={!tab.enabled}
+                          onClick={() => { setRightPanelView(tab.key); setRightNavOpen(false) }}
+                          className="flex items-center justify-between px-4 h-8 rounded-lg text-left w-full transition-colors"
+                          style={{
+                            background: tab.key === rightPanelView ? "rgba(255,255,255,0.08)" : "transparent",
+                            cursor: tab.enabled ? "pointer" : "not-allowed",
+                          }}
+                          onMouseEnter={e => { if (tab.enabled) e.currentTarget.style.background = "rgba(255,255,255,0.05)" }}
+                          onMouseLeave={e => { e.currentTarget.style.background = tab.key === rightPanelView ? "rgba(255,255,255,0.08)" : "transparent" }}>
+                          <span className="text-[14px] font-light leading-5"
+                            style={{ color: tab.enabled ? "#ffffff" : "rgba(255,255,255,0.3)" }}>
+                            {tab.label}
+                          </span>
+                          {!tab.enabled && <Lock size={10} style={{ color:"rgba(255,255,255,0.2)", flexShrink:0 }}/>}
+                          {tab.key === rightPanelView && tab.enabled && <Check size={10} style={{ color:"rgba(255,255,255,0.5)", flexShrink:0 }}/>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* ══ Cart mode (item-picking) ══ */}
         {chatState === "item-picking" ? (
           <CartPanel
@@ -2867,16 +3193,13 @@ export default function NewPRPage() {
             onRemove={handleItemRemove}
             onConfirm={() => { handleConfirmAllItems(); handleDoneItemPicker() }}
           />
-        ) : showVendorOverride && roundAComplete ? (
+        ) : rightPanelView === "vendors" && roundAComplete ? (
           <VendorOverridePanel
             confirmedItems={confirmedItems}
-            vendorPickerOpen={vendorPickerOpen}
-            vendorSearchQuery={vendorSearchQuery}
-            onVendorPickerOpen={(id) => setVendorPickerOpen(id === vendorPickerOpen ? null : id)}
-            onVendorSearchChange={setVendorSearchQuery}
-            onVendorSelect={handleVendorOverride}
-            onBrowse={(item) => { setBrowseItem(item); setShowVendorOverride(false) }}
+            onVendorSelect={(itemCode, vendorCode, vendorName) => handleItemVendorOverride(itemCode, vendorCode, vendorName, true)}
+            onBrowse={(item) => { setBrowseItem(item); setRightPanelView("review") }}
             onConfirm={handleConfirmVendorOverride}
+            hideHeader
           />
         ) : browseItem ? (
           <div className="flex flex-col h-full">
@@ -3002,31 +3325,57 @@ export default function NewPRPage() {
           </div>
 
         ) : (
-          <>{/* ══ PR Preview mode ══ */}
+          <>{/* ══ PR Preview / navigated view ══ */}
 
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="size-5 rounded-md flex items-center justify-center" style={{ background: T.purpleLight }}>
-                <CircleDot size={11} style={{ color: T.purple }}/>
+          {/* ── Items view: read-only cart summary ── */}
+          {rightPanelView === "items" && confirmedItems.length > 0 ? (
+            <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Cart — {confirmedItems.length} items</span>
+                <span className="text-[12px] font-semibold text-gray-700">
+                  RM {confirmedItems.reduce((s,i)=>s+i.qty*i.unitPrice,0).toLocaleString()}
+                </span>
               </div>
-              <span className="text-[12px] font-semibold text-gray-700" style={{ fontFamily:"var(--font-pjs)" }}>
-                PR preview
-              </span>
-              {chatState !== "idle" && chatState !== "questioning" && (
-                <div className="flex items-center gap-1">
-                  <div className="size-1.5 rounded-full animate-pulse" style={{ background: T.purple }}/>
-                  <span className="text-[9px] font-mono font-semibold tracking-wider" style={{ color: T.purple }}>LIVE</span>
+              {confirmedItems.map(item => (
+                <div key={item.code} className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0">
+                  <div className="size-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: T.purpleLight }}>
+                    <Package size={14} style={{ color: T.purple }}/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-gray-800 leading-tight truncate">{item.name}</div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">{item.code}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[11px] text-gray-500">×{item.qty}</span>
+                      {item.unitPrice > 0
+                        ? <span className="text-[11px] font-medium text-gray-700">RM {(item.qty * item.unitPrice).toLocaleString()}</span>
+                        : <span className="text-[11px] text-amber-500">Price TBD</span>
+                      }
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setRightPanelView("review"); setTimeout(handleOpenItemPicker, 80) }}
+                    className="text-[11px] text-purple-400 hover:text-purple-600 shrink-0 mt-0.5 cursor-pointer transition-colors">
+                    Edit
+                  </button>
                 </div>
-              )}
+              ))}
             </div>
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background:"#F3F4F6", color:"#6B7280" }}>
-              draft
-            </span>
-          </div>
 
-          {/* Empty / waiting state */}
-          {(chatState === "idle" || chatState === "questioning") ? (
+          ) : rightPanelView === "budget" || rightPanelView === "context" ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
+              <div className="size-12 rounded-xl flex items-center justify-center" style={{ background:"#F3F4F6" }}>
+                <Lock size={20} style={{ color:"#9CA3AF" }}/>
+              </div>
+              <div className="text-center">
+                <div className="text-[13px] font-semibold text-gray-400 mb-1">Coming in Round {rightPanelView === "budget" ? "C" : "D"}</div>
+                <div className="text-[11px] text-gray-300 leading-relaxed max-w-[180px]">
+                  {rightPanelView === "budget" ? "Budget code, GL code, and cost centre will be assigned here." : "Delivery date, urgency flag, and business justification."}
+                </div>
+              </div>
+            </div>
+
+          ) : /* Empty / waiting state */
+          (chatState === "idle" || chatState === "questioning") ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
               <div className="size-12 rounded-xl flex items-center justify-center" style={{ background: T.purpleLight }}>
                 <Sparkles size={22} style={{ color: T.purple, opacity:0.4 }}/>
