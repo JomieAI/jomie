@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Plus,
   LayoutDashboard,
+  FolderKanban,
   ShoppingCart,
   Receipt,
   Calculator,
@@ -37,7 +38,7 @@ import {
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type ModuleKey =
-  | "dashboard" | "procurement" | "accounts-payable" | "accounting"
+  | "dashboard" | "projects" | "procurement" | "accounts-payable" | "accounting"
   | "audit" | "approvals" | "notifications" | "vendors" | "items"
   | "interco" | "reports" | "practice" | "knowledge" | "automation" | "settings"
 
@@ -73,6 +74,7 @@ const NAV_HOVER_BG   = "rgba(93,94,244,0.10)"
 
 const MAIN_NAV_TOP: MainNavItem[] = [
   { icon: LayoutDashboard, label: "Dashboard",        moduleKey: "dashboard",        href: "/dashboard" },
+  { icon: FolderKanban,    label: "Projects",         moduleKey: "projects",         href: "/projects" },
   { icon: ShoppingCart,    label: "Procurement",      moduleKey: "procurement",      href: "/p2p/purchase-requests" },
   { icon: Receipt,         label: "Accounts Payable", moduleKey: "accounts-payable", href: "/ap/invoices" },
   { icon: Calculator,      label: "Accounting",       moduleKey: "accounting",       href: "/accounting/journals" },
@@ -104,6 +106,14 @@ const SUB_NAV: SubNavGroup[] = [
       { label: "Overview",           href: "/dashboard" },
       { label: "Cash Position",      href: "/dashboard/cash" },
       { label: "Upcoming Deadlines", href: "/dashboard/deadlines" },
+    ],
+  },
+  {
+    moduleKey: "projects",
+    sectionLabel: "Projects",
+    items: [
+      { label: "My Projects",        href: "/projects" },
+      { label: "All Projects",       href: "/projects/all" },
     ],
   },
   {
@@ -266,6 +276,7 @@ const SUB_NAV: SubNavGroup[] = [
 // ── Route → module ─────────────────────────────────────────────────────────
 
 function getActiveModule(pathname: string): ModuleKey {
+  if (pathname.startsWith("/projects"))      return "projects"
   if (pathname.startsWith("/ap"))            return "accounts-payable"
   if (pathname.startsWith("/accounting"))    return "accounting"
   if (pathname.startsWith("/audit"))         return "audit"
