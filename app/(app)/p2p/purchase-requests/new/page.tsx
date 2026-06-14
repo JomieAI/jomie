@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { PageBackButton } from "@/components/ui/page-back-button"
 import {
   Sparkles, ChevronLeft, ChevronRight, Send, Plus, Check, CheckCircle2,
   Building2, TriangleAlert, ArrowRight, Loader2, ShieldCheck,
@@ -126,6 +127,10 @@ interface ConfirmedItem extends ItemMasterEntry {
   isNew?: boolean
   preferredVendorCode?: string   // user-selected vendor override (per item)
   preferredVendorName?: string
+  sourcePlatform?: string        // e.g. "Shopee", "Prism+"
+  sourceUrl?: string             // original URL the user pasted
+  sourceType?: "catalog-match" | "new-item-pending"
+  shop?: string                  // seller/store name on the source platform
 }
 
 // ─── Auto-generate project name from description ──────────────────────────────
@@ -138,6 +143,8 @@ function toTitleCase(s: string): string {
 }
 
 function autoGenerateName(desc: string): string {
+  // Strip URLs before processing
+  desc = desc.replace(/https?:\/\/\S+/gi, "").trim()
   const d = desc.toLowerCase()
 
   // ── Step 1: strip all intent/filler phrases from the front ──
@@ -248,7 +255,7 @@ type ChatActionType = "open-picker" | "proceed-to-vendor" | "edit-items" | "conf
 interface ChatMsgAction {
   label: string
   primary?: boolean
-  action: ChatActionType
+  action: string   // ChatActionType or dynamic e.g. "suggest-item:CODE" / "add-new-item-from-url"
 }
 
 interface ChatMsg {
@@ -317,8 +324,12 @@ function buildVendorSummaryText(groups: SubPRGroup[], _items: ConfirmedItem[]): 
 interface GroqReply {
   thinking?: string
   text: string
-  action?: "open-picker" | "proceed-to-vendor" | "confirm-vendors" | "apply-vendor" | "reset-vendor" | null
-  payload?: { itemCode?: string; vendorCode?: string; vendorName?: string }
+  action?: "open-picker" | "proceed-to-vendor" | "confirm-vendors" | "apply-vendor" | "reset-vendor" | "suggest-items" | "add-new-item" | null
+  payload?: {
+    itemCode?: string; vendorCode?: string; vendorName?: string
+    items?: { code: string; qty: number }[]
+    itemName?: string
+  }
   buttons?: ChatMsgAction[]
 }
 
@@ -331,11 +342,15 @@ function buildJomieSystemPrompt(ctx: {
   const { roundAComplete, roundBComplete, confirmedItems, submittedMessage } = ctx
   const hasItems = confirmedItems.length > 0
 
+  const itemCatalog = ITEM_MASTER.map(i =>
+    `${i.code} | ${i.name} | ${i.spec} | RM ${i.unitPrice}`
+  ).join("\n")
+
   let stateDesc = ""
   if (!roundAComplete) {
     stateDesc = hasItems
       ? `CURRENT STATE: Round A — user is building their item list. They have ${confirmedItems.length} item(s) in cart:\n${confirmedItems.map(i => `  - ${i.name} x${i.qty} @ RM${i.unitPrice} (${i.code})`).join("\n")}\nHelp them confirm or adjust the cart, then guide them to vendor matching.`
-      : "CURRENT STATE: Round A — user has no items yet. Help them add items via the item picker."
+      : `CURRENT STATE: Round A — user has no items yet.\n\nAPPROVED ITEM CATALOG (use exact codes for suggest-items):\n${itemCatalog}\n\nIf the user confirms a previously suggested item (e.g. says "yes", "correct", "add it"), use action "suggest-items" with the exact item code from the catalog above. Never invent item codes.`
   } else if (roundAComplete && !roundBComplete) {
     const groups = buildSubPRGroups(confirmedItems)
     const groupDesc = groups.map(g =>
@@ -369,8 +384,17 @@ WHAT YOU KNOW (Malaysian procurement context):
 - Services/subscriptions: non-physical, GL-6300-OPEX.
 - MOQ: minimum order quantity — items below MOQ are flagged; user can override with vendor waiver.
 
+ITEM-ADDING PHILOSOPHY — read this before deciding any action:
+Your default in Round A is always to guide the user toward adding items themselves via the item picker. Do NOT pre-select or recommend catalog items based on context clues alone (e.g. "developer project", "new hire setup", "office work"). Only suggest a specific item when the user names it explicitly.
+
+- Vague request ("I want to buy stuff for my project", "I need some items", "help me") → respond with one short sentence acknowledging their goal + action "open-picker". Never list catalog items unprompted.
+- Specific request ("I need a Dell laptop", "add a keyboard") → find the catalog match, confirm with user, then suggest-items.
+- "I don't know / guide me" → guide them to the picker: "Let's start by searching for what you need." + action "open-picker". Do NOT narrow down to specific SKUs or category buttons.
+
 AVAILABLE ACTIONS — fire these when you're confident of the user's intent:
-- "open-picker" — open item search/add picker. Fire when user wants to add, search, or browse items.
+- "suggest-items" — add catalog item(s) directly to cart. ONLY when user names a specific item AND confirms it. Requires payload: { "items": [{ "code": "EXACT-CODE", "qty": 1 }] }. Only valid in Round A. Use exact codes from the catalog above.
+- "add-new-item" — user wants to buy something NOT in the catalog. Use when the user mentions any item/product that doesn't match the catalog above, regardless of how they say it — a full sentence ("I need to buy earphones"), a bare noun phrase ("phone cover", "standing desk"), or a casual mention ("also get me a whiteboard"). Extract just the item name (strip filler words like "I need", "buy", "also", "get me") and put it in payload: { "itemName": "extracted item name" }. Your text should confirm what you understood and say you'll register it as a new item request. NEVER invent a catalog code for non-catalog items — use this action instead.
+- "open-picker" — open item search/add picker. DEFAULT action when user intent is vague or they want to browse.
 - "proceed-to-vendor" — advance to vendor grouping (Round B). Fire when user is ready to move past the item list.
 - "confirm-vendors" — lock vendor grouping. ONLY fire when user clearly and explicitly confirms (e.g. "confirm", "looks good", "lock it in", "done"). NOT for "proceed" or "yes" in Round B — those should show the grouping first.
 
@@ -392,7 +416,7 @@ RESPONSE FORMAT — always return valid JSON, nothing else:
 {
   "thinking": "1-2 sentences: what you understood from the user's message and why you're responding this way",
   "text": "Your conversational reply (max 4 lines, use \\n for line breaks)",
-  "action": "open-picker | proceed-to-vendor | confirm-vendors | apply-vendor | reset-vendor | null",
+  "action": "suggest-items | open-picker | proceed-to-vendor | confirm-vendors | apply-vendor | reset-vendor | null",
   "buttons": [
     { "label": "Short button label", "primary": true, "action": "action-string" }
   ]
@@ -407,6 +431,110 @@ RESPONSE FORMAT — always return valid JSON, nothing else:
 - Respond ONLY with the JSON object. No markdown fences, no explanation outside it.`
 }
 
+interface FetchedProduct {
+  title?: string
+  description?: string
+  image?: string
+  price?: string
+  currency?: string
+  platform?: string
+  domain?: string
+  shop?: string     // seller/store name on the platform
+  source?: string   // "jsonld" | "og" | "html" | "demo" | "failed"
+}
+
+function buildFirstMessageSystemPrompt(product?: FetchedProduct, externalUrl?: string): string {
+  const itemList = ITEM_MASTER.map(i =>
+    `${i.code} | ${i.name} | ${i.spec} | ${i.uom} | RM ${i.unitPrice} | ${i.purchaseType.toUpperCase()} | MOQ: ${i.moq}`
+  ).join("\n")
+
+  const vendorList = VENDOR_MASTER.map(v =>
+    `${v.code} | ${v.name} | ${v.approved ? "Approved" : "NOT approved"} | MyInvois: ${v.myInvois ? "Yes" : "No"}`
+  ).join("\n")
+
+  // Detect platform from URL when product fetch fails
+  const urlPlatform = externalUrl
+    ? externalUrl.includes("shopee") ? "Shopee"
+      : externalUrl.includes("lazada") ? "Lazada"
+      : externalUrl.includes("amazon") ? "Amazon"
+      : externalUrl.includes("alibaba") ? "Alibaba"
+      : externalUrl.includes("aliexpress") ? "AliExpress"
+      : "an external platform"
+    : undefined
+
+  let urlContext = ""
+  let urlInstruction = ""
+
+  if (product?.title) {
+    // Full product data fetched successfully
+    urlContext = `
+FETCHED PRODUCT INFO (from the URL the user shared):
+- Product Name: ${product.title}
+- Description: ${product.description ?? "N/A"}
+- Price: ${product.price ? `${product.currency ?? "MYR"} ${product.price}` : "N/A"}
+- Platform: ${product.platform ?? product.domain ?? "Unknown"}
+`
+    urlInstruction = `The user shared an external product link and you have the full product details above. Present TWO clear options:
+Option 1: Add this exact product as a new item — use "${product.platform ?? product.domain ?? "the external platform"}" as the vendor (it will be added as a new vendor since it's not in the approved vendor list).
+Option 2: If a similar item exists in the approved catalog above, suggest it as an alternative with its code, spec, and price.
+Ask the user which option they prefer. Do NOT add anything yet.`
+  } else if (externalUrl) {
+    // URL detected but product fetch failed (site blocked scraping — e.g. Shopee)
+    urlContext = `
+EXTERNAL URL SHARED BY USER: ${externalUrl}
+NOTE: I tried to fetch this product page automatically but ${urlPlatform} blocked access. I do not have the product title or price.
+`
+    urlInstruction = `The user shared a ${urlPlatform} product link but I couldn't load the page. Tell the user:
+1. You can see they shared a ${urlPlatform} link.
+2. You couldn't load the product details automatically because ${urlPlatform} blocks automated access.
+3. Ask them: "What is the product name and approximate price? I'll then suggest whether to add it as a new item or use an approved catalog equivalent."
+Keep it brief and friendly.`
+  } else {
+    urlInstruction = `Search the APPROVED ITEM CATALOG above for what the user wants to buy. You MUST suggest specific items from the catalog — do not ask the user to search themselves.
+
+RULES:
+- If you find a match (even partial — e.g. "laptop" matches "Dell Latitude 5540 Laptop"), show the item name, spec, code, and price, then ask "Is this what you're looking for?"
+- If you find multiple matches, list all of them and ask which one fits.
+- If truly no match exists in the catalog, say so briefly and ask for more details (brand, type, quantity).
+- NEVER use action "open-picker" in the first message — always try to match from the catalog first.
+- NEVER tell the user to search themselves. YOU search the catalog.
+- When the user confirms a suggestion, use action "suggest-items" with the exact item code.`
+  }
+
+  return `You are Jomie, an AI procurement agent for ABC Retails Sdn Bhd.
+${urlContext}
+APPROVED ITEM CATALOG:
+${itemList}
+
+APPROVED VENDORS:
+${vendorList}
+
+YOUR PRIMARY JOB: Help the user build their item list by guiding them to the item picker. Do NOT pre-select or recommend catalog items based on context clues alone (e.g. "developer project", "office work", "new hire"). Only suggest a specific catalog item when the user names it explicitly (e.g. "I need a Dell laptop", "add a keyboard").
+
+WHEN THE USER'S REQUEST IS VAGUE (no specific item named):
+- Acknowledge their goal in one short sentence
+- Immediately guide them to search and add items themselves: action "open-picker"
+- Example: "Got it — let's build your item list. Search the catalog below and add what you need."
+- Do NOT list catalog items unprompted. Do NOT ask "which of these fits your needs?" with a pre-selected shortlist.
+
+WHEN THE USER NAMES A SPECIFIC ITEM:
+- Find the best catalog match and confirm it with the user before adding
+- If not in catalog, acknowledge and offer to register as a new item request
+
+${urlInstruction}
+
+Respond ONLY with this JSON (no markdown fences):
+{
+  "thinking": "brief: what you understood and why",
+  "text": "your reply to the user (use \\n for line breaks)",
+  "action": "suggest-items | open-picker | null",
+  "payload": { "items": [{ "code": "ITEM-CODE-HERE", "qty": 1 }] },
+  "buttons": [{ "label": "Button label", "primary": true, "action": "open-picker" }]
+}
+
+Valid button actions: "open-picker", "proceed-to-vendor". For suggest-items, use exact item codes from the catalog above.`
+}
+
 // ── LLM provider config ──────────────────────────────────────────────────────
 // Set NEXT_PUBLIC_LLM_PROVIDER to "openrouter" to use OpenRouter instead of Groq.
 // Set NEXT_PUBLIC_OPENROUTER_API_KEY with your OpenRouter key.
@@ -419,7 +547,7 @@ const LLM_CONFIG = {
   },
   openrouter: {
     url: "https://openrouter.ai/api/v1/chat/completions",
-    model: "meta-llama/llama-3.3-70b-instruct:free",
+    model: "meta-llama/llama-3.3-70b-instruct",
     getKey: () => process.env.NEXT_PUBLIC_OPENROUTER_API_KEY ?? "",
   },
 }
@@ -427,6 +555,76 @@ const LLM_CONFIG = {
 class LLMError extends Error {
   constructor(public code: "rate_limit" | "auth" | "network" | "parse", message: string) {
     super(message)
+  }
+}
+
+// ── Intent classifier — replaces the brittle PURCHASE_INTENT regex ──
+// Small, focused LLM call. Only invoked when the message contains a purchase verb.
+// Returns structured JSON; the deterministic action layer stays exactly as-is.
+async function callIntentClassifier(
+  userMessage: string,
+  recentHistory: ChatMsg[],
+  roundAComplete: boolean
+): Promise<{ intent: "purchase" | "other"; productName: string | null; needsClarification: boolean; isNegation: boolean }> {
+  const FALLBACK = { intent: "other" as const, productName: null, needsClarification: false, isNegation: false }
+  const provider = (process.env.NEXT_PUBLIC_LLM_PROVIDER ?? "groq") as "groq" | "openrouter"
+  const cfg = LLM_CONFIG[provider] ?? LLM_CONFIG.groq
+  const apiKey = cfg.getKey()
+  if (!apiKey || apiKey === "your_groq_api_key_here") return FALLBACK
+
+  const historySnippet = recentHistory.slice(-4).map(m =>
+    `${m.role === "ai" ? "Jomie" : "User"}: ${m.text.slice(0, 120)}`
+  ).join("\n")
+
+  const systemPrompt = `You are a purchase intent classifier for a Malaysian B2B procurement system.
+
+Given a user message and recent conversation, determine if the user is requesting a SPECIFIC, named product to purchase.
+
+Rules:
+1. intent="purchase" only when user clearly wants to buy/add/request a specific real product.
+2. intent="other" for: questions, corrections, affirmations, chitchat, vague statements.
+3. productName = the item name ONLY — strip intent verbs (buy/get/add/need/want/order) and fillers (please/i want to/for me/some/a/an/the).
+4. needsClarification = true if productName is too generic to identify a real product (e.g. "item", "thing", "stuff", "product", "something", "an item", "some item", "it").
+5. isNegation = true if message opens with a correction or negation ("no", "nope", "wait", "actually", "i mean", "not that", "sorry").
+6. If roundAComplete is true (vendor phase active), ALWAYS return intent="other" — items are locked.
+   roundAComplete = ${roundAComplete}
+
+Recent conversation for context:
+${historySnippet}
+
+Reply with ONLY valid JSON — no markdown, no explanation:
+{"intent":"purchase"|"other","productName":string|null,"needsClarification":boolean,"isNegation":boolean}`
+
+  try {
+    const response = await fetch(cfg.url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...(provider === "openrouter" ? { "HTTP-Referer": "https://jomie.app", "X-Title": "Jomie" } : {}),
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        temperature: 0.1,
+        max_tokens: 80,
+      }),
+    })
+    if (!response.ok) return FALLBACK
+    const data = await response.json()
+    const raw = (data.choices?.[0]?.message?.content ?? "{}").trim()
+    const parsed = JSON.parse(raw)
+    return {
+      intent: parsed.intent === "purchase" ? "purchase" : "other",
+      productName: typeof parsed.productName === "string" && parsed.productName.trim() ? parsed.productName.trim() : null,
+      needsClarification: !!parsed.needsClarification,
+      isNegation: !!parsed.isNegation,
+    }
+  } catch {
+    return FALLBACK
   }
 }
 
@@ -439,7 +637,9 @@ async function callGroqJomie(
     submittedMessage: string
   },
   history: ChatMsg[],
-  hintAction?: string | null
+  hintAction?: string | null,
+  product?: FetchedProduct,
+  externalUrl?: string
 ): Promise<GroqReply> {
   const provider = (process.env.NEXT_PUBLIC_LLM_PROVIDER ?? "groq") as "groq" | "openrouter"
   const cfg = LLM_CONFIG[provider] ?? LLM_CONFIG.groq
@@ -453,11 +653,59 @@ async function callGroqJomie(
 
   const historyMessages = history.slice(-8).map(m => ({
     role: m.role === "ai" ? "assistant" : "user" as "user" | "assistant",
-    content: m.text,
+    // Truncate very long messages (e.g. pasted URLs) to prevent context overflow
+    content: m.text.length > 400 ? m.text.slice(0, 400) + "…[truncated]" : m.text,
   }))
 
-  const systemPrompt = buildJomieSystemPrompt(ctx) +
-    (hintAction ? `\n\nIMPORTANT: User clicked a button with intended action "${hintAction}". Set "action": "${hintAction}" in your response.` : "")
+  let systemPrompt = buildJomieSystemPrompt(ctx)
+
+  if (product?.title) {
+    // Match fetched product against catalog (keyword overlap)
+    const titleWords = product.title.toLowerCase().split(/\s+/)
+    const catalogMatch = ITEM_MASTER.find(item => {
+      const itemWords = (item.name + " " + item.spec).toLowerCase()
+      return titleWords.filter(w => w.length > 3).some(w => itemWords.includes(w))
+    })
+    // Check if platform is an approved vendor
+    const platformName = product.platform ?? product.domain ?? "Unknown"
+    const vendorMatch = VENDOR_MASTER.find(v =>
+      v.name.toLowerCase().includes(platformName.toLowerCase()) ||
+      platformName.toLowerCase().includes(v.name.toLowerCase().split(" ")[0])
+    )
+    const isNewVendor = !vendorMatch
+    const isNewItem = !catalogMatch
+    const specs = (product as { specs?: string }).specs ?? product.description ?? "N/A"
+
+    systemPrompt += `
+
+EXTERNAL PRODUCT DETECTED from ${platformName}:
+- Product: ${product.title}
+- Price: ${product.currency ?? "MYR"} ${product.price ?? "N/A"}
+- Specs: ${specs}
+
+CATALOG CHECK: ${catalogMatch ? `MATCH FOUND — "${catalogMatch.name}" (${catalogMatch.code}) at RM ${catalogMatch.unitPrice}` : "NO MATCH — this is a new item not in the approved catalog"}
+VENDOR CHECK: ${isNewVendor ? `"${platformName}" is NOT in the approved vendor list — a new vendor request will be needed` : `"${vendorMatch!.name}" is an approved vendor`}
+
+YOUR TASK — do all of this in ONE response:
+${catalogMatch
+  ? `1. Tell the user you found a matching catalog item: "${catalogMatch.name}" (${catalogMatch.code}) at RM ${catalogMatch.unitPrice}.
+2. Tell them the external price was ${product.currency ?? "MYR"} ${product.price ?? "N/A"} from ${platformName}.
+3. ${isNewVendor ? `Inform them that ${platformName} is not an approved vendor — a new vendor request will be initiated automatically.` : ""}
+4. Add the catalog item to cart immediately — set action "suggest-items" with payload items: [{ code: "${catalogMatch.code}", qty: 1 }].
+5. Tell them it has been added and they can adjust qty or proceed.`
+  : `1. Tell the user you detected "${product.title}" from ${platformName} at ${product.currency ?? "MYR"} ${product.price ?? "N/A"}.
+2. Inform them this item is NOT in the approved catalog — a NEW ITEM REQUEST will be initiated.
+3. ${isNewVendor ? `Also inform them ${platformName} is not an approved vendor — a NEW VENDOR REQUEST will also be initiated.` : ""}
+4. Tell them you've noted the item and they can proceed to vendor matching where the new item/vendor flows will be triggered.
+5. Set action "open-picker" so they can optionally search for alternatives, or use null if they seem ready to proceed.`}
+
+Keep the reply short (3-4 lines). Be direct and confident — do not ask for permission.`
+  } else if (externalUrl) {
+    const urlPlatform = externalUrl.includes("shopee") ? "Shopee" : externalUrl.includes("lazada") ? "Lazada" : externalUrl.includes("1688") ? "1688" : externalUrl.includes("taobao") ? "Taobao" : externalUrl.includes("pinduoduo") ? "Pinduoduo" : "an external platform"
+    systemPrompt += `\n\nThe user shared a ${urlPlatform} link but it couldn't be loaded (platform blocked access). Tell them briefly, and ask for the product name and price so you can help add it.`
+  }
+
+  if (hintAction) systemPrompt += `\n\nIMPORTANT: User clicked a button with intended action "${hintAction}". Set "action": "${hintAction}" in your response.`
 
   let response: Response
   try {
@@ -476,8 +724,7 @@ async function callGroqJomie(
           { role: "user", content: userMessage },
         ],
         temperature: 0.3,
-        max_tokens: 500,
-        response_format: { type: "json_object" },
+        max_tokens: 800,
       }),
     })
   } catch {
@@ -486,6 +733,7 @@ async function callGroqJomie(
 
   if (!response.ok) {
     const errText = await response.text().catch(() => "")
+    console.error(`[LLM ${provider}] HTTP ${response.status}:`, errText)
     const isRateLimit = response.status === 429 || errText.includes("rate_limit")
     // Try to extract reset time from Groq's error message
     const timeMatch = errText.match(/try again in (\d+m[\d.]+s)/i)
@@ -495,7 +743,12 @@ async function callGroqJomie(
     throw new LLMError("network", `API error ${response.status}.`)
   }
 
-  const data = await response.json()
+  let data: { choices?: { message?: { content?: string } }[] }
+  try {
+    data = await response.json()
+  } catch {
+    throw new LLMError("parse", "Jomie received an unreadable response.")
+  }
   const raw = data.choices?.[0]?.message?.content ?? "{}"
 
   let parsed: GroqReply
@@ -505,19 +758,21 @@ async function callGroqJomie(
     throw new LLMError("parse", "Jomie returned an unexpected response.")
   }
 
-  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "apply-vendor", "reset-vendor"]
+  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "apply-vendor", "reset-vendor", "suggest-items", "add-new-item"]
   if (parsed.action && !validActions.includes(parsed.action)) parsed.action = null
 
   return parsed
 }
 
 function jomieErrorMessage(err: unknown): string {
-  if (err instanceof LLMError) {
-    if (err.code === "rate_limit") return `⏳ Jomie's daily AI quota is used up. ${err.message} You can still use the right panel to manage vendors manually.`
-    if (err.code === "auth") return "🔑 Jomie can't connect — API key issue. Check your .env.local."
-    if (err.code === "network") return "📡 Can't reach Jomie's AI right now. Check your connection and try again."
-    if (err.code === "parse") return "Jomie got confused by the response format. Please try again."
+  const code = (err as { code?: string })?.code
+  if (code === "rate_limit") {
+    const msg = (err as { message?: string })?.message ?? ""
+    return `Jomie's daily AI quota is used up. ${msg} You can still use the right panel to manage vendors manually.`
   }
+  if (code === "auth") return "Jomie can't connect — API key issue. Check your .env.local."
+  if (code === "network") return "Can't reach Jomie's AI right now. Check your connection and try again."
+  if (code === "parse") return "Jomie got confused by the response format. Please try again."
   return "Sorry, I had trouble processing that. Please try again."
 }
 
@@ -669,6 +924,93 @@ interface SubPRGroup {
   lastOrder: string
 }
 
+// ─── Item type → GL / purchase type derivation ───────────────────────────────
+const ITEM_TYPES = [
+  { value: "standard", label: "Standard (OpEx)" },
+  { value: "capex",    label: "Capital Expenditure (CapEx)" },
+  { value: "service",  label: "Service / Retainer" },
+  { value: "subscription", label: "Subscription / Licence" },
+] as const
+
+function deriveItemTypeMeta(itemType: string, unitPrice: number) {
+  const isCapex = itemType === "capex" || (itemType === "standard" && unitPrice >= 1000)
+  const isService = itemType === "service" || itemType === "subscription"
+  const glCode = isCapex ? "GL-7200-CAPEX" : isService ? "GL-6300-OPEX" : "GL-6100-OPEX"
+  const purchaseType: "capex" | "opex" = isCapex ? "capex" : "opex"
+  return { glCode, purchaseType }
+}
+
+// ─── Right panel skeleton components ─────────────────────────────────────────
+// bg-muted resolves dark in this project's theme — use explicit lavender-gray
+// that sits naturally on the #F7F7FE light panel background.
+const Shimmer = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse rounded-md bg-[#E5E4F4] ${className ?? ""}`} />
+)
+
+function CartSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      {[0,1,2].map(i => (
+        <div key={i} className="rounded-xl border border-[#ECEAF6] p-3 flex gap-3 bg-white/60">
+          <Shimmer className="size-9 rounded-lg shrink-0" />
+          <div className="flex-1 flex flex-col gap-2">
+            <Shimmer className="h-3 w-3/4" />
+            <Shimmer className="h-2.5 w-1/2" />
+            <Shimmer className="h-2.5 w-1/3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function VendorGroupSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      {[0,1,2].map(i => (
+        <div key={i} className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <Shimmer className="h-3 w-24" />
+            <Shimmer className="h-3 w-16" />
+          </div>
+          <div className="rounded-xl border border-[#ECEAF6] p-3 flex flex-col gap-3 bg-white/60">
+            <div className="flex gap-2 items-center">
+              <Shimmer className="size-7 rounded-lg shrink-0" />
+              <div className="flex-1 flex flex-col gap-1.5">
+                <Shimmer className="h-2.5 w-2/3" />
+                <Shimmer className="h-2 w-1/2" />
+              </div>
+            </div>
+            <div className="h-px bg-[#ECEAF6]" />
+            <div className="flex gap-2 items-center">
+              <Shimmer className="size-7 rounded-lg shrink-0" />
+              <div className="flex-1 flex flex-col gap-1.5">
+                <Shimmer className="h-2.5 w-3/4" />
+                <Shimmer className="h-2 w-1/3" />
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ItemPreviewSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <Shimmer className="w-full h-40 rounded-xl" />
+      <Shimmer className="h-4 w-3/4" />
+      <Shimmer className="h-3 w-full" />
+      <Shimmer className="h-3 w-5/6" />
+      <div className="flex gap-2 mt-1">
+        <Shimmer className="h-3 w-20" />
+        <Shimmer className="h-3 w-16" />
+      </div>
+    </div>
+  )
+}
+
 function buildSubPRGroups(items: ConfirmedItem[]): SubPRGroup[] {
   const groups: SubPRGroup[] = []
   let letterIdx = 0
@@ -727,15 +1069,22 @@ function buildSubPRGroups(items: ConfirmedItem[]): SubPRGroup[] {
     }
   }
 
-  // New / unassigned items → "Vendor TBD" group
+  // New / unassigned items — group by shop (each distinct shop = own sub-PR, no-shop items share "Vendor TBD")
   if (newItems.length > 0) {
-    const t = newItems.reduce((s, i) => s + i.qty * i.unitPrice, 0)
-    groups.push({
-      id: `PR-DRAFT-${String.fromCharCode(65 + letterIdx++)}`,
-      items: newItems, total: t,
-      tier: t > 50000 ? "FM + CFO" : "Dept Head",
-      vendorCode: "", vendorName: "Vendor TBD", isApproved: false, myInvois: false, lastOrder: "",
-    })
+    const shopMap = new Map<string, ConfirmedItem[]>()
+    for (const item of newItems) {
+      const key = item.shop?.trim() || ""
+      shopMap.set(key, [...(shopMap.get(key) || []), item])
+    }
+    for (const [shop, shopItems] of shopMap) {
+      const t = shopItems.reduce((s, i) => s + i.qty * i.unitPrice, 0)
+      groups.push({
+        id: `PR-DRAFT-${String.fromCharCode(65 + letterIdx++)}`,
+        items: shopItems, total: t,
+        tier: t > 50000 ? "FM + CFO" : "Dept Head",
+        vendorCode: "", vendorName: shop || "Vendor TBD", isApproved: false, myInvois: false, lastOrder: "",
+      })
+    }
   }
 
   return groups
@@ -744,6 +1093,8 @@ function buildSubPRGroups(items: ConfirmedItem[]): SubPRGroup[] {
 // ─── Item detection from description ─────────────────────────────────────────
 
 function detectItemsFromDescription(desc: string): ConfirmedItem[] {
+  // Don't try to detect items from URLs
+  if (/https?:\/\//i.test(desc)) return []
   const lower = desc.toLowerCase()
   const detected: ConfirmedItem[] = []
 
@@ -763,7 +1114,9 @@ function detectItemsFromDescription(desc: string): ConfirmedItem[] {
   for (const item of ITEM_MASTER) {
     const keywords = item.name.toLowerCase().split(" ").filter(w => w.length > 3)
     const hits = keywords.filter(k => lower.includes(k)).length
-    if (hits >= 2) {
+    // 1 keyword hit is enough for short descriptions (single item intent)
+    const threshold = lower.split(/\s+/).length <= 8 ? 1 : 2
+    if (hits >= threshold) {
       detected.push({ ...item, qty: extractQty(item.name), stockSkipped: false })
     }
   }
@@ -817,12 +1170,31 @@ interface ItemCardProps {
   onQtyChange: (code: string, qty: number) => void
   onRemove: (code: string) => void
   onSkipInventory: () => void
+  onUpdate?: (code: string, patch: Partial<ConfirmedItem>) => void
 }
 
-function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInventory }: ItemCardProps) {
+function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInventory, onUpdate }: ItemCardProps) {
   const moqOk = item.qty >= item.moq
   const subtotal = item.qty * item.unitPrice
   const isNew = item.isNew
+  const [editing, setEditing] = React.useState(false)
+  const [draft, setDraft] = React.useState({
+    name: item.name, spec: item.spec, unitPrice: String(item.unitPrice),
+    uom: item.uom, shop: item.shop ?? "", itemType: item.itemType ?? "standard",
+  })
+  const derivedMeta = deriveItemTypeMeta(draft.itemType, parseFloat(draft.unitPrice) || 0)
+
+  const saveEdit = () => {
+    const price = parseFloat(draft.unitPrice) || 0
+    const meta = deriveItemTypeMeta(draft.itemType, price)
+    onUpdate?.(item.code, {
+      name: draft.name, spec: draft.spec, unitPrice: price,
+      uom: draft.uom, shop: draft.shop || undefined,
+      itemType: draft.itemType as ConfirmedItem["itemType"],
+      glCode: meta.glCode, purchaseType: meta.purchaseType,
+    })
+    setEditing(false)
+  }
 
   return (
     <div className="rounded-xl overflow-hidden"
@@ -832,13 +1204,86 @@ function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInvento
       }}>
       {/* New item warning stripe */}
       {isNew && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b" style={{ borderColor:"rgba(186,117,23,0.3)", background:"rgba(186,117,23,0.12)" }}>
-          <AlertCircle size={10} style={{ color:"#BA7517", flexShrink:0 }}/>
-          <span className="text-[10px] font-semibold" style={{ color:"#BA7517" }}>
-            New item — pending item master approval · may delay this PR
-          </span>
+        <div className="flex items-center justify-between px-3 py-1.5 border-b" style={{ borderColor:"rgba(186,117,23,0.3)", background:"rgba(186,117,23,0.12)" }}>
+          <div className="flex items-center gap-2">
+            <AlertCircle size={10} style={{ color:"#BA7517", flexShrink:0 }}/>
+            <span className="text-[10px] font-semibold" style={{ color:"#BA7517" }}>
+              New Request · Pending Item Master Approval
+            </span>
+          </div>
+          <button
+            onClick={() => { setDraft({ name: item.name, spec: item.spec, unitPrice: String(item.unitPrice), uom: item.uom, shop: item.shop ?? "", itemType: item.itemType ?? "standard" }); setEditing(e => !e) }}
+            className="text-[9px] font-semibold px-2 py-0.5 rounded cursor-pointer transition-colors"
+            style={{ background: editing ? "rgba(186,117,23,0.3)" : "rgba(186,117,23,0.15)", color:"#BA7517" }}>
+            {editing ? "Cancel" : "Edit"}
+          </button>
         </div>
       )}
+
+      {/* ── Edit form (new items only) ── */}
+      {editing && isNew && (
+        <div className="px-3 py-3 border-b flex flex-col gap-2.5" style={{ borderColor:"rgba(186,117,23,0.2)", background:"rgba(186,117,23,0.04)" }}>
+          <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color:"rgba(255,255,255,0.3)" }}>Edit item info</div>
+          {[
+            { label:"Item name", key:"name", type:"text" },
+            { label:"Spec / description", key:"spec", type:"text" },
+            { label:"Price (RM)", key:"unitPrice", type:"number" },
+            { label:"Unit of measure", key:"uom", type:"text" },
+            { label:"Seller name", key:"shop", type:"text" },
+          ].map(({ label, key, type }) => (
+            <div key={key}>
+              <div className="text-[9px] mb-1" style={{ color:"rgba(255,255,255,0.4)" }}>{label}</div>
+              <input
+                type={type}
+                value={draft[key as keyof typeof draft]}
+                onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded-lg text-[11px] text-white bg-transparent border focus:outline-none"
+                style={{ borderColor:"rgba(186,117,23,0.4)", background:"rgba(0,0,0,0.2)" }}
+              />
+            </div>
+          ))}
+          {/* Item type selector */}
+          <div>
+            <div className="text-[9px] mb-1" style={{ color:"rgba(255,255,255,0.4)" }}>Item type</div>
+            <select
+              value={draft.itemType}
+              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value }))}
+              className="w-full px-2 py-1.5 rounded-lg text-[11px] text-white border focus:outline-none cursor-pointer"
+              style={{ borderColor:"rgba(186,117,23,0.4)", background:"rgba(0,0,0,0.4)" }}>
+              {ITEM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          {/* GL code — derived, read-only */}
+          <div>
+            <div className="text-[9px] mb-1" style={{ color:"rgba(255,255,255,0.4)" }}>GL code <span style={{ color:"rgba(255,255,255,0.2)" }}>(auto-derived)</span></div>
+            <div className="px-2 py-1.5 rounded-lg text-[11px] font-mono border"
+              style={{ borderColor:"rgba(186,117,23,0.2)", background:"rgba(0,0,0,0.1)", color:"rgba(255,255,255,0.45)" }}>
+              {derivedMeta.glCode} · {derivedMeta.purchaseType.toUpperCase()}
+            </div>
+          </div>
+          {item.sourceUrl && (
+            <div>
+              <div className="text-[9px] mb-1" style={{ color:"rgba(255,255,255,0.4)" }}>Source URL</div>
+              <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer"
+                className="text-[10px] break-all leading-snug hover:underline"
+                style={{ color:"rgba(93,94,244,0.8)" }}>
+                {item.sourceUrl}
+              </a>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 pt-1">
+            <span className="text-[9px] italic" style={{ color:"rgba(186,117,23,0.7)" }}>
+              Changes require authorised approval before this PR is processed.
+            </span>
+          </div>
+          <button onClick={saveEdit}
+            className="w-full py-1.5 rounded-lg text-[11px] font-semibold text-white cursor-pointer transition-opacity hover:opacity-90"
+            style={{ background:"#BA7517" }}>
+            Save changes
+          </button>
+        </div>
+      )}
+
       {/* Item header */}
       <div className="flex items-start gap-2.5 px-3 pt-3 pb-2">
         <div className="size-7 rounded-lg shrink-0 flex items-center justify-center mt-0.5"
@@ -879,12 +1324,37 @@ function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInvento
           </div>
           <div className="text-[12px] font-semibold text-white leading-tight">{item.name}</div>
           <div className="text-[10px] mt-0.5 leading-snug" style={{ color:"rgba(255,255,255,0.4)" }}>{item.spec || "No spec provided"}</div>
+          {/* Source URL */}
+          {item.sourceUrl && (
+            <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 mt-1 group" style={{ textDecoration:"none" }}>
+              <Link2 size={9} style={{ color:"rgba(255,255,255,0.3)", flexShrink:0 }}/>
+              <span className="text-[9px] group-hover:underline truncate max-w-[160px]" style={{ color:"rgba(255,255,255,0.35)" }}>
+                Via {item.sourcePlatform ?? "external link"}
+              </span>
+            </a>
+          )}
         </div>
         <button onClick={() => onRemove(item.code)}
           className="size-5 rounded flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-colors hover:bg-red-500/20">
           <X size={11} style={{ color:"rgba(255,255,255,0.4)" }}/>
         </button>
       </div>
+
+      {/* Vendor pending row — new items only */}
+      {isNew && (
+        <div className="flex items-center gap-2 px-3 py-2 border-t" style={{ borderColor:"rgba(186,117,23,0.2)", background:"rgba(186,117,23,0.06)" }}>
+          <AlertCircle size={9} style={{ color:"#BA7517", flexShrink:0 }}/>
+          <div className="flex-1 min-w-0">
+            <span className="text-[9px] font-semibold" style={{ color:"#BA7517" }}>
+              {item.shop ? item.shop : item.sourcePlatform ?? "External seller"}
+            </span>
+            <span className="text-[9px] ml-1" style={{ color:"rgba(186,117,23,0.7)" }}>
+              · Pending Vendor Registration
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Qty + price row */}
       <div className="flex items-center justify-between px-3 py-2 border-t" style={{ borderColor:"rgba(103,100,136,0.2)" }}>
@@ -1270,11 +1740,13 @@ interface VendorOverridePanelProps {
   onVendorSelect: (itemCode: string, vendorCode: string, vendorName: string) => void
   onBrowse: (item: ConfirmedItem) => void
   onConfirm: () => void
+  onEditVendors?: () => void
   hideHeader?: boolean
+  confirmed?: boolean
 }
 
 function VendorOverridePanel({
-  confirmedItems, onVendorSelect, onBrowse, onConfirm, hideHeader,
+  confirmedItems, onVendorSelect, onBrowse, onConfirm, onEditVendors, hideHeader, confirmed,
 }: VendorOverridePanelProps) {
   const groups = buildSubPRGroups(confirmedItems)
   const totalItems = confirmedItems.reduce((s, i) => s + i.qty, 0)
@@ -1293,7 +1765,7 @@ function VendorOverridePanel({
   )
 
   return (
-    <div className="flex flex-col h-full" style={{ background: T_LIGHT.bg }}>
+    <div style={{ display:"flex", flexDirection:"column", flex:"1 1 0", minHeight:0, overflow:"hidden", background: T_LIGHT.bg }}>
       {/* Header — hidden when universal nav header is present */}
       {!hideHeader && (
         <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: T_LIGHT.border }}>
@@ -1310,11 +1782,11 @@ function VendorOverridePanel({
       )}
 
       {/* Sub-PR groups */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+      <div style={{ flex:"1 1 0", minHeight:0, overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:16 }}>
         {groups.map(group => {
           const tc = tierColor(group.tier)
           return (
-            <div key={group.id} className="rounded-xl border overflow-hidden" style={{ background:"#fff", borderColor: T_LIGHT.border }}>
+            <div key={group.id} className="rounded-xl border overflow-hidden" style={{ background:"#fff", borderColor: T_LIGHT.border, flexShrink:0 }}>
 
               {/* Group header */}
               <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: T_LIGHT.border, background: T_LIGHT.purpleLight }}>
@@ -1325,31 +1797,56 @@ function VendorOverridePanel({
                 <span className="text-[12px] font-mono font-semibold" style={{ color: T_LIGHT.text }}>RM {group.total.toLocaleString()}</span>
               </div>
 
-              {/* Jomie's vendor suggestion row */}
-              <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor:"#F0F0FA", background:"#FAFAFF" }}>
-                <div className="size-5 rounded flex items-center justify-center shrink-0" style={{ background:"rgba(93,94,244,0.08)" }}>
-                  <Store size={10} style={{ color: T_LIGHT.purple }}/>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] font-semibold truncate" style={{ color: T_LIGHT.text }}>
-                    {group.vendorName || "Vendor TBD"}
+              {/* Vendor suggestion row — pending for new items, Jomie's suggestion for catalog items */}
+              {(() => {
+                const allNew = group.items.every(i => i.isNew)
+                const shopName = group.items.find(i => i.isNew && i.shop)?.shop
+                if (allNew && shopName) {
+                  return (
+                    <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor:"#F0F0FA", background:"#FFFBEB" }}>
+                      <div className="size-5 rounded flex items-center justify-center shrink-0" style={{ background:"rgba(245,158,11,0.12)" }}>
+                        <Store size={10} style={{ color:"#D97706" }}/>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold truncate" style={{ color: T_LIGHT.text }}>{shopName}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF3C7", color:"#D97706" }}>Pending Vendor Registration</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor:"#F0F0FA", background:"#FAFAFF" }}>
+                    <div className="size-5 rounded flex items-center justify-center shrink-0" style={{ background:"rgba(93,94,244,0.08)" }}>
+                      <Store size={10} style={{ color: T_LIGHT.purple }}/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-semibold truncate" style={{ color: T_LIGHT.text }}>
+                        {group.vendorName || "Vendor TBD"}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-[9px] font-medium" style={{ color: T_LIGHT.dimText }}>Jomie's suggestion</span>
+                        {group.isApproved && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>✓ Approved</span>}
+                        {!group.isApproved && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FFF7ED", color:"#EA580C" }}>⚠ Unapproved</span>}
+                        {!group.myInvois && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF9C3", color:"#A16207" }}>No MyInvois</span>}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <span className="text-[9px] font-medium" style={{ color: T_LIGHT.dimText }}>Jomie's suggestion</span>
-                    {group.isApproved && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>✓ Approved</span>}
-                    {!group.isApproved && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FFF7ED", color:"#EA580C" }}>⚠ Unapproved</span>}
-                    {!group.myInvois && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF9C3", color:"#A16207" }}>No MyInvois</span>}
-                  </div>
-                </div>
-              </div>
+                )
+              })()}
 
-              {/* Item rows — each with Change vendor + Browse */}
+              {/* Item rows */}
               {group.items.map(item => {
-                // Active vendor for this item: user override takes priority, else group's Jomie suggestion
                 const activeVendorCode = item.preferredVendorCode || group.vendorCode
                 const isOverridden = !!item.preferredVendorName
-                // Exclude active vendor from picker so user can't re-select the same one
                 const availableVendors = filteredVendors.filter(v => v.code !== activeVendorCode)
+                // New item sourced from URL with a known shop → Browse only (user can find same item elsewhere)
+                // New item manually added with no shop → Change vendor + Browse (full flexibility)
+                // Catalog item → Change vendor + Browse (existing behaviour)
+                const hasSourceVendor = item.isNew && !!item.shop
+                const showChangeVendor = !hasSourceVendor
+                const showBrowse = true
                 return (
                 <div key={item.code} style={{ borderBottom:"1px solid #F0F0FA" }}>
                   {/* Item row */}
@@ -1362,9 +1859,29 @@ function VendorOverridePanel({
                           <span className="ml-1.5 font-medium" style={{ color: T_LIGHT.purple }}>· {item.preferredVendorName}</span>
                         )}
                       </div>
+                      {item.isNew && (
+                        <div className="text-[9px] mt-0.5 font-medium flex flex-wrap items-center gap-x-1" style={{ color:"#D97706" }}>
+                          <span>Pending item master approval</span>
+                          {hasSourceVendor && (
+                            <>
+                              <span style={{ opacity:0.5 }}>·</span>
+                              <span>sourced from {item.shop}</span>
+                              {item.sourcePlatform && <span style={{ opacity:0.5 }}>via {item.sourcePlatform}</span>}
+                              {item.sourceUrl && (
+                                <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-0.5 hover:underline"
+                                  style={{ color:"#5D5EF4" }}>
+                                  <Link2 size={8} strokeWidth={2}/>
+                                  <span>View listing</span>
+                                </a>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Reset to Jomie's suggestion — only shown when item has been overridden */}
+                      {/* Reset — only for overridden items */}
                       {isOverridden && (
                         <button
                           onClick={() => onVendorSelect(item.code, "", "")}
@@ -1375,24 +1892,30 @@ function VendorOverridePanel({
                           Reset
                         </button>
                       )}
-                      <button
-                        onClick={() => { setItemPickerOpen(itemPickerOpen === item.code ? null : item.code); setItemSearch("") }}
-                        className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all"
-                        style={{
-                          background: itemPickerOpen === item.code ? T_LIGHT.purple : "transparent",
-                          color: itemPickerOpen === item.code ? "#fff" : T_LIGHT.purple,
-                          border:`1px solid ${T_LIGHT.purple}`,
-                        }}>
-                        <RefreshCw size={8}/>
-                        {isOverridden ? "Change" : "Change vendor"}
-                      </button>
-                      <button
-                        onClick={() => onBrowse(item)}
-                        className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
-                        style={{ background:"rgba(93,94,244,0.08)", color: T_LIGHT.purple, border:"1px solid rgba(93,94,244,0.15)" }}>
-                        <Globe size={8}/>
-                        Browse
-                      </button>
+                      {/* Change vendor from master list — for manually added items and catalog items */}
+                      {showChangeVendor && (
+                        <button
+                          onClick={() => { setItemPickerOpen(itemPickerOpen === item.code ? null : item.code); setItemSearch("") }}
+                          className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all"
+                          style={{
+                            background: itemPickerOpen === item.code ? T_LIGHT.purple : "transparent",
+                            color: itemPickerOpen === item.code ? "#fff" : T_LIGHT.purple,
+                            border:`1px solid ${T_LIGHT.purple}`,
+                          }}>
+                          <RefreshCw size={8}/>
+                          {isOverridden ? "Change" : "Change vendor"}
+                        </button>
+                      )}
+                      {/* Browse — always available, lets user find same item from other vendors/platforms */}
+                      {showBrowse && (
+                        <button
+                          onClick={() => onBrowse(item)}
+                          className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
+                          style={{ background:"rgba(93,94,244,0.08)", color: T_LIGHT.purple, border:"1px solid rgba(93,94,244,0.15)" }}>
+                          <Globe size={8}/>
+                          {hasSourceVendor ? "Browse other" : "Browse"}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -1445,13 +1968,182 @@ function VendorOverridePanel({
 
       {/* Footer */}
       <div className="shrink-0 px-4 py-3 border-t" style={{ borderColor: T_LIGHT.border }}>
-        <button onClick={onConfirm}
-          className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold cursor-pointer transition-all"
-          style={{ background: T_LIGHT.purple, color:"#fff" }}>
-          <Check size={14} strokeWidth={2.5}/>
-          Confirm vendor grouping →
-        </button>
+        {confirmed ? (
+          <button onClick={onEditVendors}
+            className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold cursor-pointer transition-all border"
+            style={{ background: "transparent", color: T_LIGHT.purple, borderColor: T_LIGHT.purple }}>
+            Edit vendor grouping
+          </button>
+        ) : (
+          <button onClick={onConfirm}
+            className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold cursor-pointer transition-all"
+            style={{ background: T_LIGHT.purple, color:"#fff" }}>
+            <Check size={14} strokeWidth={2.5}/>
+            Confirm vendor grouping →
+          </button>
+        )}
       </div>
+    </div>
+  )
+}
+
+// ─── Cart item row (used inside CartPanel) ────────────────────────────────────
+
+function CartItemRow({ item, tc, onQtyChange, onRemove, onUpdate }: {
+  item: ConfirmedItem
+  tc: { bg: string; fg: string }
+  onQtyChange: (code: string, qty: number) => void
+  onRemove: (code: string) => void
+  onUpdate?: (code: string, patch: Partial<ConfirmedItem>) => void
+}) {
+  const [editing, setEditing] = React.useState(false)
+  const [draft, setDraft] = React.useState({
+    name: item.name, spec: item.spec, unitPrice: String(item.unitPrice),
+    uom: item.uom, shop: item.shop ?? "", itemType: item.itemType ?? "standard",
+  })
+  const derivedMeta = deriveItemTypeMeta(draft.itemType, parseFloat(draft.unitPrice) || 0)
+
+  const saveEdit = () => {
+    const price = parseFloat(draft.unitPrice) || 0
+    const meta = deriveItemTypeMeta(draft.itemType, price)
+    onUpdate?.(item.code, {
+      name: draft.name, spec: draft.spec, unitPrice: price,
+      uom: draft.uom, shop: draft.shop || undefined,
+      itemType: draft.itemType as ConfirmedItem["itemType"],
+      glCode: meta.glCode, purchaseType: meta.purchaseType,
+    })
+    setEditing(false)
+  }
+
+  return (
+    <div className="rounded-xl overflow-hidden shrink-0"
+      style={{ background:"#FFFFFF", border: item.isNew ? "0.5px solid #F6D08A" : "0.5px solid #E8E6F4", boxShadow:"0 1px 3px rgba(93,94,244,0.06)" }}>
+      {/* New item banner */}
+      {item.isNew && (
+        <div className="flex items-center justify-between px-3 py-1.5 border-b" style={{ borderColor:"#F6D08A", background:"#FFFBEA" }}>
+          <div className="flex items-center gap-1.5">
+            <AlertCircle size={9} style={{ color:"#BA7517" }}/>
+            <span className="text-[9px] font-semibold" style={{ color:"#BA7517" }}>New Request · Pending Item Master Approval</span>
+          </div>
+          {onUpdate && (
+            <button onClick={() => { setDraft({ name: item.name, spec: item.spec, unitPrice: String(item.unitPrice), uom: item.uom, shop: item.shop ?? "", itemType: item.itemType ?? "standard" }); setEditing(e => !e) }}
+              className="text-[9px] font-semibold px-2 py-0.5 rounded cursor-pointer"
+              style={{ background: editing ? "#FDE68A" : "#FEF3C7", color:"#92400E" }}>
+              {editing ? "Cancel" : "Edit"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Edit form */}
+      {editing && item.isNew && (
+        <div className="px-3 py-2.5 border-b flex flex-col gap-2" style={{ borderColor:"#F6D08A", background:"#FFFDF5" }}>
+          <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color:"#92400E" }}>Edit item info</div>
+          {([
+            ["Item name", "name", "text"],
+            ["Spec / description", "spec", "text"],
+            ["Price (RM)", "unitPrice", "number"],
+            ["Unit of measure", "uom", "text"],
+            ["Seller name", "shop", "text"],
+          ] as [string, string, string][]).map(([label, key, type]) => (
+            <div key={key}>
+              <div className="text-[9px] mb-1" style={{ color:"#6B7280" }}>{label}</div>
+              <input type={type} value={draft[key as keyof typeof draft]}
+                onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded-lg text-[11px] border focus:outline-none"
+                style={{ borderColor:"#F6D08A", background:"#FFFFF8", color:"#1C1B4B" }}
+              />
+            </div>
+          ))}
+          {/* Item type selector */}
+          <div>
+            <div className="text-[9px] mb-1" style={{ color:"#6B7280" }}>Item type</div>
+            <select
+              value={draft.itemType}
+              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value }))}
+              className="w-full px-2 py-1.5 rounded-lg text-[11px] border focus:outline-none cursor-pointer"
+              style={{ borderColor:"#F6D08A", background:"#FFFFF8", color:"#1C1B4B" }}>
+              {ITEM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          {/* GL code — derived, read-only */}
+          <div>
+            <div className="text-[9px] mb-1" style={{ color:"#6B7280" }}>GL code <span style={{ color:"#9CA3AF" }}>(auto-derived)</span></div>
+            <div className="px-2 py-1.5 rounded-lg text-[11px] font-mono border"
+              style={{ borderColor:"#E5E7EB", background:"#F9FAFB", color:"#6B7280" }}>
+              {derivedMeta.glCode} · {derivedMeta.purchaseType.toUpperCase()}
+            </div>
+          </div>
+          {item.sourceUrl && (
+            <div>
+              <div className="text-[9px] mb-1" style={{ color:"#6B7280" }}>Source URL</div>
+              <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer"
+                className="text-[9px] break-all leading-snug hover:underline" style={{ color:"#5D5EF4" }}>
+                {item.sourceUrl}
+              </a>
+            </div>
+          )}
+          <p className="text-[9px] italic" style={{ color:"#B45309" }}>Changes require authorised approval before this PR is processed.</p>
+          <button onClick={saveEdit}
+            className="w-full py-1.5 rounded-lg text-[11px] font-semibold text-white cursor-pointer"
+            style={{ background:"#BA7517" }}>
+            Save changes
+          </button>
+        </div>
+      )}
+
+      {/* Item info */}
+      <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
+        <div className="size-6 rounded-md flex items-center justify-center shrink-0 mt-0.5" style={{ background: item.isNew ? "#FEF3C7" : tc.bg }}>
+          <Package size={11} style={{ color: item.isNew ? "#BA7517" : tc.fg }}/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-1">
+            <span className="text-[11px] font-semibold leading-tight" style={{ color:"#1C1B4B" }}>{item.name}</span>
+            <button onClick={() => onRemove(item.code)}
+              className="size-4 rounded flex items-center justify-center shrink-0 cursor-pointer transition-colors hover:bg-red-50 mt-0.5">
+              <X size={9} style={{ color:"#D1C9E8" }}/>
+            </button>
+          </div>
+          <div className="text-[9px] font-mono mt-0.5" style={{ color:"#9B97C0" }}>{item.code}</div>
+          {item.spec && <div className="text-[9px] mt-0.5 leading-snug" style={{ color:"#9CA3AF" }}>{item.spec.slice(0, 80)}{item.spec.length > 80 ? "…" : ""}</div>}
+          {/* Seller pending vendor registration */}
+          {item.isNew && (item.shop || item.sourcePlatform) && (
+            <div className="flex items-center gap-1 mt-1">
+              <AlertCircle size={8} style={{ color:"#BA7517", flexShrink:0 }}/>
+              <span className="text-[9px]" style={{ color:"#BA7517" }}>
+                {item.shop ?? item.sourcePlatform} · Pending Vendor Registration
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Qty + price */}
+      <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
+        <div className="flex items-center gap-1 rounded-lg overflow-hidden" style={{ border:"0.5px solid #DDD9F0" }}>
+          <button onClick={() => onQtyChange(item.code, Math.max(0, item.qty - 1))}
+            className="size-6 flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50">
+            <Minus size={9} style={{ color:"#6B7280" }}/>
+          </button>
+          <span className="text-[11px] font-mono font-semibold px-1 min-w-[20px] text-center" style={{ color:"#1C1B4B" }}>{item.qty}</span>
+          <button onClick={() => onQtyChange(item.code, item.qty + 1)}
+            className="size-6 flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50">
+            <Plus size={9} style={{ color:"#6B7280" }}/>
+          </button>
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span className="text-[10px]" style={{ color:"#9B97C0" }}>RM</span>
+          <span className="text-[13px] font-bold font-mono" style={{ color:"#1C1B4B" }}>
+            {(item.qty * item.unitPrice).toLocaleString()}
+          </span>
+        </div>
+      </div>
+      {item.qty < item.moq && (
+        <div className="px-3 pb-2 flex items-center gap-1 text-[9px]" style={{ color:"#BA7517" }}>
+          <AlertCircle size={9}/> Min. order qty: {item.moq} {item.uom}
+        </div>
+      )}
     </div>
   )
 }
@@ -1463,9 +2155,10 @@ interface CartPanelProps {
   onQtyChange: (code: string, qty: number) => void
   onRemove: (code: string) => void
   onConfirm: () => void
+  onUpdate?: (code: string, patch: Partial<ConfirmedItem>) => void
 }
 
-function CartPanel({ items, onQtyChange, onRemove, onConfirm }: CartPanelProps) {
+function CartPanel({ items, onQtyChange, onRemove, onConfirm, onUpdate }: CartPanelProps) {
   const total = items.reduce((s, i) => s + i.qty * i.unitPrice, 0)
   const typeConfig: Record<ItemType,{ bg:string; fg:string }> = {
     standard:     { bg:"rgba(100,100,120,0.1)",  fg:"#9CA3AF" },
@@ -1475,7 +2168,7 @@ function CartPanel({ items, onQtyChange, onRemove, onConfirm }: CartPanelProps) 
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div style={{ display:"flex", flexDirection:"column", flex:"1 1 0", minHeight:0, overflow:"hidden" }}>
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b" style={{ borderColor:"#E5E3F0" }}>
         <div className="flex items-center gap-2">
@@ -1509,65 +2202,11 @@ function CartPanel({ items, onQtyChange, onRemove, onConfirm }: CartPanelProps) 
       ) : (
         <>
           {/* Items list */}
-          <div className="flex-1 overflow-y-auto min-h-0 jomie-scrollbar" style={{ padding:"8px 12px", display:"flex", flexDirection:"column", gap:8 }}>
+          <div className="jomie-scrollbar" style={{ flex:"1 1 0", minHeight:0, overflowY:"auto", padding:"8px 12px", display:"flex", flexDirection:"column", gap:8 }}>
             {items.map(item => {
               const tc = typeConfig[item.itemType ?? "standard"]
               return (
-                <div key={item.code} className="rounded-xl overflow-hidden"
-                  style={{ background:"#FFFFFF", border:"0.5px solid #E8E6F4", boxShadow:"0 1px 3px rgba(93,94,244,0.06)" }}>
-                  {/* Item info row */}
-                  <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
-                    <div className="size-6 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-                      style={{ background: tc.bg }}>
-                      <Package size={11} style={{ color: tc.fg }}/>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-1">
-                        <span className="text-[11px] font-semibold leading-tight" style={{ color:"#1C1B4B" }}>{item.name}</span>
-                        <button
-                          onClick={() => onRemove(item.code)}
-                          className="size-4 rounded flex items-center justify-center shrink-0 cursor-pointer transition-colors hover:bg-red-50 mt-0.5">
-                          <X size={9} style={{ color:"#D1C9E8" }}/>
-                        </button>
-                      </div>
-                      <div className="text-[9px] font-mono mt-0.5" style={{ color:"#9B97C0" }}>{item.code}</div>
-                      {item.isNew && (
-                        <span className="text-[8px] font-bold px-1 py-0.5 rounded mt-0.5 inline-block"
-                          style={{ background:"#FAEEDA", color:"#633806" }}>NEW REQUEST</span>
-                      )}
-                    </div>
-                  </div>
-                  {/* Qty + price row */}
-                  <div className="flex items-center justify-between px-3 pb-2.5 gap-2">
-                    <div className="flex items-center gap-1 rounded-lg overflow-hidden" style={{ border:"0.5px solid #DDD9F0" }}>
-                      <button
-                        onClick={() => onQtyChange(item.code, Math.max(0, item.qty - 1))}
-                        className="size-6 flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50">
-                        <Minus size={9} style={{ color:"#6B7280" }}/>
-                      </button>
-                      <span className="text-[11px] font-mono font-semibold px-1 min-w-[20px] text-center" style={{ color:"#1C1B4B" }}>
-                        {item.qty}
-                      </span>
-                      <button
-                        onClick={() => onQtyChange(item.code, item.qty + 1)}
-                        className="size-6 flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50">
-                        <Plus size={9} style={{ color:"#6B7280" }}/>
-                      </button>
-                    </div>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-[10px]" style={{ color:"#9B97C0" }}>RM</span>
-                      <span className="text-[13px] font-bold font-mono" style={{ color:"#1C1B4B" }}>
-                        {(item.qty * item.unitPrice).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                  {/* MOQ warning */}
-                  {item.qty < item.moq && (
-                    <div className="px-3 pb-2 flex items-center gap-1 text-[9px]" style={{ color:"#BA7517" }}>
-                      <AlertCircle size={9}/> Min. order qty: {item.moq} {item.uom}
-                    </div>
-                  )}
-                </div>
+                <CartItemRow key={item.code} item={item} tc={tc} onQtyChange={onQtyChange} onRemove={onRemove} onUpdate={onUpdate} />
               )
             })}
           </div>
@@ -1670,6 +2309,155 @@ function SubPRCard({ sub }: { sub: typeof SUB_PRS[0] }) {
   )
 }
 
+// ─── Right panel item row (items view — post-round-A) ────────────────────────
+
+function RightPanelItemRow({ item, onUpdate, onRemove }: {
+  item: ConfirmedItem
+  onUpdate: (code: string, patch: Partial<ConfirmedItem>) => void
+  onRemove: (code: string) => void
+}) {
+  const [editing, setEditing] = React.useState(false)
+  const [draft, setDraft] = React.useState({
+    name: item.name, spec: item.spec, unitPrice: String(item.unitPrice),
+    uom: item.uom, shop: item.shop ?? "", itemType: item.itemType ?? "standard",
+  })
+  const derivedMeta = deriveItemTypeMeta(draft.itemType, parseFloat(draft.unitPrice) || 0)
+
+  const saveEdit = () => {
+    const price = parseFloat(draft.unitPrice) || 0
+    const meta = deriveItemTypeMeta(draft.itemType, price)
+    onUpdate(item.code, {
+      name: draft.name, spec: draft.spec, unitPrice: price,
+      uom: draft.uom, shop: draft.shop || undefined,
+      itemType: draft.itemType as ConfirmedItem["itemType"],
+      glCode: meta.glCode, purchaseType: meta.purchaseType,
+    })
+    setEditing(false)
+  }
+
+  return (
+    <div className="rounded-xl overflow-hidden border shrink-0"
+      style={{ borderColor: item.isNew ? "#F6D08A" : "#E5E7EB", background: item.isNew ? "#FFFBEA" : "#FFFFFF" }}>
+      {/* New item banner */}
+      {item.isNew && (
+        <div className="flex items-center justify-between px-3 py-1.5 border-b" style={{ borderColor:"#F6D08A" }}>
+          <div className="flex items-center gap-1.5">
+            <AlertCircle size={9} style={{ color:"#BA7517" }}/>
+            <span className="text-[9px] font-semibold" style={{ color:"#BA7517" }}>New Request · Pending Item Master Approval</span>
+          </div>
+          <button onClick={() => { setDraft({ name: item.name, spec: item.spec, unitPrice: String(item.unitPrice), uom: item.uom, shop: item.shop ?? "", itemType: item.itemType ?? "standard" }); setEditing(e => !e) }}
+            className="text-[9px] font-semibold px-2 py-0.5 rounded cursor-pointer"
+            style={{ background: editing ? "#FDE68A" : "#FEF3C7", color:"#92400E" }}>
+            {editing ? "Cancel" : "Fill details"}
+          </button>
+        </div>
+      )}
+
+      {/* Inline edit form */}
+      {editing && item.isNew && (
+        <div className="px-3 py-2.5 border-b flex flex-col gap-2" style={{ borderColor:"#F6D08A", background:"#FFFDF5" }}>
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-amber-800">Edit item info</div>
+          {([
+            ["Item name", "name", "text"],
+            ["Spec / description", "spec", "text"],
+            ["Price (RM)", "unitPrice", "number"],
+            ["Unit of measure", "uom", "text"],
+            ["Seller name", "shop", "text"],
+          ] as [string, string, string][]).map(([label, key, type]) => (
+            <div key={key}>
+              <div className="text-[9px] mb-1 text-gray-500">{label}</div>
+              <input type={type} value={draft[key as keyof typeof draft]}
+                onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded-lg text-[11px] border focus:outline-none text-gray-800"
+                style={{ borderColor:"#F6D08A", background:"#FFFFF8" }}
+              />
+            </div>
+          ))}
+          {/* Item type selector */}
+          <div>
+            <div className="text-[9px] mb-1 text-gray-500">Item type</div>
+            <select
+              value={draft.itemType}
+              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value }))}
+              className="w-full px-2 py-1.5 rounded-lg text-[11px] border focus:outline-none cursor-pointer text-gray-800"
+              style={{ borderColor:"#F6D08A", background:"#FFFFF8" }}>
+              {ITEM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          {/* GL code — derived, read-only */}
+          <div>
+            <div className="text-[9px] mb-1 text-gray-500">GL code <span className="text-gray-400">(auto-derived)</span></div>
+            <div className="px-2 py-1.5 rounded-lg text-[11px] font-mono border"
+              style={{ borderColor:"#E5E7EB", background:"#F9FAFB", color:"#6B7280" }}>
+              {derivedMeta.glCode} · {derivedMeta.purchaseType.toUpperCase()}
+            </div>
+          </div>
+          {item.sourceUrl && (
+            <div>
+              <div className="text-[9px] mb-1 text-gray-500">Source URL</div>
+              <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer"
+                className="text-[9px] break-all leading-snug hover:underline text-purple-500">
+                {item.sourceUrl}
+              </a>
+            </div>
+          )}
+          <p className="text-[9px] italic text-amber-700">Changes require authorised approval before this PR is processed.</p>
+          <button onClick={saveEdit}
+            className="w-full py-1.5 rounded-lg text-[11px] font-semibold text-white cursor-pointer"
+            style={{ background:"#BA7517" }}>
+            Save changes
+          </button>
+        </div>
+      )}
+
+      {/* Main row */}
+      <div className="flex items-start gap-3 px-3 py-2.5">
+        <div className="size-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: item.isNew ? "#FEF3C7" : "#EEEDFE" }}>
+          <Package size={14} style={{ color: item.isNew ? "#BA7517" : "#5D5EF4" }}/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-semibold text-gray-800 leading-tight">{item.name}</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">{item.code}</div>
+          {item.spec && <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">{item.spec.slice(0, 80)}{item.spec.length > 80 ? "…" : ""}</div>}
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[11px] text-gray-500">×{item.qty}</span>
+            {item.unitPrice > 0
+              ? <span className="text-[11px] font-medium text-gray-700">RM {(item.qty * item.unitPrice).toLocaleString()}</span>
+              : <span className="text-[11px] text-amber-500">Price TBD</span>
+            }
+          </div>
+          {/* Seller / vendor pending */}
+          {item.isNew && (item.shop || item.sourcePlatform) && (
+            <div className="flex items-center gap-1 mt-1.5">
+              <AlertCircle size={9} style={{ color:"#BA7517", flexShrink:0 }}/>
+              <span className="text-[9px] font-medium" style={{ color:"#BA7517" }}>
+                {item.shop ?? item.sourcePlatform} · Pending Vendor Registration
+              </span>
+            </div>
+          )}
+          {/* Source URL */}
+          {item.isNew && item.sourceUrl && (
+            <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 mt-1 group" style={{ textDecoration:"none" }}>
+              <Link2 size={8} style={{ color:"#9CA3AF", flexShrink:0 }}/>
+              <span className="text-[9px] text-gray-400 group-hover:underline truncate max-w-[160px]">
+                Via {item.sourcePlatform ?? "external link"}
+              </span>
+            </a>
+          )}
+        </div>
+        {/* Remove button — all items */}
+        <button onClick={() => onRemove(item.code)}
+          className="flex items-center justify-center size-5 rounded cursor-pointer transition-colors hover:bg-red-50 shrink-0 mt-0.5"
+          style={{ color:"#D1D5DB" }}
+          title="Remove item">
+          <X size={11} strokeWidth={2}/>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function NewPRPage() {
@@ -1709,8 +2497,10 @@ export default function NewPRPage() {
   const [itemVendorPickerOpen, setItemVendorPickerOpen]   = React.useState<string | null>(null)  // item code
   const [itemVendorSearchQuery, setItemVendorSearchQuery] = React.useState("")
   const [browseItem, setBrowseItem]                       = React.useState<ConfirmedItem | null>(null)
+  const [browseQuery, setBrowseQuery]                     = React.useState<string>("")   // pre-cart sourcing mode
   const [browsePlatform, setBrowsePlatform]               = React.useState<"google" | "shopee" | "lazada" | "1688">("shopee")
   const [browseLoading, setBrowseLoading]                 = React.useState(false)
+  const lastBrowseQueryRef                                = React.useRef<string>("")     // persists search term across actions
 
   // ── Slash command state ──
   const [slashOpen, setSlashOpen]           = React.useState(false)
@@ -1727,14 +2517,25 @@ export default function NewPRPage() {
   // null = fill remaining space | 0 = closed | >0 = fixed px width
   const [rightWidth, setRightWidth] = React.useState<number | null>(0)
   const [isPanelLoading, setIsPanelLoading] = React.useState(false)
+  const [rightPanelSkeletonType, setRightPanelSkeletonType] = React.useState<null | "cart" | "vendors" | "preview">(null)
   type RightPanelView = "items" | "vendors" | "budget" | "context" | "review"
   const [rightPanelView, setRightPanelView] = React.useState<RightPanelView>("review")
   const [rightNavOpen, setRightNavOpen] = React.useState(false)
-  const rightNavRef = React.useRef<HTMLDivElement>(null)
-  const endRef     = React.useRef<HTMLDivElement>(null)
+  const rightNavRef   = React.useRef<HTMLDivElement>(null)
+  const endRef        = React.useRef<HTMLDivElement>(null)
+  const chatInputRef  = React.useRef<HTMLTextAreaElement>(null)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
   const nameInputRef = React.useRef<HTMLInputElement>(null)
   const dragging   = React.useRef(false)
+  // Holds scraped product data between "show summary" chat message and the user's button click
+  const pendingNewItemRef = React.useRef<{
+    title: string; spec: string; price: number; uom: string
+    sourcePlatform: string; sourceUrl: string; source: string; shop?: string
+  } | null>(null)
+  // Holds URL source info for catalog-match adds (so action string stays simple)
+  const pendingCatalogSourceRef = React.useRef<{
+    sourcePlatform: string; sourceUrl: string
+  } | null>(null)
 
   const rightOpen = rightWidth !== 0
 
@@ -1878,35 +2679,197 @@ export default function NewPRPage() {
       purchaseType: "capex", aiFlags: 0,
       createdAt: Date.now(),
     })
-    // ── Detect items from description ──
-    const detected = detectItemsFromDescription(inputValue)
-    setConfirmedItems(detected)
+    setConfirmedItems([])
     setRoundAComplete(false)
     setRoundBComplete(false)
     setInventorySkipped(false)
     setRightWidth(0)
-    setSubmittedMessage(inputValue)
-    const finalProject = projectName.trim() || autoGenerateName(inputValue) || "New Purchase Request"
+    const userMessage = inputValue  // capture before clearing
+    setSubmittedMessage(userMessage)
+    const finalProject = projectName.trim() || autoGenerateName(userMessage) || "New Purchase Request"
     setSubmittedProject(finalProject)
     setInputValue("")
-    // Build initial Jomie response
-    const initialMsg: ChatMsg = detected.length > 0
-      ? {
-          role: "ai",
-          text: `I found ${detected.length} item${detected.length !== 1 ? "s" : ""} from your description:\n\n${buildItemSummaryText(detected)}\n\nDoes this look right? You can adjust quantities, add more items, or proceed.`,
-          actions: [
-            { label:"Open item picker to review / add more", action:"open-picker" },
-            { label:"Looks right — proceed to vendor matching →", primary:true, action:"proceed-to-vendor" },
-          ],
-        }
-      : {
-          role: "ai",
-          text: "I couldn't detect specific items from your description. Use the item picker to search your item master and add what you need.",
-          actions: [{ label:"Open item picker", primary:true, action:"open-picker" }],
-        }
-    setChatMessages([initialMsg])
     setFollowUp({ delivery: "", budgetCode: "", budgetCustom: "" })
+    // Show thinking state immediately
+    setChatMessages([{ role: "ai", text: "…", thinking: "Processing your request…" }])
     setChatState("questioning")
+    setIsChatThinking(true)
+
+    const provider = (process.env.NEXT_PUBLIC_LLM_PROVIDER ?? "groq") as "groq" | "openrouter"
+    const cfg = LLM_CONFIG[provider] ?? LLM_CONFIG.groq
+    const apiKey = cfg.getKey()
+
+    if (!apiKey || apiKey === "your_groq_api_key_here") {
+      // No API key — fall back to picker
+      setIsChatThinking(false)
+      setChatMessages([{ role: "ai", text: "Let's get started. You can search for items to add to your PR.", actions: [{ label:"Add Items", primary:true, action:"open-picker" }] }])
+      return
+    }
+
+    const runCreate = async () => {
+      // Detect URL and fetch product data first
+      const urlMatch = userMessage.match(/https?:\/\/[^\s]+/)
+      let product: FetchedProduct | undefined
+      if (urlMatch) {
+        setRightPanelSkeletonType("preview")
+        try {
+          const res = await fetch("/api/fetch-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: urlMatch[0] }) })
+          if (res.ok) product = await res.json()
+        } catch { /* ignore */ }
+        setRightPanelSkeletonType(null)
+      }
+
+      // URL PRODUCT PATH — show summary first, user confirms before anything lands in cart
+      if (urlMatch) {
+        const sourceUrl = urlMatch[0]
+        const platformName = product?.platform ?? product?.domain ?? new URL(sourceUrl.split("?")[0]).hostname.replace(/^www\./, "")
+        const isDummy = !product?.title || product?.source === "demo" || product?.source === "failed"
+
+        // If fetch failed or returned no title, use dummy data so the flow still works
+        if (isDummy && !product?.title) {
+          const DUMMY_FALLBACK: Record<string, { title: string; description: string; price: string; currency: string }> = {
+            Shopee:    { title: "Shopee Product (Demo)", description: "Product details could not be read — Shopee requires JavaScript rendering.", price: "0.00", currency: "MYR" },
+            Lazada:    { title: "Lazada Product (Demo)", description: "Product details could not be read — Lazada requires JavaScript rendering.", price: "0.00", currency: "MYR" },
+          }
+          const fallback = DUMMY_FALLBACK[platformName] ?? { title: `${platformName} Product (Demo)`, description: "Product details could not be read from this page.", price: "0.00", currency: "MYR" }
+          product = { ...fallback, platform: platformName, source: "demo" }
+        }
+
+        if (!product?.title) {
+          // Truly unknown — no platform detected, nothing to work with
+          setIsChatThinking(false)
+          setChatMessages([{
+            role: "ai",
+            text: `I wasn't able to read that page. Could you paste the product name and price directly, or use the item picker?`,
+            actions: [{ label: "Open item picker", primary: true, action: "open-picker" }],
+          }])
+          return
+        }
+
+        // URL always → new item request (scrape info, register as new, go through approval)
+        const sellerName = product.shop ?? platformName
+        const isNewVendor = !VENDOR_MASTER.some(v =>
+          v.name.toLowerCase().includes(sellerName.toLowerCase()) ||
+          sellerName.toLowerCase().includes(v.name.toLowerCase().split(" ")[0])
+        )
+        const dummyFlag = isDummy
+          ? `\n\n> ⚠️ **Heads up** — I wasn't able to read the actual product details from **${platformName}** (it requires JavaScript to load). I'm showing placeholder data for now — real product info will be fetched once full scraping is implemented.`
+          : ""
+
+        pendingNewItemRef.current = {
+          title: product.title,
+          spec: product.description?.slice(0, 200) ?? "",
+          price: parseFloat(product.price ?? "0") || 0,
+          uom: "unit",
+          sourcePlatform: platformName,
+          sourceUrl,
+          source: product.source ?? "og",
+          shop: sellerName,
+        }
+
+        const vendorNote = isNewVendor
+          ? `\n\n⚠️ **${sellerName}** is not a registered vendor — a new vendor request will be created alongside this item.`
+          : ""
+        const text = `Here's what I found from **${sellerName}** (via ${platformName}):\n\n**${product.title}**\n${product.description ? product.description.slice(0, 150) + (product.description.length > 150 ? "…" : "") : ""}\nPrice: ${product.currency ?? "MYR"} ${product.price ?? "N/A"}${dummyFlag}${vendorNote}\n\nThis will be added as a **new item request** and go through item master approval before the PR is processed.`
+        const actions = [
+          { label: "Add as new item", primary: true, action: "add-new-item-from-url" },
+          { label: "Search catalog instead", primary: false, action: "open-picker" },
+        ]
+        const thinking = `URL fetch from ${platformName} (source: ${product.source}). Seller: "${sellerName}". Title: "${product.title}". New vendor: ${isNewVendor}. Routing to new-item flow.`
+
+        setIsChatThinking(false)
+        setChatMessages([{ role: "ai", text, thinking, actions }])
+        return
+      }
+
+      // DETERMINISTIC CATALOG MATCH — keyword search on text queries (no URL)
+      if (!urlMatch) {
+        const msgWords = userMessage.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+        const catalogMatches = ITEM_MASTER.filter(item => {
+          const itemWords = (item.name + " " + item.spec).toLowerCase()
+          return msgWords.some(w => itemWords.includes(w))
+        })
+        if (catalogMatches.length > 0) {
+          const thinking = `User said: "${userMessage}". Keyword match found ${catalogMatches.length} item(s): ${catalogMatches.map(i => i.code).join(", ")}.`
+          let text: string
+          if (catalogMatches.length === 1) {
+            const m = catalogMatches[0]
+            text = `Found a catalog match:\n\n**${m.name}** (${m.code})\n${m.spec}\nRM ${m.unitPrice} / ${m.uom} · MOQ: ${m.moq}\n\nIs this what you're looking for?`
+          } else {
+            const list = catalogMatches.map(m => `- **${m.name}** (${m.code}) — RM ${m.unitPrice}`).join("\n")
+            text = `Found ${catalogMatches.length} catalog matches:\n\n${list}\n\nWhich one do you need?`
+          }
+          const actions = [
+            ...catalogMatches.slice(0, 2).map(m => ({ label: `Add ${m.name}`, primary: true, action: `suggest-item:${m.code}` })),
+            { label: "Search catalog", primary: false, action: "open-picker" },
+          ]
+          setIsChatThinking(false)
+          setChatMessages([{ role: "ai", text, thinking, actions }])
+          return
+        }
+      }
+
+      // NORMAL LLM PATH — no catalog match found, let LLM handle complex queries
+      console.log("[Jomie] userMessage sent to LLM:", userMessage)
+      console.log("[Jomie] model:", cfg.model, "provider:", provider)
+      const res = await fetch(cfg.url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          ...(provider === "openrouter" ? { "HTTP-Referer": "https://jomie.app", "X-Title": "Jomie" } : {}),
+        },
+        body: JSON.stringify({
+          model: cfg.model,
+          messages: [
+            { role: "system", content: buildFirstMessageSystemPrompt(undefined, urlMatch?.[0]) },
+            { role: "user", content: userMessage },
+          ],
+          temperature: 0.3,
+          max_tokens: 800,
+        }),
+      })
+      const resText = await res.text()
+      if (!res.ok) {
+        const isRateLimit = res.status === 429
+        throw new LLMError(isRateLimit ? "rate_limit" : "network", resText)
+      }
+      const json = JSON.parse(resText)
+      let raw = json.choices[0].message.content ?? ""
+      raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim()
+      let reply: GroqReply
+      try {
+        reply = JSON.parse(raw) as GroqReply
+      } catch {
+        throw new LLMError("parse", "Jomie returned an unexpected response format.")
+      }
+      setIsChatThinking(false)
+
+      if (reply.action === "suggest-items" && reply.payload?.items?.length) {
+        const matched: ConfirmedItem[] = []
+        for (const { code, qty } of reply.payload.items) {
+          const master = ITEM_MASTER.find(i => i.code === code)
+          if (master) matched.push({ ...master, qty: Math.max(qty, master.moq), stockSkipped: false })
+        }
+        if (matched.length > 0) {
+          setConfirmedItems(matched)
+          setRightPanelView("items")
+          setRightWidth(null)
+        }
+        // Store query for browse-online and inject sourcing button
+        lastBrowseQueryRef.current = userMessage.replace(/^(i (want|need) to (buy|get|order)|buy|get|add|need|want)\s+/i, "").trim() || userMessage
+      }
+      if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+      const createButtons = reply.action === "suggest-items" && lastBrowseQueryRef.current
+        ? [...(reply.buttons ?? []).filter(b => b.action !== "browse-online"), { label: "Source more options →", primary: false, action: "browse-online" }]
+        : reply.buttons
+      setChatMessages([{ role: "ai", text: reply.text, thinking: reply.thinking, actions: createButtons }])
+    }
+
+    runCreate().catch((err) => {
+      setIsChatThinking(false)
+      setChatMessages([{ role: "ai", text: jomieErrorMessage(err), actions: [{ label:"Open item picker", primary:true, action:"open-picker" }] }])
+    })
   }
 
   const handleSend = () => {
@@ -1917,17 +2880,139 @@ export default function NewPRPage() {
     setIsChatThinking(true)
     const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
     const currentHistory = [...chatMessages]
-    callGroqJomie(msg, ctx, currentHistory).then(reply => {
+
+    const runSend = async () => {
+      // Detect URL and fetch product data
+      const urlMatch = msg.match(/https?:\/\/[^\s]+/)
+      let product: FetchedProduct | undefined
+      if (urlMatch) {
+        setRightPanelSkeletonType("preview")
+        try {
+          const res = await fetch("/api/fetch-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: urlMatch[0] }),
+          })
+          if (res.ok) product = await res.json()
+        } catch { /* ignore */ }
+        setRightPanelSkeletonType(null)
+      }
+
+      // URL product path — show summary first, user confirms before anything lands in cart
+      if (urlMatch) {
+        const sourceUrl = urlMatch[0]
+        const platformName = product?.platform ?? product?.domain ?? new URL(sourceUrl.split("?")[0]).hostname.replace(/^www\./, "")
+        const isDummy = !product?.title || product?.source === "demo" || product?.source === "failed"
+
+        // If fetch failed or returned no title, use dummy data so the flow still works
+        if (isDummy && !product?.title) {
+          const DUMMY_FALLBACK: Record<string, { title: string; description: string; price: string; currency: string }> = {
+            Shopee:    { title: "Shopee Product (Demo)", description: "Product details could not be read — Shopee requires JavaScript rendering.", price: "0.00", currency: "MYR" },
+            Lazada:    { title: "Lazada Product (Demo)", description: "Product details could not be read — Lazada requires JavaScript rendering.", price: "0.00", currency: "MYR" },
+          }
+          const fallback = DUMMY_FALLBACK[platformName] ?? { title: `${platformName} Product (Demo)`, description: "Product details could not be read from this page.", price: "0.00", currency: "MYR" }
+          product = { ...fallback, platform: platformName, source: "demo" }
+        }
+
+        if (!product?.title) {
+          setIsChatThinking(false)
+          setChatMessages(prev => [...prev, {
+            role: "ai" as const,
+            text: `I wasn't able to read that page. Could you paste the product name and price directly, or use the item picker?`,
+            actions: [{ label: "Open item picker", primary: true, action: "open-picker" }],
+          }])
+          return
+        }
+
+        // URL always → new item request (scrape info, register as new, go through approval)
+        const sellerName = product.shop ?? platformName
+        const isNewVendor = !VENDOR_MASTER.some(v =>
+          v.name.toLowerCase().includes(sellerName.toLowerCase()) ||
+          sellerName.toLowerCase().includes(v.name.toLowerCase().split(" ")[0])
+        )
+        const dummyFlag = isDummy
+          ? `\n\n> ⚠️ **Heads up** — I wasn't able to read the actual product details from **${platformName}** (it requires JavaScript to load). I'm showing placeholder data for now — real product info will be fetched once full scraping is implemented.`
+          : ""
+
+        pendingNewItemRef.current = {
+          title: product.title,
+          spec: product.description?.slice(0, 200) ?? "",
+          price: parseFloat(product.price ?? "0") || 0,
+          uom: "unit",
+          sourcePlatform: platformName,
+          sourceUrl,
+          source: product.source ?? "og",
+          shop: sellerName,
+        }
+
+        const vendorNote = isNewVendor
+          ? `\n\n⚠️ **${sellerName}** is not a registered vendor — a new vendor request will be created alongside this item.`
+          : ""
+        const text = `Here's what I found from **${sellerName}** (via ${platformName}):\n\n**${product.title}**\n${product.description ? product.description.slice(0, 150) + (product.description.length > 150 ? "…" : "") : ""}\nPrice: ${product.currency ?? "MYR"} ${product.price ?? "N/A"}${dummyFlag}${vendorNote}\n\nThis will be added as a **new item request** and go through item master approval before the PR is processed.`
+        const actions = [
+          { label: "Add as new item", primary: true, action: "add-new-item-from-url" },
+          { label: "Search catalog instead", primary: false, action: "open-picker" },
+        ]
+        const thinking = `URL fetch from ${platformName} (source: ${product.source}). Seller: "${sellerName}". Title: "${product.title}". New vendor: ${isNewVendor}. Routing to new-item flow.`
+
+        setIsChatThinking(false)
+        setChatMessages(prev => [...prev, { role: "ai" as const, text, thinking, actions }])
+        return
+      }
+
+      // Keyword catalog match before LLM — catches "add a keyboard", "I also need a monitor" etc.
+      if (!urlMatch && !roundAComplete) {
+        const msgWords = msg.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+        const catalogMatches = ITEM_MASTER.filter(item => {
+          const itemWords = (item.name + " " + item.spec).toLowerCase()
+          return msgWords.some(w => itemWords.includes(w))
+        })
+        if (catalogMatches.length > 0) {
+          let text: string
+          if (catalogMatches.length === 1) {
+            const m = catalogMatches[0]
+            text = `Found a catalog match:\n\n**${m.name}** (${m.code})\n${m.spec}\nRM ${m.unitPrice} / ${m.uom} · MOQ: ${m.moq}\n\nIs this what you're looking for?`
+          } else {
+            const list = catalogMatches.map(m => `- **${m.name}** (${m.code}) — RM ${m.unitPrice}`).join("\n")
+            text = `Found ${catalogMatches.length} catalog matches:\n\n${list}\n\nWhich one do you need?`
+          }
+          const actions = [
+            ...catalogMatches.slice(0, 2).map(m => ({ label: `Add ${m.name}`, primary: true, action: `suggest-item:${m.code}` })),
+            { label: "Search catalog", primary: false, action: "open-picker" },
+          ]
+          setIsChatThinking(false)
+          setChatMessages(prev => [...prev, { role: "ai" as const, text, thinking: `Keyword match: ${catalogMatches.map(i => i.code).join(", ")}`, actions }])
+          return
+        }
+      }
+
+      // Normal LLM path
+      const msgForLLM = msg.length > 600 ? msg.slice(0, 600) + "…[truncated]" : msg
+      const reply = await callGroqJomie(msgForLLM, ctx, currentHistory, null, undefined, urlMatch?.[0])
       setIsChatThinking(false)
-      setChatMessages(prev => [...prev, { role: "ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }])
+      if (reply.action === "suggest-items" && reply.payload?.items?.length) {
+        const toAdd: ConfirmedItem[] = []
+        for (const { code, qty } of reply.payload.items) {
+          const master = ITEM_MASTER.find(i => i.code === code)
+          if (master && !confirmedItems.some(i => i.code === code))
+            toAdd.push({ ...master, qty: Math.max(qty, master.moq), stockSkipped: false })
+        }
+        if (toAdd.length > 0) { setConfirmedItems(prev => [...prev, ...toAdd]); setRightPanelView("items"); setRightWidth(null) }
+        lastBrowseQueryRef.current = msg.replace(/^(i (want|need) to (buy|get|order)|buy|get|add|need|want)\s+/i, "").trim() || msg
+      }
+      const sendButtons = reply.action === "suggest-items" && lastBrowseQueryRef.current
+        ? [...(reply.buttons ?? []).filter(b => b.action !== "browse-online"), { label: "Source more options →", primary: false, action: "browse-online" }]
+        : reply.buttons
+      setChatMessages(prev => [...prev, { role: "ai", text: reply.text, thinking: reply.thinking, actions: sendButtons }])
       if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
-      if (reply.action === "proceed-to-vendor") handleProceedToVendor()
       if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
       if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
       if (reply.action === "reset-vendor" && reply.payload?.itemCode)
         handleItemVendorOverride(reply.payload.itemCode, "", "", false)
-    }).catch((err) => {
+    }
+
+    runSend().catch(err => {
       setIsChatThinking(false)
       setChatMessages(prev => [...prev, { role: "ai", text: jomieErrorMessage(err) }])
     })
@@ -1946,6 +3031,9 @@ export default function NewPRPage() {
   }
   const handleItemRemove = (code: string) => {
     setConfirmedItems(prev => prev.filter(item => item.code !== code))
+  }
+  const handleItemUpdate = (code: string, patch: Partial<ConfirmedItem>) => {
+    setConfirmedItems(prev => prev.map(item => item.code === code ? { ...item, ...patch } : item))
   }
   const handleItemAdd = (master: ItemMasterEntry) => {
     const already = confirmedItems.some(i => i.code === master.code)
@@ -2010,7 +3098,7 @@ export default function NewPRPage() {
 
   // ── Item picker widget handlers ──
   const handleOpenItemPicker = () => {
-    prevChatStateRef.current = chatState as Exclude<ChatState, "item-picking">
+    prevChatStateRef.current = (chatState === "item-picking" ? "questioning" : chatState) as Exclude<ChatState, "item-picking">
     wasAtVendorStepRef.current = roundAComplete   // remember if we came from vendor step
     setItemPickerSnapshot([...confirmedItems])
     // Do NOT reset roundAComplete — preserves vendor-step context across the picker session
@@ -2020,7 +3108,7 @@ export default function NewPRPage() {
     setChatState("item-picking")
   }
   const handleDoneItemPicker = () => {
-    setChatState(prevChatStateRef.current)
+    setChatState("questioning")
     const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
     if (valid.length === 0) return
 
@@ -2060,8 +3148,8 @@ export default function NewPRPage() {
       setIsChatThinking(false)
       const aiMsg: ChatMsg = { role:"ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }
       setChatMessages(prev => [...prev, aiMsg])
-      // Do NOT auto-fire proceed-to-vendor or confirm-vendors here —
-      // Jomie should ask the user first; actions fire only when user clicks the button
+      // Do NOT auto-fire proceed-to-vendor, confirm-vendors, or open-picker here —
+      // user just closed the picker; reopening it would undo their intent
       if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
     }).catch((err) => {
@@ -2090,23 +3178,33 @@ export default function NewPRPage() {
       setChatMessages(prev => [...prev, fallback])
     })
   }
+  const postUserMessage = (label: string, then: () => void) => {
+    setChatMessages(prev => [...prev, { role: "user" as const, text: label }])
+    setTimeout(then, 50)
+  }
+
   const handleProceedToVendor = () => {
-    const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
-    setConfirmedItems(valid)
-    setRoundAComplete(true)       // single place this is set
-    setShowVendorOverride(true)
-    setRightPanelView("vendors")  // single place the right panel switches to vendors
-    setRightWidth(null)           // ensure right panel is open/visible
-    const groups = buildSubPRGroups(valid)
-    const vendorMsg: ChatMsg = {
-      role: "ai",
-      text: `I've grouped your ${valid.length} item${valid.length !== 1 ? "s" : ""} into ${groups.length} sub-PR${groups.length !== 1 ? "s" : ""} by vendor and approval tier:\n\n${buildVendorSummaryText(groups, valid)}\n\nHappy with this grouping? You can override vendor per item if needed.`,
-      actions: [
-        { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
-        { label:"I want to change a vendor", action:"change-vendor" },
-      ],
-    }
-    setChatMessages(prev => [...prev, vendorMsg])
+    pendingNewItemRef.current = null  // discard any unconfirmed pending item when moving to vendor phase
+    setRightPanelSkeletonType("vendors")
+    setTimeout(() => {
+      const valid = confirmedItems.filter(i => i.qty >= i.moq && i.qty > 0)
+      setConfirmedItems(valid)
+      setRoundAComplete(true)       // single place this is set
+      setShowVendorOverride(true)
+      setRightPanelView("vendors")  // single place the right panel switches to vendors
+      setRightWidth(null)           // ensure right panel is open/visible
+      const groups = buildSubPRGroups(valid)
+      const vendorMsg: ChatMsg = {
+        role: "ai",
+        text: `I've grouped your ${valid.length} item${valid.length !== 1 ? "s" : ""} into ${groups.length} sub-PR${groups.length !== 1 ? "s" : ""} by vendor and approval tier:\n\n${buildVendorSummaryText(groups, valid)}\n\nHappy with this grouping? You can override vendor per item if needed.`,
+        actions: [
+          { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
+          { label:"I want to change a vendor", action:"change-vendor" },
+        ],
+      }
+      setChatMessages(prev => [...prev, vendorMsg])
+      setRightPanelSkeletonType(null)
+    }, 600)
   }
 
   const handleConfirmVendorMatching = () => {
@@ -2167,7 +3265,8 @@ export default function NewPRPage() {
     }
   }
   const handleQuestioningSend = () => {
-    const val = questioningInput.trim()
+    const displayVal = questioningInput.trim()
+    const val = displayVal.replace(/\n+/g, " ")  // normalized for URL/keyword detection only
     if (!val) return
     setSlashOpen(false)
     const isPickerTrigger = val === "/add-item" || val === "/item"
@@ -2182,25 +3281,299 @@ export default function NewPRPage() {
     } else {
       const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
       const currentHistory = [...chatMessages]
-      setChatMessages(prev => [...prev, { role:"user", text:val }])
+
+      // ── Conversational confirmation — "yes", "add", "ok", etc. auto-triggers pending action ──
+      const CONFIRM_WORDS = /^(yes|yeah|yep|yup|ok|okay|sure|add|add it|go|go ahead|proceed|confirm|do it|correct|right|that one|this one|sounds good|perfect|great)$/i
+      if (CONFIRM_WORDS.test(val)) {
+        const lastAiMsg = [...chatMessages].reverse().find(m => m.role === "ai" && m.actions?.length)
+        const pendingAction = lastAiMsg?.actions?.find(a => a.primary && (a.action.startsWith("suggest-item:") || a.action === "add-new-item-from-url"))
+        if (pendingAction) {
+          setChatMessages(prev => [...prev, { role:"user", text:displayVal }])
+          setQuestioningInput("")
+          handleMessageAction(pendingAction.action, pendingAction.label)
+          return
+        }
+      }
+
+      setChatMessages(prev => [...prev, { role:"user", text:displayVal }])
       setQuestioningInput("")
       setIsChatThinking(true)
-      callGroqJomie(val, ctx, currentHistory).then(reply => {
+
+      const runQuestioning = async () => {
+        // ── URL detection — fetch product, show summary, never go to LLM for URL input ──
+        const urlMatch = val.match(/https?:\/\/[^\s]+/)
+        let product: FetchedProduct | undefined
+        if (urlMatch) {
+          setRightPanelSkeletonType("preview")
+          try {
+            const res = await fetch("/api/fetch-url", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ url: urlMatch[0] }) })
+            if (res.ok) product = await res.json()
+          } catch { /* ignore */ }
+          setRightPanelSkeletonType(null)
+        }
+
+        if (urlMatch) {
+          const sourceUrl = urlMatch[0]
+          const platformName = product?.platform ?? product?.domain ?? new URL(sourceUrl.split("?")[0]).hostname.replace(/^www\./, "")
+          const isDummy = !product?.title || product?.source === "demo" || product?.source === "failed"
+
+          if (isDummy && !product?.title) {
+            const DUMMY_FALLBACK: Record<string, { title:string; description:string; price:string; currency:string }> = {
+              Shopee: { title:"Shopee Product (Demo)", description:"Product details could not be read — Shopee requires JavaScript rendering.", price:"0.00", currency:"MYR" },
+              Lazada: { title:"Lazada Product (Demo)", description:"Product details could not be read — Lazada requires JavaScript rendering.", price:"0.00", currency:"MYR" },
+            }
+            const fallback = DUMMY_FALLBACK[platformName] ?? { title:`${platformName} Product (Demo)`, description:"Product details could not be read from this page.", price:"0.00", currency:"MYR" }
+            product = { ...fallback, platform: platformName, source:"demo" }
+          }
+
+          if (!product?.title) {
+            setIsChatThinking(false)
+            setChatMessages(prev => [...prev, { role:"ai" as const, text:`I wasn't able to read that page. Could you paste the product name and price directly, or use the item picker?`, actions:[{ label:"Open item picker", primary:true, action:"open-picker" }] }])
+            return
+          }
+
+          // URL always → new item request (scrape info, register as new, go through approval)
+          const sellerName = product.shop ?? platformName
+          const isNewVendor = !VENDOR_MASTER.some(v =>
+            v.name.toLowerCase().includes(sellerName.toLowerCase()) ||
+            sellerName.toLowerCase().includes(v.name.toLowerCase().split(" ")[0])
+          )
+          const dummyFlag = isDummy
+            ? `\n\n> ⚠️ **Heads up** — I wasn't able to read the actual product details from **${platformName}** (it requires JavaScript to load). I'm showing placeholder data for now — real product info will be fetched once full scraping is implemented.`
+            : ""
+
+          pendingNewItemRef.current = {
+            title: product.title, spec: product.description?.slice(0, 200) ?? "",
+            price: parseFloat(product.price ?? "0") || 0, uom: "unit",
+            sourcePlatform: platformName, sourceUrl, source: product.source ?? "og", shop: sellerName,
+          }
+
+          const vendorNote = isNewVendor
+            ? `\n\n⚠️ **${sellerName}** is not a registered vendor — a new vendor request will be created alongside this item.`
+            : ""
+          const text = `Here's what I found from **${sellerName}** (via ${platformName}):\n\n**${product.title}**\n${product.description ? product.description.slice(0, 150) + (product.description.length > 150 ? "…" : "") : ""}\nPrice: ${product.currency ?? "MYR"} ${product.price ?? "N/A"}${dummyFlag}${vendorNote}\n\nThis will be added as a **new item request** and go through item master approval before the PR is processed.`
+          const actions = [
+            { label:"Add as new item", primary:true, action:"add-new-item-from-url" },
+            { label:"Search catalog instead", primary:false, action:"open-picker" },
+          ]
+          const thinking = `URL fetch from ${platformName} (source: ${product.source}). Seller: "${sellerName}". Title: "${product.title}". New vendor: ${isNewVendor}. Routing to new-item flow.`
+
+          setIsChatThinking(false)
+          setChatMessages(prev => [...prev, { role:"ai" as const, text, thinking, actions }])
+          return
+        }
+
+        // ── Pending context check — if there's a pending URL item or catalog suggestion,
+        //    any add-intent message should trigger it, not search the catalog ──
+        // Only fire when: message is short (≤4 words) OR starts with an explicit add verb.
+        // This prevents conversational phrases like "okay i see, tell me more" from triggering.
+        const ADD_INTENT = /\b(add|buy|get|yes|ok|okay|sure|proceed|confirm|do it|take it|want it|that one|this one)\b/i
+        const _words = val.trim().split(/\s+/)
+        const _startsWithAddVerb = /^(add|buy|get)\b/i.test(val)
+        const _isShortEnough = _words.length <= 4
+        if ((_isShortEnough || _startsWithAddVerb) && ADD_INTENT.test(val)) {
+          if (pendingNewItemRef.current) {
+            setIsChatThinking(false)
+            handleMessageAction("add-new-item-from-url", "Add as new item")
+            return
+          }
+          if (pendingCatalogSourceRef.current) {
+            // Find the last suggest-item action button in chat history
+            const lastActions = [...chatMessages].reverse().find(m => m.role === "ai" && m.actions?.length)?.actions
+            const suggestAction = lastActions?.find(a => a.action.startsWith("suggest-item:"))
+            if (suggestAction) {
+              setIsChatThinking(false)
+              handleMessageAction(suggestAction.action, suggestAction.label)
+              return
+            }
+          }
+        }
+
+        // ── Keyword catalog match — only before round A is locked ──
+        if (!roundAComplete) {
+          // Guard 1: user is explicitly asking for something different — skip keyword match
+          const WANTS_DIFFERENT = /\b(different|another|other|not that|instead|don'?t want|register|macbook|apple|lenovo|hp|asus|acer|samsung|microsoft surface|thinkpad|huawei|xiaomi|razer|msi|gigabyte|alienware|chromebook)\b/i
+          // Guard 2: last AI message already suggested these exact items — don't repeat
+          const lastAiActions = [...chatMessages].reverse().find(m => m.role === "ai" && m.actions?.length)?.actions ?? []
+          const lastSuggestedCodes = new Set(
+            lastAiActions.filter(a => a.action.startsWith("suggest-item:")).map(a => a.action.replace("suggest-item:", ""))
+          )
+
+          if (!WANTS_DIFFERENT.test(val)) {
+            const msgWords = val.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+            const catalogMatches = ITEM_MASTER.filter(item => {
+              if (lastSuggestedCodes.has(item.code)) return false  // Guard 2: already shown
+              const itemText = (item.name + " " + item.spec).toLowerCase()
+              // Word-boundary regex so "table" doesn't match "adjustable"
+              return msgWords.some(w => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(itemText))
+            })
+            if (catalogMatches.length > 0) {
+              lastBrowseQueryRef.current = val.trim()
+              let text: string
+              if (catalogMatches.length === 1) {
+                const m = catalogMatches[0]
+                text = `Found a catalog match:\n\n**${m.name}** (${m.code})\n${m.spec}\nRM ${m.unitPrice} / ${m.uom} · MOQ: ${m.moq}\n\nIs this what you're looking for?`
+              } else {
+                const list = catalogMatches.map(m => `- **${m.name}** (${m.code}) — RM ${m.unitPrice}`).join("\n")
+                text = `Found ${catalogMatches.length} catalog matches:\n\n${list}\n\nWhich one do you need?`
+              }
+              const actions = [
+                ...catalogMatches.slice(0, 2).map(m => ({ label:`Add ${m.name}`, primary:true, action:`suggest-item:${m.code}` })),
+                { label:"Search catalog", primary:false, action:"open-picker" },
+                { label:"Source more options →", primary:false, action:"browse-online" },
+              ]
+              setIsChatThinking(false)
+              setChatMessages(prev => [...prev, { role:"ai" as const, text, thinking:`Keyword match: ${catalogMatches.map(i => i.code).join(", ")}`, actions }])
+              return
+            }
+          }
+        }
+
+        // ── Affirmative button-choice guard ──
+        // When the last AI message offered action buttons and the user replies with a short
+        // affirmative ("yes buy item", "ok sure", "yeah go ahead"), treat it as selecting
+        // the primary button — NOT as a new product purchase intent.
+        const lastAiMsgWithActions = [...chatMessages].reverse().find(m => m.role === "ai" && m.actions?.length)
+        const isAffirmativeButtonReply =
+          lastAiMsgWithActions != null &&
+          /^(yes|yeah|yep|yup|ok|okay|sure|alright|right|correct|exactly|go ahead|proceed)\b/i.test(val.trim()) &&
+          val.trim().split(/\s+/).length <= 6
+        if (isAffirmativeButtonReply && lastAiMsgWithActions) {
+          const primaryAction = lastAiMsgWithActions.actions?.find(a => a.primary) ?? lastAiMsgWithActions.actions?.[0]
+          if (primaryAction) {
+            setIsChatThinking(false)
+            handleMessageAction(primaryAction.action, primaryAction.label)
+            return
+          }
+        }
+
+        // ── Clear cart intent — deterministic, never send to LLM ──
+        const CLEAR_CART = /\b(remove all|clear all|delete all|empty (the |my )?cart|start (over|again|fresh)|reset (cart|items?)|wipe (cart|items?)|remove (all|every) item)\b/i
+        if (CLEAR_CART.test(val) && confirmedItems.length > 0) {
+          setIsChatThinking(false)
+          setChatMessages(prev => [...prev, {
+            role: "ai" as const,
+            text: `Remove all **${confirmedItems.length} item${confirmedItems.length !== 1 ? "s" : ""}** from your cart? This cannot be undone.`,
+            thinking: `User wants to clear cart (${confirmedItems.length} items). Asking for destructive-action confirmation.`,
+            actions: [
+              { label: "Yes, clear cart", primary: true, action: "clear-cart-confirm" },
+              { label: "No, keep items", primary: false, action: "dismiss-clear-cart" },
+            ],
+          }])
+          return
+        }
+        if (CLEAR_CART.test(val) && confirmedItems.length === 0) {
+          setIsChatThinking(false)
+          setChatMessages(prev => [...prev, {
+            role: "ai" as const,
+            text: `Your cart is already empty. What would you like to add?`,
+            thinking: `User asked to clear cart but cart is already empty.`,
+            actions: [{ label: "Add Items", primary: true, action: "open-picker" }],
+          }])
+          return
+        }
+
+        // ── "Source more / compare" keyword shortcut ──
+        // If user wants more options for the last searched item, open browse panel directly.
+        const SOURCE_MORE = /\b(source more|compare|find more|more options|other options|alternatives|cheaper|better price|search online|browse online|search marketplace)\b/i
+        if (SOURCE_MORE.test(val) && lastBrowseQueryRef.current) {
+          const q = lastBrowseQueryRef.current
+          setBrowseQuery(q)
+          setBrowsePlatform("shopee")
+          setBrowseLoading(true)
+          setRightWidth(null)
+          setTimeout(() => setBrowseLoading(false), 900)
+          setIsChatThinking(false)
+          setChatMessages(prev => [...prev, {
+            role: "ai" as const,
+            text: `Searching Shopee, Lazada, 1688 and Google for **"${q}"** — results are loading in the right panel.\n\nPick any result to add it to your cart, or edit the search term in the panel to refine.`,
+            thinking: `User requested online sourcing for "${q}". Opening browse panel.`,
+          }])
+          return
+        }
+
+        // ── LLM intent classifier — smart purchase detection ──
+        // Runs on ALL messages in Round A so natural language like "new laptop" is handled correctly.
+        if (!roundAComplete) {
+          const intentResult = await callIntentClassifier(val, currentHistory, roundAComplete)
+
+          if (intentResult.isNegation) {
+            // User is correcting/redirecting — fall through to LLM to handle conversationally
+          } else if (intentResult.intent === "purchase") {
+            if (intentResult.needsClarification || !intentResult.productName) {
+              setIsChatThinking(false)
+              setChatMessages(prev => [...prev, {
+                role: "ai" as const,
+                text: `What specific item are you looking to purchase? Give me the product name — for example, *"Dell laptop"*, *"office chair"*, or *"A4 paper 80gsm"*.`,
+                thinking: `Intent: purchase, but product name is too generic or missing. Asking for clarification.`,
+              }])
+              return
+            }
+
+            const productName = intentResult.productName
+            lastBrowseQueryRef.current = productName
+            pendingNewItemRef.current = {
+              title: productName, spec: "", price: 0, uom: "unit",
+              sourcePlatform: "Manual request", sourceUrl: "", source: "manual", shop: "",
+            }
+            setIsChatThinking(false)
+            setChatMessages(prev => [...prev, {
+              role: "ai" as const,
+              text: `Got it — **${productName}** isn't in your item catalog. Want me to add it as a new item request? You can fill in the spec, price, and seller details after adding.`,
+              thinking: `Intent classifier: purchase. Extracted product: "${productName}". No catalog match. Staging as pending new item — awaiting user confirmation.`,
+              actions: [
+                { label: "Add as new item", primary: true, action: "add-new-item-from-url" },
+                { label: "Search catalog instead", primary: false, action: "open-picker" },
+                { label: "Source more options →", primary: false, action: "browse-online" },
+              ],
+            }])
+            return
+          }
+          // intent === "other" or isNegation — fall through to LLM fallback
+        }
+
+        // ── LLM fallback — questions, corrections, chitchat, vendor-phase messages ──
+        // Discard stale pending item before handing off to the LLM.
+        pendingNewItemRef.current = null
+        const reply = await callGroqJomie(val, ctx, currentHistory)
         setIsChatThinking(false)
-        const msg: ChatMsg = { role:"ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }
-        setChatMessages(prev => [...prev, msg])
-        // Handle side effects
+
+        // LLM detected a non-catalog item request → stage it and show deterministic confirm card
+        if (reply.action === "add-new-item" && reply.payload?.itemName) {
+          const itemName = reply.payload.itemName.trim()
+          lastBrowseQueryRef.current = itemName
+          pendingNewItemRef.current = {
+            title: itemName, spec: "", price: 0, uom: "unit",
+            sourcePlatform: "Manual request", sourceUrl: "", source: "manual", shop: "",
+          }
+          setChatMessages(prev => [...prev, {
+            role: "ai" as const,
+            text: `Got it — **${itemName}** isn't in your item catalog. Want me to add it as a new item request? You can fill in the spec, price, and seller details after adding.`,
+            thinking: reply.thinking,
+            actions: [
+              { label: "Add as new item", primary: true, action: "add-new-item-from-url" },
+              { label: "Search catalog instead", primary: false, action: "open-picker" },
+              { label: "Source more options →", primary: false, action: "browse-online" },
+            ],
+          }])
+          return
+        }
+
+        setChatMessages(prev => [...prev, { role:"ai", text:reply.text, thinking:reply.thinking, actions:reply.buttons }])
         if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
-        if (reply.action === "proceed-to-vendor") handleProceedToVendor()
         if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
         if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
           handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
         if (reply.action === "reset-vendor" && reply.payload?.itemCode)
           handleItemVendorOverride(reply.payload.itemCode, "", "", false)
-      }).catch((err) => {
-        setIsChatThinking(false)
-        setChatMessages(prev => [...prev, { role:"ai", text: jomieErrorMessage(err) }])
-      })
+      }
+
+      setTimeout(() => {
+        runQuestioning().catch(err => {
+          setIsChatThinking(false)
+          setChatMessages(prev => [...prev, { role:"ai", text: jomieErrorMessage(err) }])
+        })
+      }, 0)
     }
   }
   // Execute a slash command directly (bypasses state timing issues)
@@ -2233,13 +3606,153 @@ export default function NewPRPage() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleQuestioningSend() }
   }
 
-  const handleMessageAction = (action: ChatActionType, label?: string) => {
+  const handleMessageAction = (action: string, label?: string) => {
     if (isChatThinking) return
+    // Deterministic catalog add — suggest-item:CODE
+    if (action.startsWith("suggest-item:")) {
+      const code = action.slice("suggest-item:".length)
+      const master = ITEM_MASTER.find(i => i.code === code)
+      if (master) {
+        const src = pendingCatalogSourceRef.current
+        pendingCatalogSourceRef.current = null
+        const newItem: ConfirmedItem = {
+          ...master, qty: master.moq, stockSkipped: false,
+          ...(src ? { sourceUrl: src.sourceUrl, sourcePlatform: src.sourcePlatform, sourceType: "catalog-match" as const } : {}),
+        }
+        setConfirmedItems(prev => prev.some(i => i.code === code) ? prev : [...prev, newItem])
+        setRightPanelView("items")
+        setRightWidth(null)
+        const confirmText = src
+          ? `Added **${master.name}** (${master.code}) at RM ${master.unitPrice} to your cart.\n\nSourced from **${src.sourcePlatform}** — flagged for reference in the right panel.\n\nReady to proceed to vendor matching, or do you need more items?`
+          : `Added **${master.name}** (${master.code}) at RM ${master.unitPrice} to your cart.\n\nReady to proceed to vendor matching, or do you need more items?`
+        setChatMessages(prev => [...prev,
+          { role: "user" as const, text: label || `Add ${master.name}` },
+          { role: "ai" as const, text: confirmText,
+            thinking: `User confirmed adding ${master.code} (${master.name}). Added to cart at RM ${master.unitPrice} × ${master.moq} ${master.uom}. Cart now has ${confirmedItems.length + 1} item(s).`,
+            actions: [
+              { label: "Proceed to vendor matching", primary: true, action: "proceed-to-vendor" },
+              { label: "Add more items", primary: false, action: "open-picker" },
+            ] },
+        ])
+      }
+      return
+    }
+    // Add scraped product as new item — pending item master approval
+    if (action === "add-new-item-from-url") {
+      const pending = pendingNewItemRef.current
+      if (pending) {
+        const counter = newItemCounter + 1
+        setNewItemCounter(counter)
+        const code = `NEW-${String(counter).padStart(3, "0")}`
+        const isCapex = pending.price >= 1000
+        const newItem: ConfirmedItem = {
+          code, name: pending.title,
+          spec: pending.spec || "Sourced from external URL — spec pending review",
+          uom: pending.uom, unitPrice: pending.price,
+          itemType: isCapex ? "capex" : "standard",
+          purchaseType: isCapex ? "capex" : "opex",
+          glCode: isCapex ? "GL-7200-CAPEX" : "GL-6100-OPEX",
+          vendorCode: "", moq: 1, qty: 1, stockSkipped: true, isNew: true,
+          sourceType: "new-item-pending",
+          sourcePlatform: pending.sourcePlatform,
+          sourceUrl: pending.sourceUrl,
+          shop: pending.shop,
+        }
+        setConfirmedItems(prev => [...prev, newItem])
+        setRightPanelView("items")
+        setRightWidth(null)
+        pendingNewItemRef.current = null
+        const isDummy = pending.source === "demo"
+        setChatMessages(prev => [...prev,
+          { role: "user" as const, text: label || "Add as new item" },
+          { role: "ai" as const,
+            text: `Added **${pending.title}** as a new item request (${code}) to your cart.${isDummy ? "\n\n> ⚠️ Based on placeholder data — please verify specs and price before submitting." : ""}\n\nThis will require **item master approval** before the PR can be processed. You can adjust the quantity and details in the cart.\n\nAnything else to add, or ready to proceed to vendor matching?`,
+            thinking: `User confirmed new item from ${pending.sourcePlatform}. Assigned code ${code}. Price: RM ${pending.price}. ${isDummy ? "Source is dummy placeholder." : "Source is scraped data."} Pending item master approval. ${pending.shop ? `Seller: ${pending.shop}.` : ""}`,
+            actions: [
+              { label: "Proceed to vendor matching", primary: true, action: "proceed-to-vendor" },
+              { label: "Add more items", primary: false, action: "open-picker" },
+            ] },
+        ])
+      }
+      return
+    }
+    // change-vendor — deterministic vendor suggestion, no LLM needed
+    if (action === "change-vendor") {
+      const userText = label || "Change vendor"
+      // Extract item name from label like "Change vendor for Dell Latitude 5540 Laptop"
+      const itemNameFromLabel = label?.replace(/^change vendor for\s+/i, "").trim() || ""
+      const targetItem = confirmedItems.find(i =>
+        itemNameFromLabel && i.name.toLowerCase().includes(itemNameFromLabel.toLowerCase().slice(0, 15))
+      )
+      const currentVendorCode = targetItem?.preferredVendorCode || targetItem?.vendorCode || ""
+      const currentVendor = VENDOR_MASTER.find(v => v.code === currentVendorCode)
+      const alternatives = VENDOR_MASTER.filter(v => v.approved && v.code !== currentVendorCode).slice(0, 2)
+      const altText = alternatives.map(v =>
+        `• **${v.name}** — ${v.myInvois ? "✓ MyInvois" : "No MyInvois"} · ${v.terms}`
+      ).join("\n")
+      const replyText = targetItem
+        ? `Current vendor for **${targetItem.name}** is ${currentVendor ? `**${currentVendor.name}**` : "TBD"}.\n\nAlternatives from your approved vendor master:\n${altText}\n\nUse the **Change vendor** button next to the item in the right panel to switch, or tell me which vendor you prefer and I'll apply it.`
+        : `To change a vendor, use the **Change vendor** button next to the item in the right panel, or tell me the item name and your preferred vendor and I'll update it for you.`
+      setChatMessages(prev => [...prev,
+        { role: "user" as const, text: userText },
+        { role: "ai" as const, text: replyText, thinking: `User wants to change vendor${targetItem ? ` for ${targetItem.name}` : ""}. Current: ${currentVendor?.name || "TBD"}. Showing alternatives from vendor master.` },
+      ])
+      return
+    }
+    // clear-cart-confirm — destructive, deterministic, never LLM
+    if (action === "clear-cart-confirm") {
+      setConfirmedItems([])
+      pendingNewItemRef.current = null
+      setRoundAComplete(false)
+      setRoundBComplete(false)
+      setShowVendorOverride(false)
+      setVendorOverrides({})
+      setRightPanelView("items")
+      setChatMessages(prev => [...prev,
+        { role: "user" as const, text: label || "Yes, clear cart" },
+        { role: "ai" as const,
+          text: `Done — your cart is now empty. What would you like to add?`,
+          thinking: `User confirmed clearing cart. Cart reset to 0 items.`,
+          actions: [{ label: "Add Items", primary: true, action: "open-picker" }] },
+      ])
+      return
+    }
+    if (action === "dismiss-clear-cart") {
+      setChatMessages(prev => [...prev,
+        { role: "user" as const, text: label || "No, keep items" },
+        { role: "ai" as const, text: `No problem — your items are still in the cart.` },
+      ])
+      return
+    }
+    // proceed-to-vendor — deterministic, never LLM — same function as "Confirm Items & Set Vendors" button
+    if (action === "proceed-to-vendor") {
+      setChatMessages(prev => [...prev, { role: "user" as const, text: label || "Yes, proceed to vendor matching →" }])
+      handleProceedToVendor()
+      return
+    }
     // Special case: open-picker and edit-items don't go through LLM — open directly
     if (action === "open-picker" || action === "edit-items") {
       const userText = label || (action === "edit-items" ? "Edit items" : "Open item picker")
       setChatMessages(prev => [...prev, { role:"user", text: userText }])
       setTimeout(handleOpenItemPicker, 80)
+      return
+    }
+    // browse-online — open right panel marketplace search, no LLM needed
+    if (action === "browse-online") {
+      const q = lastBrowseQueryRef.current || pendingNewItemRef.current?.title || "item"
+      lastBrowseQueryRef.current = q
+      setBrowseQuery(q)
+      setBrowsePlatform("shopee")
+      setBrowseLoading(true)
+      setRightWidth(null)
+      setTimeout(() => setBrowseLoading(false), 900)
+      setChatMessages(prev => [...prev,
+        { role: "user" as const, text: label || "Source more options →" },
+        { role: "ai" as const,
+          text: `Searching Shopee, Lazada, 1688 and Google for **"${q}"** — results are loading in the right panel.\n\nPick any result to add it to your cart, or edit the search term in the panel to narrow down.`,
+          thinking: `Opening online browse for "${q}". Pre-cart sourcing mode.`,
+        },
+      ])
       return
     }
     // All other actions: post button label as user message, route through Groq
@@ -2253,7 +3766,6 @@ export default function NewPRPage() {
       const msg: ChatMsg = { role:"ai", text: reply.text, actions: reply.buttons }
       setChatMessages(prev => [...prev, msg])
       if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
-      if (reply.action === "proceed-to-vendor") handleProceedToVendor()
       if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
       if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
@@ -2268,6 +3780,11 @@ export default function NewPRPage() {
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior:"smooth" })
   }, [chatState, processStep, chatMessages, isChatThinking])
+
+  // Auto-focus chat input on mount and whenever thinking stops
+  React.useEffect(() => {
+    if (!isChatThinking) chatInputRef.current?.focus()
+  }, [isChatThinking])
 
   // rightPanelView is switched explicitly inside handleProceedToVendor — no auto-effect needed
 
@@ -2393,6 +3910,36 @@ export default function NewPRPage() {
     setTimeout(() => setBrowseLoading(false), 600)
   }
 
+  // Browse results for pre-cart sourcing (query string, no ConfirmedItem required)
+  const getBrowseResultsByKw = (query: string, platform: "google" | "shopee" | "lazada" | "1688"): BrowseResult[] => {
+    const dummy: ConfirmedItem = {
+      code: "BROWSE", name: query, spec: "", uom: "unit", unitPrice: 0,
+      itemType: "standard", purchaseType: "opex", glCode: "", vendorCode: "",
+      moq: 1, qty: 1, stockSkipped: false,
+    }
+    return getBrowseResults(dummy, platform)
+  }
+
+  // Pre-cart browse: user selects online result → stage as new item pending approval
+  const handleSelectBrowseResultForCart = (result: BrowseResult) => {
+    pendingNewItemRef.current = {
+      title: result.title, spec: `${result.seller} · ${result.price}`,
+      price: result.priceNum, uom: "unit",
+      sourcePlatform: browsePlatform, sourceUrl: result.url || "",
+      source: "browse", shop: result.seller,
+    }
+    setBrowseQuery("")
+    setChatMessages(prev => [...prev, {
+      role: "ai" as const,
+      text: `Found **${result.title}** from **${result.seller}** at ${result.price}.\n\nThis will be registered as a **new item request** and go through item master approval before the PR is processed.\n\nWant to add it to your cart?`,
+      thinking: `User selected browse result: "${result.title}" from ${result.seller} at RM ${result.priceNum}. Staging as new item request.`,
+      actions: [
+        { label: "Add as new item", primary: true, action: "add-new-item-from-url" },
+        { label: "Keep browsing", primary: false, action: "browse-online" },
+      ],
+    }])
+  }
+
   const handleBrowsePlatformChange = (p: "google" | "shopee" | "lazada" | "1688") => {
     setBrowsePlatform(p)
     setBrowseLoading(true)
@@ -2411,6 +3958,7 @@ export default function NewPRPage() {
     flexDirection:"column",
     flex: rightWidth ? `0 0 ${rightWidth}px` : "1 1 0",
     minWidth: 0,
+    minHeight: 0,
   }
 
   return (
@@ -2428,13 +3976,7 @@ export default function NewPRPage() {
 
             {/* Back button */}
             <div className="absolute top-5 left-5">
-              <button onClick={() => router.push("/p2p/purchase-requests")}
-                className="flex items-center gap-1.5 cursor-pointer transition-opacity hover:opacity-70">
-                <div className="size-6 rounded-lg flex items-center justify-center">
-                  <ChevronLeft size={16} color="#FFFFFF" strokeWidth={1.67}/>
-                </div>
-                <span className="text-[12px] font-light text-white">Purchase Requests</span>
-              </button>
+              <PageBackButton href="/p2p/purchase-requests" label="Purchase Requests" />
             </div>
 
             {/* Jomie logomark */}
@@ -2586,13 +4128,7 @@ export default function NewPRPage() {
         {/* ── Header ── */}
         <div className="shrink-0 pb-6" style={{ borderBottom:`1px solid ${T.border}` }}>
           <div className="flex items-center justify-between mb-1.5">
-            <button onClick={() => router.push("/p2p/purchase-requests")}
-              className="flex items-center gap-1.5 cursor-pointer transition-opacity hover:opacity-70">
-              <div className="size-6 rounded-lg flex items-center justify-center">
-                <ChevronLeft size={16} color="#FFFFFF" strokeWidth={1.67}/>
-              </div>
-              <span className="text-[12px] font-light text-white">Purchase Request / New Request</span>
-            </button>
+            <PageBackButton href="/p2p/purchase-requests" label="Purchase Request / New Request" />
             <span className="px-2 py-0.5 rounded-md text-[12px]"
               style={{ background: T.indigoBadgeBg, color: T.indigoBadgeFg }}>
               {savedPRId ? `${savedPRId} · Pending` : draftPRId ? `${draftPRId} · Draft` : "Draft"}
@@ -2635,7 +4171,7 @@ export default function NewPRPage() {
               <span className="text-[12px] font-light" style={{ color: T.dimText }}>Friday 2:20pm</span>
               <span className="text-[12px] font-bold text-white">Lim Wei Xiang</span>
             </div>
-            <div className="w-fit max-w-[85%] px-3.5 py-2.5 text-[14px] text-white leading-5"
+            <div className="w-fit max-w-[85%] px-3.5 py-2.5 text-[14px] text-white leading-5 break-all"
               style={{ background:"rgba(255,255,255,0.05)", borderRadius:12 }}>
               {submittedMessage}
             </div>
@@ -2831,7 +4367,7 @@ export default function NewPRPage() {
                     <span className="text-[12px] font-light" style={{ color: T.dimText }}>Just now</span>
                     <span className="text-[12px] font-bold text-white">Lim Wei Xiang</span>
                   </div>
-                  <div className="w-fit max-w-[85%] px-3.5 py-2.5 text-[14px] text-white leading-5"
+                  <div className="w-fit max-w-[85%] px-3.5 py-2.5 text-[14px] text-white leading-5 break-words whitespace-pre-wrap"
                     style={{ background:"rgba(255,255,255,0.05)", borderRadius:12 }}>
                     {msg.text}
                   </div>
@@ -2930,17 +4466,26 @@ export default function NewPRPage() {
                     · type /add-item anytime to reopen
                   </span>
                 </div>
-                <button
-                  onClick={handleDoneItemPicker}
-                  className="flex items-center gap-1.5 px-3 h-7 rounded-lg text-[11px] font-semibold cursor-pointer transition-all"
-                  style={{
-                    background: confirmedItems.length > 0 ? "rgba(29,158,117,0.15)" : "rgba(255,255,255,0.06)",
-                    color: confirmedItems.length > 0 ? "#1D9E75" : "rgba(255,255,255,0.4)",
-                    border:`1px solid ${confirmedItems.length > 0 ? "rgba(29,158,117,0.4)" : "rgba(103,100,136,0.3)"}`,
-                  }}>
-                  <Check size={10} strokeWidth={2.5}/>
-                  Done{confirmedItems.length > 0 ? ` — ${confirmedItems.length} in cart` : ""}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setChatState("questioning")}
+                    className="flex items-center justify-center size-7 rounded-lg cursor-pointer transition-all"
+                    style={{ background:"rgba(255,255,255,0.06)", color:"rgba(255,255,255,0.4)", border:"1px solid rgba(103,100,136,0.3)" }}
+                    title="Dismiss">
+                    <X size={12} strokeWidth={2}/>
+                  </button>
+                  <button
+                    onClick={handleDoneItemPicker}
+                    className="flex items-center gap-1.5 px-3 h-7 rounded-lg text-[11px] font-semibold cursor-pointer transition-all"
+                    style={{
+                      background: confirmedItems.length > 0 ? "rgba(29,158,117,0.15)" : "rgba(255,255,255,0.06)",
+                      color: confirmedItems.length > 0 ? "#1D9E75" : "rgba(255,255,255,0.4)",
+                      border:`1px solid ${confirmedItems.length > 0 ? "rgba(29,158,117,0.4)" : "rgba(103,100,136,0.3)"}`,
+                    }}>
+                    <Check size={10} strokeWidth={2.5}/>
+                    Done{confirmedItems.length > 0 ? ` — ${confirmedItems.length} in cart` : ""}
+                  </button>
+                </div>
               </div>
 
               {/* Search input */}
@@ -3106,16 +4651,22 @@ export default function NewPRPage() {
             )}
           <div className="flex flex-col" style={{
             background:"#FFFFFF", border:`2px solid ${T.border}`,
-            borderRadius:20, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
+            borderRadius:20, boxShadow:"0px 1px 2px rgba(16,24,40,0.05)", overflow:"hidden",
           }}>
             <textarea
+              ref={chatInputRef}
               value={chatState === "questioning" ? questioningInput : inputValue}
-              onChange={e => chatState === "questioning" ? handleQuestioningInput(e.target.value) : setInputValue(e.target.value)}
+              onChange={e => {
+                const v = e.target.value
+                chatState === "questioning" ? handleQuestioningInput(v) : setInputValue(v)
+                e.target.style.height = "auto"
+                e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px"
+              }}
               onKeyDown={chatState === "questioning" ? handleQuestioningKeyDown : handleChatKeyDown}
-              placeholder={chatState === "questioning" ? "Ask Jomie anything, or type /add-item + Send to open item picker…" : "Ask Jomie anything about this PR… (↵ to send, ⇧↵ for new line)"}
+              placeholder={chatState === "questioning" ? "Ask Jomie anything, or type /add-item + Send to open item picker… (⇧↵ for new line)" : "Ask Jomie anything about this PR… (⇧↵ for new line)"}
               rows={3}
               className="w-full resize-none px-4 pt-4 pb-2 text-[14px] leading-5 placeholder-gray-400 border-0 focus:outline-none bg-transparent text-gray-700"
-              style={{ fontFamily:"Inter, sans-serif" }}
+              style={{ fontFamily:"Inter, sans-serif", minHeight:72, maxHeight:180, overflowY:"auto" }}
             />
             <div className="flex items-center justify-between px-4 pb-3.5 pt-1">
               <button className="size-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors hover:bg-gray-50"
@@ -3130,14 +4681,21 @@ export default function NewPRPage() {
                 </button>
                 <button
                   onClick={chatState === "questioning" ? handleQuestioningSend : handleSend}
-                  className="flex items-center justify-center px-3.5 h-8 rounded-lg text-[14px] font-medium text-white transition-all cursor-pointer"
+                  disabled={isChatThinking}
+                  className="flex items-center justify-center h-8 rounded-lg text-[14px] font-medium text-white transition-all cursor-pointer"
                   style={{
+                    width: isChatThinking ? 32 : undefined,
+                    padding: isChatThinking ? 0 : "0 14px",
                     background: (chatState === "questioning" ? questioningInput.trim() : inputValue.trim()) && !isChatThinking ? T.purple : "rgba(93,94,244,0.35)",
                     border:`1px solid ${(chatState === "questioning" ? questioningInput.trim() : inputValue.trim()) && !isChatThinking ? T.purple : "transparent"}`,
                     boxShadow:"0px 1px 2px rgba(16,24,40,0.05)",
-                    opacity: isChatThinking ? 0.5 : 1,
                   }}>
-                  {isChatThinking ? "…" : "Send"}
+                  {isChatThinking ? (
+                    <svg className="animate-spin" width={15} height={15} viewBox="0 0 15 15" fill="none">
+                      <circle cx="7.5" cy="7.5" r="6" stroke="rgba(255,255,255,0.3)" strokeWidth="2"/>
+                      <path d="M7.5 1.5A6 6 0 0 1 13.5 7.5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                  ) : "Send"}
                 </button>
               </div>
             </div>
@@ -3197,7 +4755,7 @@ export default function NewPRPage() {
       <div style={rightPanelStyle}>
 
         {/* ══ Universal nav header — shown on all views except item-picking and browse ══ */}
-        {chatState !== "item-picking" && !browseItem && (() => {
+        {chatState !== "item-picking" && !browseItem && !browseQuery && (() => {
           const NAV_TABS: { key: RightPanelView; label: string; enabled: boolean }[] = [
             { key: "items",   label: "Items",   enabled: confirmedItems.length > 0 },
             { key: "vendors", label: "Vendors", enabled: roundAComplete },
@@ -3296,12 +4854,22 @@ export default function NewPRPage() {
           )
         })()}
 
+        {/* ══ Skeleton loading overlay ══ */}
+        {rightPanelSkeletonType ? (
+          <div className="flex-1 overflow-hidden">
+            {rightPanelSkeletonType === "vendors" ? <VendorGroupSkeleton /> :
+             rightPanelSkeletonType === "preview" ? <ItemPreviewSkeleton /> :
+             <CartSkeleton />}
+          </div>
+        ) : null}
+
         {/* ══ Cart mode (item-picking) ══ */}
-        {chatState === "item-picking" ? (
+        {rightPanelSkeletonType ? null : chatState === "item-picking" ? (
           <CartPanel
             items={confirmedItems}
             onQtyChange={handleItemQtyChange}
             onRemove={handleItemRemove}
+            onUpdate={handleItemUpdate}
             onConfirm={() => { handleConfirmAllItems(); handleDoneItemPicker() }}
           />
         ) : rightPanelView === "vendors" && roundAComplete ? (
@@ -3309,26 +4877,61 @@ export default function NewPRPage() {
             confirmedItems={confirmedItems}
             onVendorSelect={(itemCode, vendorCode, vendorName) => handleItemVendorOverride(itemCode, vendorCode, vendorName, true)}
             onBrowse={(item) => { setBrowseItem(item); setRightPanelView("review") }}
-            onConfirm={handleConfirmVendorOverride}
+            onConfirm={() => postUserMessage("Confirm vendor grouping →", handleConfirmVendorMatching)}
+            onEditVendors={() => postUserMessage("Edit vendor grouping", () => {
+              setRoundBComplete(false)
+              setChatMessages(prev => [...prev, {
+                role: "ai" as const,
+                text: "Sure — vendor grouping is unlocked. Make your changes and confirm again when you're ready.",
+                actions: [{ label: "Confirm vendor grouping →", primary: true, action: "confirm-vendors" }],
+              }])
+            })}
+            confirmed={roundBComplete}
             hideHeader
           />
-        ) : browseItem ? (
+        ) : browseItem || browseQuery ? (
           <div className="flex flex-col h-full">
             {/* Browse header */}
             <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <div className="flex items-center gap-2">
-                  <Search size={13} style={{ color: T.purple, flexShrink:0 }}/>
-                  <span className="text-[12px] font-semibold text-gray-700 truncate">
-                    Sourcing: {browseItem.name}
-                  </span>
-                </div>
-                <span className="text-[9px] text-gray-400 ml-5">
-                  Compare prices · pick a seller · Jomie will tag it as your preference
-                </span>
+              <div className="flex flex-col gap-0.5 min-w-0 flex-1 mr-2">
+                {browseQuery && !browseItem ? (
+                  // Pre-cart sourcing mode — editable search input
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Search size={13} style={{ color: T.purple, flexShrink:0 }}/>
+                      <input
+                        value={browseQuery}
+                        onChange={e => setBrowseQuery(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") {
+                            setBrowseLoading(true)
+                            lastBrowseQueryRef.current = browseQuery
+                            setTimeout(() => setBrowseLoading(false), 900)
+                          }
+                        }}
+                        className="flex-1 text-[12px] font-semibold text-gray-700 bg-transparent border-0 focus:outline-none min-w-0"
+                        placeholder="Search item..."
+                      />
+                    </div>
+                    <span className="text-[9px] text-gray-400 ml-5">Edit and press Enter to re-search · pick a result to add to cart</span>
+                  </>
+                ) : (
+                  // Vendor-override mode — fixed item name
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Search size={13} style={{ color: T.purple, flexShrink:0 }}/>
+                      <span className="text-[12px] font-semibold text-gray-700 truncate">
+                        Sourcing: {browseItem?.name}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-gray-400 ml-5">
+                      Compare prices · pick a seller · Jomie will tag it as your preference
+                    </span>
+                  </>
+                )}
               </div>
               <button
-                onClick={() => { setBrowseItem(null) }}
+                onClick={() => { setBrowseItem(null); setBrowseQuery("") }}
                 className="size-6 rounded-lg flex items-center justify-center shrink-0 cursor-pointer transition-colors hover:bg-gray-100">
                 <X size={12} style={{ color:"#9CA3AF" }}/>
               </button>
@@ -3367,11 +4970,12 @@ export default function NewPRPage() {
                     <Skeleton className="h-2 w-1/2 bg-gray-200"/>
                   </div>
                 ))
-              ) : getBrowseResults(browseItem, browsePlatform).map(result => {
+              ) : (browseItem ? getBrowseResults(browseItem, browsePlatform) : getBrowseResultsByKw(browseQuery, browsePlatform)).map(result => {
                 const platformColors: Record<string, string> = { shopee:"#EE4D2D", lazada:"#0F146D", "1688":"#E31837", google:"#4285F4" }
                 const pc = platformColors[browsePlatform]
-                const isCheaper = result.priceNum < browseItem.unitPrice
-                const saving = browseItem.unitPrice - result.priceNum
+                const isCheaper = browseItem ? result.priceNum < browseItem.unitPrice : false
+                const saving = browseItem ? browseItem.unitPrice - result.priceNum : 0
+                const isPreCart = !browseItem && !!browseQuery
                 return (
                   <div key={result.id}
                     className="flex flex-col gap-2 p-3 rounded-xl border cursor-pointer transition-all hover:shadow-sm hover:border-gray-300"
@@ -3390,6 +4994,12 @@ export default function NewPRPage() {
                             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0"
                               style={{ background:"#DCFCE7", color:"#16A34A" }}>
                               Save RM {saving.toLocaleString()} vs master price
+                            </span>
+                          )}
+                          {isPreCart && (
+                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                              style={{ background:"#EEF2FF", color:"#5D5EF4" }}>
+                              New item request
                             </span>
                           )}
                         </div>
@@ -3412,11 +5022,11 @@ export default function NewPRPage() {
                         <span className="text-[9px] text-gray-400">{result.delivery}</span>
                       </div>
                       <button
-                        onClick={() => handleSelectBrowseResult(result)}
+                        onClick={() => isPreCart ? handleSelectBrowseResultForCart(result) : handleSelectBrowseResult(result)}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-semibold shrink-0 cursor-pointer transition-all hover:opacity-80"
                         style={{ background: T.purple, color:"#fff" }}>
                         <Check size={9} strokeWidth={2.5}/>
-                        Use this seller
+                        {isPreCart ? "Add to cart" : "Use this seller"}
                       </button>
                     </div>
                   </div>
@@ -3438,38 +5048,37 @@ export default function NewPRPage() {
         ) : (
           <>{/* ══ PR Preview / navigated view ══ */}
 
-          {/* ── Items view: read-only cart summary ── */}
+          {/* ── Items view: cart summary with new-item details ── */}
           {rightPanelView === "items" && confirmedItems.length > 0 ? (
-            <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Cart — {confirmedItems.length} items</span>
-                <span className="text-[12px] font-semibold text-gray-700">
-                  RM {confirmedItems.reduce((s,i)=>s+i.qty*i.unitPrice,0).toLocaleString()}
-                </span>
+            <div style={{ display:"flex", flexDirection:"column", flex:"1 1 0", minHeight:0 }}>
+              <div style={{ flex:"1 1 0", minHeight:0, overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:10 }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Cart — {confirmedItems.length} items</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-semibold text-gray-700">RM {confirmedItems.reduce((s,i)=>s+i.qty*i.unitPrice,0).toLocaleString()}</span>
+                    <button
+                      onClick={() => { setRightPanelView("review"); setTimeout(handleOpenItemPicker, 80) }}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold cursor-pointer transition-colors"
+                      style={{ background:"#EEEDFE", color:"#5D5EF4" }}>
+                      <Plus size={9} strokeWidth={2.5}/>
+                      Add / Edit
+                    </button>
+                  </div>
+                </div>
+                {confirmedItems.map(item => (
+                  <RightPanelItemRow key={item.code} item={item} onUpdate={handleItemUpdate}
+                    onRemove={handleItemRemove} />
+                ))}
               </div>
-              {confirmedItems.map(item => (
-                <div key={item.code} className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0">
-                  <div className="size-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: T.purpleLight }}>
-                    <Package size={14} style={{ color: T.purple }}/>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold text-gray-800 leading-tight truncate">{item.name}</div>
-                    <div className="text-[11px] text-gray-400 mt-0.5">{item.code}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[11px] text-gray-500">×{item.qty}</span>
-                      {item.unitPrice > 0
-                        ? <span className="text-[11px] font-medium text-gray-700">RM {(item.qty * item.unitPrice).toLocaleString()}</span>
-                        : <span className="text-[11px] text-amber-500">Price TBD</span>
-                      }
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => { setRightPanelView("review"); setTimeout(handleOpenItemPicker, 80) }}
-                    className="text-[11px] text-purple-400 hover:text-purple-600 shrink-0 mt-0.5 cursor-pointer transition-colors">
-                    Edit
+              {!roundBComplete && (
+                <div className="px-4 py-3 border-t border-gray-100">
+                  <button onClick={() => postUserMessage("Confirm Items & Set Vendors →", handleProceedToVendor)}
+                    className="w-full py-2.5 rounded-xl text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ background: T.purple }}>
+                    Confirm Items &amp; Set Vendors →
                   </button>
                 </div>
-              ))}
+              )}
             </div>
 
           ) : rightPanelView === "budget" || rightPanelView === "context" ? (

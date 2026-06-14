@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter, useParams } from "next/navigation"
 import { getSavedPRs, SEED_IDS } from "@/lib/pr-store"
 import { cn } from "@/lib/utils"
+import { PageBackButton } from "@/components/ui/page-back-button"
 import {
   TooltipProvider, Tooltip, TooltipTrigger, TooltipContent,
 } from "@/components/ui/tooltip"
@@ -785,18 +786,7 @@ export default function PRDetailView() {
             {/* ── Header ── */}
             <div className="pb-4 shrink-0" style={{ borderBottom:`1px solid ${T.darkBorder}` }}>
               <div className="flex items-center gap-1.5 mb-2">
-                <button
-                  onClick={() => router.push("/p2p/purchase-requests")}
-                  className="group flex items-center gap-1.5 cursor-pointer">
-                  <div className="size-6 rounded-lg flex items-center justify-center transition-colors"
-                    onMouseEnter={e => (e.currentTarget.style.background="rgba(255,255,255,0.15)")}
-                    onMouseLeave={e => (e.currentTarget.style.background="transparent")}>
-                    <ChevronLeft size={16} color="#FFFFFF" strokeWidth={1.67}/>
-                  </div>
-                  <span className="text-[12px] font-light text-white opacity-70 group-hover:opacity-100 transition-opacity">
-                    Purchase Request / {prData.id}
-                  </span>
-                </button>
+                <PageBackButton href="/p2p/purchase-requests" label={`Purchase Request / ${prData.id}`} />
               </div>
               <div className="flex items-center gap-3 flex-wrap">
                 <InlineEditableTitle
