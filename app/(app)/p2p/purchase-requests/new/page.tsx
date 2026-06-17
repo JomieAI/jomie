@@ -1020,7 +1020,7 @@ You have all the context. Now do ALL of the following in a single reply:
 
 4. REPLY TEXT: Confident, concise — 3–5 lines max.
    Lead with what you're suggesting, not with a question.
-   End with: "Ready to confirm these items and move to vendor matching?"
+   End with: "Your PR is being prepared — review the details on the right and submit when ready."
 
 ══════════════════════════════════════════════
 
@@ -3536,8 +3536,16 @@ export default function NewPRPage() {
   }
 
   const handleQuestionFlowComplete = (answers: Record<string, string>, intent: string) => {
-    // Build bundled summary text
-    const answerValues = Object.values(answers).filter(v => v && v !== "(skipped)")
+    // Build bundled summary text — translate start:* tokens to readable labels
+    const startTokenLabels: Record<string, string> = {
+      "start:asap": "ASAP",
+      "start:next_week": "starting next week",
+      "start:next_month": "starting next month",
+      "start:two_months": "starting in 2–3 months",
+    }
+    const answerValues = Object.values(answers)
+      .filter(v => v && v !== "(skipped)")
+      .map(v => startTokenLabels[v] ?? v)
     const bundledText = answerValues.join(" · ")
 
     // Deterministically update prefillContext from answers
@@ -3550,19 +3558,19 @@ export default function NewPRPage() {
       ? `${justParts.join(". ")}${deptClean ? ` for ${deptClean} department` : ""}${timelineRaw ? `, ${timelineRaw}` : ""}.`
       : ""
 
-    // Parse relative date tokens to actual dates (base: 2026-06-17)
+    // Parse relative date tokens to YYYY-MM-DD (required by HTML date input)
     const parseRelativeDate = (token: string): string => {
-      const base = new Date(2026, 5, 17) // June 17 2026
-      const fmt = (d: Date) => `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`
+      const base = new Date()
+      const fmt = (d: Date) => d.toISOString().slice(0, 10)
       if (token.includes("start:asap")) return fmt(base)
       if (token.includes("start:next_week")) { base.setDate(base.getDate()+7); return fmt(base) }
       if (token.includes("start:next_month")) { base.setMonth(base.getMonth()+1); return fmt(base) }
       if (token.includes("start:two_months")) { base.setMonth(base.getMonth()+2); return fmt(base) }
-      if (token.includes("this week")) { base.setDate(base.getDate()+3); return fmt(base) }
+      if (token.includes("this week")) { base.setDate(base.getDate()+4); return fmt(base) }
       if (token.includes("next week")) { base.setDate(base.getDate()+7); return fmt(base) }
-      if (token.includes("end of month")) return `30/06/2026`
+      if (token.includes("end of month")) { return new Date(base.getFullYear(), base.getMonth()+1, 0).toISOString().slice(0,10) }
       if (token.includes("next month")) { base.setMonth(base.getMonth()+1); return fmt(base) }
-      if (token.includes("today")) return fmt(base)
+      if (token.includes("today") || token.includes("asap")) return fmt(base)
       return ""
     }
     const requiredByDate = parseRelativeDate(timelineRaw)
