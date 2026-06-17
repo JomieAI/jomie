@@ -4421,7 +4421,8 @@ export default function NewPRPage() {
           : `Added **${master.name}** (${master.code}) at RM ${master.unitPrice} to your cart.\n\nReady to proceed to vendor matching, or do you need more items?`
         const postAddMissing = getMissingContext(purchaseIntent, prefillContext)
         const postAddQuestions = purchaseIntent ? INTENT_QUESTION_FLOWS[purchaseIntent] : undefined
-        const showQuestionFlow = postAddMissing.length > 0 && !!postAddQuestions
+        // Only show widget in Round A — never after vendor matching has started
+        const showQuestionFlow = postAddMissing.length > 0 && !!postAddQuestions && !roundAComplete
         setChatMessages(prev => [...prev,
           { role: "user" as const, text: label || `Add ${master.name}` },
           { role: "ai" as const,
