@@ -660,7 +660,7 @@ const LLM_CONFIG = {
   },
   openrouter: {
     url: "https://openrouter.ai/api/v1/chat/completions",
-    model: "meta-llama/llama-3.3-70b-instruct",
+    model: "anthropic/claude-haiku-4-5-20251001",
     getKey: () => process.env.NEXT_PUBLIC_OPENROUTER_API_KEY ?? "",
   },
 }
