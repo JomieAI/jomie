@@ -612,6 +612,39 @@ If you cannot propose items because context is insufficient:
 - Max 3 questions, all in the same reply
 - Format: bullet points, conversational tone
 - After asking, still include action "open-picker" so user can browse while they think
+- Use EXACTLY the question set for the classified intent below — do not invent generic questions
+
+INTENT-SPECIFIC QUESTIONS (use when you cannot propose items):
+
+FIXED_ASSET (laptops, servers, furniture, equipment):
+- Which department is this for, and who are the end users?
+- Any spec requirements? (e.g. brand, RAM, storage, or "standard corporate setup" is fine)
+- When do you need it by?
+
+RAW_MATERIAL (production inputs, inventory stock):
+- What's the production order or batch reference this is for?
+- What quantity do you need, and what's the required delivery date?
+- Any preferred supplier or brand?
+
+NON_TRADE (office supplies, subscriptions, admin expenses):
+- Which department is requesting this?
+- Is this a one-time purchase or recurring (monthly / annual)?
+- Any quantity or spec requirements?
+
+SERVICES (IT support, cleaning, consultancy, outsourced work):
+- What exactly do you need the vendor to do? (scope / deliverable)
+- What's the contract period? (start date and duration)
+- Do you have a preferred vendor, or open to suggestions?
+
+MAINTENANCE (repairs, servicing, spare parts):
+- Which asset needs servicing? (name, model, or asset tag)
+- What's the issue or service needed?
+- Is this urgent / breakdown, or a scheduled maintenance?
+
+MARKETING_EVENT (events, campaigns, exhibitions):
+- What's the event name and purpose?
+- When is the event?
+- What's the total approved budget ceiling for this event?
 
 ══════════════════════════════════════════════
 STEP 5 — ALWAYS INCLUDE prefill_context IN PAYLOAD
@@ -4612,19 +4645,29 @@ export default function NewPRPage() {
                   )}
                   <div className="text-[14px] text-white leading-5">
                     {msg.text.split("\n").map((line, li) => {
-                      if (line.startsWith("- ") || line.startsWith("• ")) {
-                        const content = line.replace(/^[-•]\s/, "")
-                        return (
-                          <div key={li} className="flex gap-1.5 mt-0.5">
-                            <span style={{ color: "rgba(255,255,255,0.45)", flexShrink: 0 }}>•</span>
-                            <span>{content.split(/\*\*(.+?)\*\*/g).map((part, pi) => pi % 2 === 1 ? <strong key={pi}>{part}</strong> : part)}</span>
-                          </div>
-                        )
+                      const isBullet = line.startsWith("- ") || line.startsWith("• ")
+                      const content = isBullet ? line.slice(2) : line
+                      const bold = (str: string) => {
+                        const nodes: React.ReactNode[] = []
+                        const re = /\*\*(.+?)\*\*/g
+                        let last = 0, m: RegExpExecArray | null
+                        while ((m = re.exec(str)) !== null) {
+                          if (m.index > last) nodes.push(str.slice(last, m.index))
+                          nodes.push(<strong key={m.index}>{m[1]}</strong>)
+                          last = m.index + m[0].length
+                        }
+                        if (last < str.length) nodes.push(str.slice(last))
+                        return nodes
                       }
-                      const parts = line.split(/\*\*(.+?)\*\*/g)
+                      if (isBullet) return (
+                        <div key={li} className="flex gap-1.5 mt-0.5">
+                          <span style={{ color: "rgba(255,255,255,0.45)", flexShrink: 0 }}>•</span>
+                          <span>{bold(content)}</span>
+                        </div>
+                      )
                       return (
                         <div key={li} className={li > 0 ? "mt-0.5" : ""}>
-                          {parts.map((part, pi) => pi % 2 === 1 ? <strong key={pi}>{part}</strong> : part)}
+                          {bold(content)}
                         </div>
                       )
                     })}
