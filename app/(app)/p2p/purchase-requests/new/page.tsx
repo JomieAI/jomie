@@ -4783,6 +4783,7 @@ export default function NewPRPage() {
             { key: "budget",  label: "Budget",  enabled: false },
             { key: "context", label: "Context", enabled: false },
             { key: "review",  label: "Review",  enabled: true },
+            { key: "submit",  label: "Submit PR", enabled: roundBComplete },
           ]
           const activeLabel = NAV_TABS.find(t => t.key === rightPanelView)?.label ?? "Review"
           return (
