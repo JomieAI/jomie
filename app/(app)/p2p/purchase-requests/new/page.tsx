@@ -455,11 +455,44 @@ function buildJomieSystemPrompt(ctx: {
     `${i.code} | ${i.name} | ${i.spec} | RM ${i.unitPrice}`
   ).join("\n")
 
+  const intentQuestions: Record<string, string> = {
+    FIXED_ASSET: "- Which department is this for, and who are the end users?\n- Any spec requirements? (brand, RAM, storage, or 'standard corporate setup')\n- When do you need it by?",
+    SERVICES: "- What exactly do you need the vendor to do? (scope / deliverable)\n- What's the contract period? (start date and duration)\n- Do you have a preferred vendor, or open to suggestions?",
+    MAINTENANCE: "- Which asset needs servicing? (name, model, or asset tag)\n- What's the issue or service needed?\n- Is this urgent / breakdown, or scheduled maintenance?",
+    MARKETING_EVENT: "- What's the event name and purpose?\n- When is the event?\n- What's the total approved budget ceiling?",
+    RAW_MATERIAL: "- What's the production order or batch reference?\n- What quantity do you need, and what's the required delivery date?\n- Any preferred supplier or brand?",
+    NON_TRADE: "- Which department is requesting this?\n- Is this a one-time purchase or recurring (monthly / annual)?\n- Any quantity or spec requirements?",
+  }
+
   let stateDesc = ""
   if (!roundAComplete) {
-    stateDesc = hasItems
-      ? `CURRENT STATE: Round A — user is building their item list. They have ${confirmedItems.length} item(s) in cart:\n${confirmedItems.map(i => `  - ${i.name} x${i.qty} @ RM${i.unitPrice} (${i.code})`).join("\n")}\nHelp them confirm or adjust the cart, then guide them to vendor matching.`
-      : `CURRENT STATE: Round A — user has no items yet.\n\nAPPROVED ITEM CATALOG (use exact codes for suggest-items):\n${itemCatalog}\n\nIf the user confirms a previously suggested item (e.g. says "yes", "correct", "add it"), use action "suggest-items" with the exact item code from the catalog above. Never invent item codes.`
+    if (hasItems) {
+      const intentCtx = purchaseIntent ? `Purchase intent: ${purchaseIntent}` : "Purchase intent: not yet classified"
+      const deptKnown = prefillContext?.dept_hint ? `Department: ${prefillContext.dept_hint}` : "Department: unknown"
+      const timelineKnown = prefillContext?.timeline_hint ? `Timeline: ${prefillContext.timeline_hint}` : "Timeline: unknown"
+      const urgencyKnown = prefillContext?.urgency ? `Urgency: ${prefillContext.urgency}` : "Urgency: normal"
+      const missingCtx = [
+        !prefillContext?.dept_hint && "department",
+        !prefillContext?.timeline_hint && "timeline / required-by date",
+        purchaseIntent === "SERVICES" && "contract scope and period",
+        purchaseIntent === "MAINTENANCE" && "asset details and issue description",
+        purchaseIntent === "MARKETING_EVENT" && "event date and budget ceiling",
+      ].filter(Boolean).join(", ")
+      const followUpQ = purchaseIntent ? intentQuestions[purchaseIntent] ?? "" : ""
+      stateDesc = `CURRENT STATE: Round A — user is building their item list. They have ${confirmedItems.length} item(s) in cart:\n${confirmedItems.map(i => `  - ${i.name} x${i.qty} @ RM${i.unitPrice} (${i.code})`).join("\n")}
+
+CONTEXT CAPTURED SO FAR:
+- ${intentCtx}
+- ${deptKnown}
+- ${timelineKnown}
+- ${urgencyKnown}
+
+${missingCtx ? `MISSING CONTEXT: ${missingCtx}\nIf the user hasn't answered these yet, ask them now using ONLY these questions (do not invent others):\n${followUpQ}` : "All critical context is captured. Guide user to confirm the cart and proceed to vendor matching."}
+
+Help them confirm or adjust the cart, then guide them to vendor matching when ready.`
+    } else {
+      stateDesc = `CURRENT STATE: Round A — user has no items yet.\n\nAPPROVED ITEM CATALOG (use exact codes for suggest-items):\n${itemCatalog}\n\nIf the user confirms a previously suggested item (e.g. says "yes", "correct", "add it"), use action "suggest-items" with the exact item code from the catalog above. Never invent item codes.`
+    }
   } else if (roundAComplete && !roundBComplete) {
     const groups = buildSubPRGroups(confirmedItems)
     const groupDesc = groups.map(g =>
