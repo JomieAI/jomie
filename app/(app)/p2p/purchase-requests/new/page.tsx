@@ -258,6 +258,15 @@ interface ChatMsgAction {
   action: string   // ChatActionType or dynamic e.g. "suggest-item:CODE" / "add-new-item-from-url"
 }
 
+interface QuestionDef {
+  id: string
+  text: string
+  type: "single" | "text"
+  options?: { label: string; value: string }[]
+  placeholder?: string
+  optional?: boolean
+}
+
 interface ChipGroup {
   group: string
   items: { label: string; value: string }[]
@@ -269,6 +278,127 @@ interface ChatMsg {
   thinking?: string
   actions?: ChatMsgAction[]
   chips?: ChipGroup[]
+  questionFlow?: { intent: string; questions: QuestionDef[]; completed?: boolean }
+}
+
+const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
+  FIXED_ASSET: [
+    { id: "dept", text: "Which department is this for?", type: "single", options: [
+      { label: "IT", value: "IT department" },
+      { label: "Finance", value: "Finance department" },
+      { label: "HR", value: "HR department" },
+      { label: "Admin / General", value: "Admin department" },
+      { label: "Operations", value: "Operations department" },
+      { label: "Facilities", value: "Facilities department" },
+    ]},
+    { id: "spec", text: "Any spec requirements?", type: "single", optional: true, options: [
+      { label: "Standard corporate setup", value: "standard corporate spec" },
+      { label: "High performance (dev / design)", value: "high performance spec" },
+      { label: "Basic (admin / reception)", value: "basic spec" },
+    ], placeholder: "Or describe your spec requirements..." },
+    { id: "timeline", text: "When do you need it by?", type: "single", options: [
+      { label: "This week", value: "needed this week" },
+      { label: "Next week", value: "needed next week" },
+      { label: "End of month", value: "needed by end of month" },
+      { label: "Next month", value: "needed next month" },
+      { label: "Flexible", value: "no specific timeline" },
+    ]},
+    { id: "urgency", text: "Priority level?", type: "single", options: [
+      { label: "Normal", value: "normal priority" },
+      { label: "Urgent", value: "urgent" },
+    ]},
+    { id: "users", text: "Who are the end users? (optional)", type: "text", placeholder: "e.g. 3 new hires joining next month...", optional: true },
+  ],
+  SERVICES: [
+    { id: "dept", text: "Which department is requesting this?", type: "single", options: [
+      { label: "IT", value: "IT department" },
+      { label: "Finance", value: "Finance department" },
+      { label: "HR", value: "HR department" },
+      { label: "Operations", value: "Operations department" },
+      { label: "Admin / General", value: "Admin department" },
+      { label: "Legal", value: "Legal department" },
+    ]},
+    { id: "scope", text: "What do you need the vendor to do?", type: "text", placeholder: "e.g. On-site IT helpdesk, 8h/day Mon–Fri..." },
+    { id: "contract_length", text: "Contract length?", type: "single", options: [
+      { label: "1 month", value: "1 month contract" },
+      { label: "3 months", value: "3 months contract" },
+      { label: "6 months", value: "6 months contract" },
+      { label: "1 year", value: "1 year contract" },
+      { label: "Ongoing / no fixed end", value: "ongoing contract" },
+    ]},
+    { id: "urgency", text: "Priority level?", type: "single", options: [
+      { label: "Normal", value: "normal priority" },
+      { label: "Urgent", value: "urgent" },
+    ]},
+    { id: "vendor_pref", text: "Do you have a preferred vendor?", type: "single", optional: true, options: [
+      { label: "Open to suggestions", value: "open to vendor suggestions" },
+      { label: "Yes — I have someone in mind", value: "has preferred vendor" },
+    ]},
+  ],
+  MAINTENANCE: [
+    { id: "urgency", text: "How urgent is this?", type: "single", options: [
+      { label: "Urgent — equipment breakdown", value: "urgent, equipment breakdown" },
+      { label: "Scheduled maintenance", value: "scheduled maintenance, not urgent" },
+    ]},
+    { id: "asset", text: "Which asset needs servicing?", type: "text", placeholder: "e.g. Carrier AC Unit, Floor 3, Asset Tag FA-0042..." },
+    { id: "issue", text: "What's the issue or service needed?", type: "text", placeholder: "e.g. Compressor failure, cooling not working..." },
+    { id: "timeline", text: "When do you need it done?", type: "single", options: [
+      { label: "Today", value: "needed today" },
+      { label: "This week", value: "needed this week" },
+      { label: "Next week", value: "needed next week" },
+    ]},
+  ],
+  MARKETING_EVENT: [
+    { id: "event_name", text: "What's the event name and purpose?", type: "text", placeholder: "e.g. Q3 Client Appreciation Dinner, KL..." },
+    { id: "event_date", text: "When is the event?", type: "single", options: [
+      { label: "This week", value: "event this week" },
+      { label: "2 weeks away", value: "event in 2 weeks" },
+      { label: "Next month", value: "event next month" },
+      { label: "2–3 months away", value: "event in 2-3 months" },
+    ], placeholder: "Or enter the event date..." },
+    { id: "budget", text: "What's the total budget ceiling?", type: "single", options: [
+      { label: "Under RM 5,000", value: "budget under RM 5,000" },
+      { label: "RM 5,000 – 20,000", value: "budget RM 5,000 to RM 20,000" },
+      { label: "RM 20,000 – 50,000", value: "budget RM 20,000 to RM 50,000" },
+      { label: "Above RM 50,000", value: "budget above RM 50,000" },
+    ]},
+    { id: "vendor_pref", text: "Any preferred vendors?", type: "single", optional: true, options: [
+      { label: "Open to suggestions", value: "open to vendor suggestions" },
+      { label: "Yes — I have vendors in mind", value: "has preferred vendors" },
+    ]},
+  ],
+  RAW_MATERIAL: [
+    { id: "urgency", text: "How urgent is this?", type: "single", options: [
+      { label: "Normal", value: "normal priority" },
+      { label: "Urgent — production at risk", value: "urgent, production at risk" },
+    ]},
+    { id: "po_ref", text: "Production order or batch reference?", type: "text", placeholder: "e.g. PO-2026-0042, Batch #7, Job ref: PRJ-18..." },
+    { id: "qty_date", text: "Quantity needed and required delivery date?", type: "text", placeholder: "e.g. 500 units, needed by 30 June..." },
+    { id: "supplier", text: "Any preferred supplier or brand?", type: "single", optional: true, options: [
+      { label: "Open to suggestions", value: "open to supplier suggestions" },
+      { label: "Yes — we have a preferred supplier", value: "has preferred supplier" },
+    ]},
+  ],
+  NON_TRADE: [
+    { id: "dept", text: "Which department is requesting this?", type: "single", options: [
+      { label: "IT", value: "IT department" },
+      { label: "Finance", value: "Finance department" },
+      { label: "HR", value: "HR department" },
+      { label: "Admin / General", value: "Admin department" },
+      { label: "All departments", value: "all departments" },
+    ]},
+    { id: "frequency", text: "Is this a one-time or recurring purchase?", type: "single", options: [
+      { label: "One-time", value: "one-time purchase" },
+      { label: "Monthly recurring", value: "monthly recurring" },
+      { label: "Quarterly recurring", value: "quarterly recurring" },
+      { label: "Annual recurring", value: "annual recurring" },
+    ]},
+    { id: "urgency", text: "Priority level?", type: "single", options: [
+      { label: "Normal", value: "normal priority" },
+      { label: "Urgent", value: "urgent" },
+    ]},
+    { id: "spec", text: "Any quantity or spec requirements? (optional)", type: "text", placeholder: "e.g. 10 units, A4 80gsm, subscription for 5 users...", optional: true },
+  ],
 }
 
 const INTENT_CHIPS: Record<string, ChipGroup[]> = {
@@ -398,6 +528,170 @@ interface JomieReply {
   text: string
   actions?: ChatMsgAction[]
   sideEffect?: "open-picker" | "proceed-to-vendor" | "confirm-vendors"
+}
+
+function QuestionWidget({
+  questions,
+  onComplete,
+  onSkipAll,
+}: {
+  questions: QuestionDef[]
+  onComplete: (answers: Record<string, string>) => void
+  onSkipAll: () => void
+}) {
+  const [currentIdx, setCurrentIdx] = React.useState(0)
+  const [answers, setAnswers] = React.useState<Record<string, string>>({})
+  const [showText, setShowText] = React.useState(false)
+  const [textValue, setTextValue] = React.useState("")
+  const [selected, setSelected] = React.useState<string | null>(null)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  const current = questions[currentIdx]
+  const total = questions.length
+  const isLast = currentIdx === total - 1
+
+  React.useEffect(() => {
+    setShowText(current.type === "text")
+    setTextValue("")
+    setSelected(null)
+    if (current.type === "text") setTimeout(() => inputRef.current?.focus(), 60)
+  }, [currentIdx, current.type])
+
+  const advance = (newAnswers: Record<string, string>) => {
+    if (isLast) { onComplete(newAnswers) } else { setAnswers(newAnswers); setCurrentIdx(i => i + 1) }
+  }
+
+  const handleOptionClick = (value: string) => {
+    setSelected(value)
+    setTimeout(() => advance({ ...answers, [current.id]: value }), 180)
+  }
+
+  const handleTextNext = () => {
+    const val = textValue.trim()
+    if (!val && !current.optional) return
+    advance({ ...answers, ...(val ? { [current.id]: val } : {}) })
+  }
+
+  const handleSkip = () => advance({ ...answers })
+
+  const purple = "#5D5EF4"
+  const rowBg = "rgba(255,255,255,0.02)"
+  const rowBorder = "0.5px solid rgba(255,255,255,0.06)"
+
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.08)",
+      borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10,
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#fff", lineHeight: 1.4 }}>{current.text}</span>
+        <span style={{
+          fontSize: 10, fontWeight: 600, color: "rgba(159,161,250,0.85)",
+          background: "rgba(93,94,244,0.15)", border: "1px solid rgba(93,94,244,0.2)",
+          borderRadius: 20, padding: "2px 9px", whiteSpace: "nowrap", flexShrink: 0, letterSpacing: "0.04em",
+        }}>{currentIdx + 1} / {total}</span>
+      </div>
+
+      {/* Options */}
+      {current.options && !showText && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {current.options.map((opt, i) => {
+            const isSel = selected === opt.value
+            return (
+              <button key={i} onClick={() => handleOptionClick(opt.value)} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                background: isSel ? "rgba(93,94,244,0.12)" : rowBg,
+                border: isSel ? "0.5px solid rgba(93,94,244,0.4)" : rowBorder,
+                borderRadius: 8, padding: "9px 12px", cursor: "pointer", textAlign: "left", transition: "all 0.1s",
+              }}
+              onMouseEnter={e => { if (!isSel) { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.border = "0.5px solid rgba(255,255,255,0.1)" } }}
+              onMouseLeave={e => { if (!isSel) { e.currentTarget.style.background = rowBg; e.currentTarget.style.border = rowBorder } }}>
+                <span style={{
+                  width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: isSel ? purple : "rgba(255,255,255,0.08)",
+                  fontSize: 10, fontWeight: 600,
+                  color: isSel ? "#fff" : "rgba(255,255,255,0.4)", transition: "all 0.1s",
+                }}>{i + 1}</span>
+                <span style={{ fontSize: 13, color: isSel ? "#fff" : "rgba(255,255,255,0.72)", fontWeight: 400 }}>{opt.label}</span>
+              </button>
+            )
+          })}
+          {/* "None of these" toggle */}
+          {current.placeholder && (
+            <button onClick={() => { setShowText(true); setTimeout(() => inputRef.current?.focus(), 60) }} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              background: rowBg, border: rowBorder, borderRadius: 8, padding: "9px 12px", cursor: "pointer", textAlign: "left",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)" }}
+            onMouseLeave={e => { e.currentTarget.style.background = rowBg }}>
+              <span style={{
+                width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "rgba(255,255,255,0.06)", fontSize: 12, color: "rgba(255,255,255,0.3)",
+              }}>✎</span>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.32)", fontStyle: "italic" }}>None of these — type my answer</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Text input */}
+      {(current.type === "text" || showText) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {showText && current.options && (
+            <button onClick={() => setShowText(false)} style={{ alignSelf: "flex-start", background: "none", border: "none", color: "rgba(255,255,255,0.3)", fontSize: 11, cursor: "pointer", padding: 0 }}>
+              ← Back to options
+            </button>
+          )}
+          <input
+            ref={inputRef}
+            value={textValue}
+            onChange={e => setTextValue(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleTextNext() }}
+            placeholder={current.placeholder || "Type your answer..."}
+            style={{
+              background: "rgba(0,0,0,0.25)", border: `0.5px solid ${textValue.trim() ? "rgba(93,94,244,0.4)" : "rgba(255,255,255,0.1)"}`,
+              borderRadius: 8, padding: "9px 12px", color: "#fff", fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box",
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
+            {current.optional && (
+              <button onClick={handleSkip} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.28)", fontSize: 11, cursor: "pointer" }}>Skip</button>
+            )}
+            <button onClick={handleTextNext} disabled={!textValue.trim() && !current.optional} style={{
+              background: textValue.trim() ? purple : "rgba(93,94,244,0.25)",
+              color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px",
+              fontSize: 12, fontWeight: 600, cursor: textValue.trim() ? "pointer" : "default",
+            }}>{isLast ? "Done ✓" : "Next →"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Skip for single-select optional */}
+      {current.type === "single" && current.optional && !showText && (
+        <button onClick={handleSkip} style={{
+          background: "none", border: "none", color: "rgba(255,255,255,0.25)", fontSize: 11, cursor: "pointer", padding: "0 0 2px", textAlign: "left",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
+        onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.25)" }}>
+          Skip this question
+        </button>
+      )}
+
+      {/* Skip all */}
+      {!current.optional && currentIdx === 0 && (
+        <button onClick={onSkipAll} style={{
+          background: "none", border: "none", color: "rgba(255,255,255,0.2)", fontSize: 11, cursor: "pointer", padding: "0 0 2px", textAlign: "left",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.45)" }}
+        onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.2)" }}>
+          Skip all — proceed without context
+        </button>
+      )}
+    </div>
+  )
 }
 
 function buildItemSummaryText(items: ConfirmedItem[]): string {
@@ -3157,14 +3451,72 @@ export default function NewPRPage() {
         : reply.buttons
       const classifiedIntent = reply.payload?.prefill_context?.intent
       const isAskingQuestions = !reply.action || reply.action === "open-picker"
-      const chips = classifiedIntent && isAskingQuestions ? (INTENT_CHIPS[classifiedIntent] ?? undefined) : undefined
-      setChatMessages([{ role: "ai", text: reply.text, thinking: reply.thinking, actions: createButtons, chips }])
+      const questionFlow = classifiedIntent && isAskingQuestions && INTENT_QUESTION_FLOWS[classifiedIntent]
+        ? { intent: classifiedIntent, questions: INTENT_QUESTION_FLOWS[classifiedIntent] }
+        : undefined
+      setChatMessages([{ role: "ai", text: reply.text, thinking: reply.thinking, actions: createButtons, questionFlow }])
     }
 
     runCreate().catch((err) => {
       setIsChatThinking(false)
       setChatMessages([{ role: "ai", text: jomieErrorMessage(err), actions: [{ label:"Open item picker", primary:true, action:"open-picker" }] }])
     })
+  }
+
+  const handleQuestionFlowComplete = (answers: Record<string, string>, intent: string) => {
+    // Build bundled summary text
+    const answerValues = Object.values(answers).filter(v => v && v !== "(skipped)")
+    const bundledText = answerValues.join(" · ")
+
+    // Deterministically update prefillContext from answers
+    const deptRaw = answers.dept || ""
+    const deptClean = deptRaw.replace(" department", "").replace("Admin / General", "Admin")
+    const isUrgent = (answers.urgency || "").toLowerCase().includes("urgent")
+    const timelineRaw = answers.timeline || answers.event_date || answers.qty_date || ""
+    const justParts = [answers.scope, answers.issue, answers.event_name, answers.po_ref].filter(Boolean)
+    const justDraft = justParts.length > 0
+      ? `${justParts.join(". ")}${deptClean ? ` for ${deptClean} department` : ""}${timelineRaw ? `, ${timelineRaw}` : ""}.`
+      : ""
+
+    const newCtx = {
+      dept_hint: deptClean || prefillContext?.dept_hint || "",
+      timeline_hint: timelineRaw || prefillContext?.timeline_hint || "",
+      urgency: isUrgent ? "urgent" : "normal",
+      justification_draft: justDraft || prefillContext?.justification_draft || "",
+    }
+    setPrefillContext(newCtx)
+    if (deptClean && !prDept) setPrDept(deptClean)
+    if (isUrgent) setPrUrgency("urgent")
+    if (justDraft && !prJustification) setPrJustification(justDraft)
+
+    // Mark widget completed, post bundled user message
+    setChatMessages(prev => {
+      const updated = prev.map(m =>
+        m.questionFlow && !m.questionFlow.completed
+          ? { ...m, questionFlow: { ...m.questionFlow, completed: true } }
+          : m
+      )
+      return [...updated, { role: "user" as const, text: bundledText }]
+    })
+
+    // Proceed or ask LLM
+    const currentItems = confirmedItems
+    if (currentItems.length > 0) {
+      setChatMessages(prev => [...prev, {
+        role: "ai" as const,
+        text: "Got it — context captured. Moving to vendor matching now.",
+        thinking: `Context collected: ${bundledText}. ${currentItems.length} item(s) in cart. Proceeding deterministically.`,
+      }])
+      setTimeout(handleProceedToVendor, 400)
+    } else {
+      setIsChatThinking(true)
+      const ctx = { roundAComplete, roundBComplete, confirmedItems: currentItems, submittedMessage: bundledText, purchaseIntent: intent, prefillContext: newCtx }
+      callGroqJomie(bundledText, ctx, [...chatMessages, { role: "user" as const, text: bundledText }], null).then(reply => {
+        setIsChatThinking(false)
+        setChatMessages(prev => [...prev, { role: "ai" as const, text: reply.text, thinking: reply.thinking, actions: reply.buttons }])
+        if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+      }).catch(() => setIsChatThinking(false))
+    }
   }
 
   const handleChipClick = (value: string) => {
@@ -4035,14 +4387,22 @@ export default function NewPRPage() {
         const confirmText = src
           ? `Added **${master.name}** (${master.code}) at RM ${master.unitPrice} to your cart.\n\nSourced from **${src.sourcePlatform}** — flagged for reference in the right panel.\n\nReady to proceed to vendor matching, or do you need more items?`
           : `Added **${master.name}** (${master.code}) at RM ${master.unitPrice} to your cart.\n\nReady to proceed to vendor matching, or do you need more items?`
+        const postAddMissing = getMissingContext(purchaseIntent, prefillContext)
+        const postAddQuestions = purchaseIntent ? INTENT_QUESTION_FLOWS[purchaseIntent] : undefined
+        const showQuestionFlow = postAddMissing.length > 0 && !!postAddQuestions
         setChatMessages(prev => [...prev,
           { role: "user" as const, text: label || `Add ${master.name}` },
-          { role: "ai" as const, text: confirmText,
+          { role: "ai" as const,
+            text: showQuestionFlow
+              ? `Added **${master.name}** to your cart. Before I move to vendor matching, a few quick details:`
+              : confirmText,
             thinking: `User confirmed adding ${master.code} (${master.name}). Added to cart at RM ${master.unitPrice} × ${master.moq} ${master.uom}. Cart now has ${confirmedItems.length + 1} item(s).`,
-            actions: [
+            actions: showQuestionFlow ? undefined : [
               { label: "Proceed to vendor matching", primary: true, action: "proceed-to-vendor" },
               { label: "Add more items", primary: false, action: "open-picker" },
-            ] },
+            ],
+            questionFlow: showQuestionFlow && purchaseIntent ? { intent: purchaseIntent, questions: postAddQuestions! } : undefined,
+          },
         ])
       }
       return
@@ -4137,16 +4497,14 @@ export default function NewPRPage() {
     // proceed-to-vendor — check missing context first; gate on intent questions before allowing through
     if (action === "proceed-to-vendor") {
       const missing = getMissingContext(purchaseIntent, prefillContext)
-      if (missing.length > 0 && purchaseIntent && INTENT_QUESTIONS[purchaseIntent]) {
-        const questions = INTENT_QUESTIONS[purchaseIntent]
-        const chips = INTENT_CHIPS[purchaseIntent] ?? undefined
+      if (missing.length > 0 && purchaseIntent && INTENT_QUESTION_FLOWS[purchaseIntent]) {
+        const questions = INTENT_QUESTION_FLOWS[purchaseIntent]
         setChatMessages(prev => [...prev,
           { role: "user" as const, text: label || "Proceed to vendor matching →" },
           { role: "ai" as const,
-            text: `Before I move to vendor matching, I need a couple more details:\n${questions}`,
-            thinking: `Context missing: ${missing.join(", ")}. Blocking proceed-to-vendor and asking intent-specific questions.`,
-            actions: [{ label: "Skip — proceed anyway", primary: false, action: "proceed-to-vendor-force" }],
-            chips,
+            text: "Before proceeding, I need a few quick details:",
+            thinking: `Context missing: ${missing.join(", ")}. Showing question widget for ${purchaseIntent}.`,
+            questionFlow: { intent: purchaseIntent, questions },
           },
         ])
         return
@@ -4879,37 +5237,19 @@ export default function NewPRPage() {
                       ))}
                     </div>
                   )}
-                  {msg.chips && msg.chips.length > 0 && (
-                    <div className="flex flex-col gap-2 mt-3 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                      {msg.chips.map((group, gi) => (
-                        <div key={gi} className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] font-semibold uppercase tracking-widest w-full mb-0.5"
-                            style={{ color: "rgba(255,255,255,0.28)" }}>
-                            {group.group}
-                          </span>
-                          {group.items.map((chip, ci) => (
-                            <button
-                              key={ci}
-                              onClick={() => handleChipClick(chip.value)}
-                              className="px-2.5 py-1 rounded-full text-[12px] font-medium cursor-pointer transition-all"
-                              style={{
-                                background: "rgba(93,94,244,0.1)",
-                                color: "rgba(255,255,255,0.65)",
-                                border: "1px solid rgba(93,94,244,0.22)",
-                              }}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.background = "rgba(93,94,244,0.25)"
-                                e.currentTarget.style.color = "#fff"
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.background = "rgba(93,94,244,0.1)"
-                                e.currentTarget.style.color = "rgba(255,255,255,0.65)"
-                              }}>
-                              {chip.label}
-                            </button>
-                          ))}
-                        </div>
-                      ))}
+                  {msg.questionFlow && !msg.questionFlow.completed && (
+                    <div className="mt-3">
+                      <QuestionWidget
+                        questions={msg.questionFlow.questions}
+                        onComplete={(ans) => handleQuestionFlowComplete(ans, msg.questionFlow!.intent)}
+                        onSkipAll={handleProceedToVendor}
+                      />
+                    </div>
+                  )}
+                  {msg.questionFlow?.completed && (
+                    <div className="mt-2 flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>
+                      <span>✓</span>
+                      <span>Context collected</span>
                     </div>
                   )}
                 </>
