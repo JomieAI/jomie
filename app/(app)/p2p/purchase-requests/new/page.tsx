@@ -440,6 +440,25 @@ interface GroqReply {
   buttons?: ChatMsgAction[]
 }
 
+const INTENT_QUESTIONS: Record<string, string> = {
+  FIXED_ASSET: "- Which department is this for, and who are the end users?\n- Any spec requirements? (brand, RAM, storage, or 'standard corporate setup')\n- When do you need it by?",
+  SERVICES: "- What exactly do you need the vendor to do? (scope / deliverable)\n- What's the contract period? (start date and duration)\n- Do you have a preferred vendor, or open to suggestions?",
+  MAINTENANCE: "- Which asset needs servicing? (name, model, or asset tag)\n- What's the issue or service needed?\n- Is this urgent / breakdown, or scheduled maintenance?",
+  MARKETING_EVENT: "- What's the event name and purpose?\n- When is the event?\n- What's the total approved budget ceiling?",
+  RAW_MATERIAL: "- What's the production order or batch reference?\n- What quantity do you need, and what's the required delivery date?\n- Any preferred supplier or brand?",
+  NON_TRADE: "- Which department is requesting this?\n- Is this a one-time purchase or recurring (monthly / annual)?\n- Any quantity or spec requirements?",
+}
+
+function getMissingContext(purchaseIntent?: string, prefillContext?: { dept_hint?: string; timeline_hint?: string }): string[] {
+  const missing: string[] = []
+  if (!prefillContext?.dept_hint) missing.push("department")
+  if (!prefillContext?.timeline_hint) missing.push("timeline / required-by date")
+  if (purchaseIntent === "SERVICES") missing.push("contract scope and period")
+  if (purchaseIntent === "MAINTENANCE") missing.push("asset details and issue description")
+  if (purchaseIntent === "MARKETING_EVENT") missing.push("event date and budget ceiling")
+  return missing
+}
+
 function buildJomieSystemPrompt(ctx: {
   roundAComplete: boolean
   roundBComplete: boolean
@@ -455,15 +474,6 @@ function buildJomieSystemPrompt(ctx: {
     `${i.code} | ${i.name} | ${i.spec} | RM ${i.unitPrice}`
   ).join("\n")
 
-  const intentQuestions: Record<string, string> = {
-    FIXED_ASSET: "- Which department is this for, and who are the end users?\n- Any spec requirements? (brand, RAM, storage, or 'standard corporate setup')\n- When do you need it by?",
-    SERVICES: "- What exactly do you need the vendor to do? (scope / deliverable)\n- What's the contract period? (start date and duration)\n- Do you have a preferred vendor, or open to suggestions?",
-    MAINTENANCE: "- Which asset needs servicing? (name, model, or asset tag)\n- What's the issue or service needed?\n- Is this urgent / breakdown, or scheduled maintenance?",
-    MARKETING_EVENT: "- What's the event name and purpose?\n- When is the event?\n- What's the total approved budget ceiling?",
-    RAW_MATERIAL: "- What's the production order or batch reference?\n- What quantity do you need, and what's the required delivery date?\n- Any preferred supplier or brand?",
-    NON_TRADE: "- Which department is requesting this?\n- Is this a one-time purchase or recurring (monthly / annual)?\n- Any quantity or spec requirements?",
-  }
-
   let stateDesc = ""
   if (!roundAComplete) {
     if (hasItems) {
@@ -471,14 +481,8 @@ function buildJomieSystemPrompt(ctx: {
       const deptKnown = prefillContext?.dept_hint ? `Department: ${prefillContext.dept_hint}` : "Department: unknown"
       const timelineKnown = prefillContext?.timeline_hint ? `Timeline: ${prefillContext.timeline_hint}` : "Timeline: unknown"
       const urgencyKnown = prefillContext?.urgency ? `Urgency: ${prefillContext.urgency}` : "Urgency: normal"
-      const missingCtx = [
-        !prefillContext?.dept_hint && "department",
-        !prefillContext?.timeline_hint && "timeline / required-by date",
-        purchaseIntent === "SERVICES" && "contract scope and period",
-        purchaseIntent === "MAINTENANCE" && "asset details and issue description",
-        purchaseIntent === "MARKETING_EVENT" && "event date and budget ceiling",
-      ].filter(Boolean).join(", ")
-      const followUpQ = purchaseIntent ? intentQuestions[purchaseIntent] ?? "" : ""
+      const missingCtx = getMissingContext(purchaseIntent, prefillContext).join(", ")
+      const followUpQ = purchaseIntent ? INTENT_QUESTIONS[purchaseIntent] ?? "" : ""
       stateDesc = `CURRENT STATE: Round A — user is building their item list. They have ${confirmedItems.length} item(s) in cart:\n${confirmedItems.map(i => `  - ${i.name} x${i.qty} @ RM${i.unitPrice} (${i.code})`).join("\n")}
 
 CONTEXT CAPTURED SO FAR:
@@ -4130,9 +4134,30 @@ export default function NewPRPage() {
       ])
       return
     }
-    // proceed-to-vendor — deterministic, never LLM — same function as "Confirm Items & Set Vendors" button
+    // proceed-to-vendor — check missing context first; gate on intent questions before allowing through
     if (action === "proceed-to-vendor") {
+      const missing = getMissingContext(purchaseIntent, prefillContext)
+      if (missing.length > 0 && purchaseIntent && INTENT_QUESTIONS[purchaseIntent]) {
+        const questions = INTENT_QUESTIONS[purchaseIntent]
+        const chips = INTENT_CHIPS[purchaseIntent] ?? undefined
+        setChatMessages(prev => [...prev,
+          { role: "user" as const, text: label || "Proceed to vendor matching →" },
+          { role: "ai" as const,
+            text: `Before I move to vendor matching, I need a couple more details:\n${questions}`,
+            thinking: `Context missing: ${missing.join(", ")}. Blocking proceed-to-vendor and asking intent-specific questions.`,
+            actions: [{ label: "Skip — proceed anyway", primary: false, action: "proceed-to-vendor-force" }],
+            chips,
+          },
+        ])
+        return
+      }
       setChatMessages(prev => [...prev, { role: "user" as const, text: label || "Yes, proceed to vendor matching →" }])
+      handleProceedToVendor()
+      return
+    }
+    // proceed-to-vendor-force — user explicitly skips context questions
+    if (action === "proceed-to-vendor-force") {
+      setChatMessages(prev => [...prev, { role: "user" as const, text: label || "Skip — proceed anyway" }])
       handleProceedToVendor()
       return
     }
