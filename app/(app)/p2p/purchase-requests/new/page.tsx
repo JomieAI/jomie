@@ -3601,21 +3601,22 @@ export default function NewPRPage() {
     } else {
       setIsChatThinking(true)
       // Fix 5: one-shot call using dedicated system prompt with full context
-      const apiKey = localStorage.getItem("jomie_openrouter_key") || ""
+      const oneShotProvider = (process.env.NEXT_PUBLIC_LLM_PROVIDER ?? "groq") as "groq" | "openrouter"
+      const oneShotCfg = LLM_CONFIG[oneShotProvider] ?? LLM_CONFIG.groq
+      const oneShotKey = oneShotCfg.getKey()
       const oneShotMessages = [
         { role: "system", content: buildOneShotSystemPrompt(intent, answers, submittedMessage) },
         { role: "user", content: bundledText },
       ]
-      fetch("https://openrouter.ai/api/v1/chat/completions", {
+      fetch(oneShotCfg.url, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          "Authorization": `Bearer ${oneShotKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://jomie.app",
-          "X-Title": "Jomie",
+          ...(oneShotProvider === "openrouter" ? { "HTTP-Referer": "https://jomie.app", "X-Title": "Jomie" } : {}),
         },
         body: JSON.stringify({
-          model: "anthropic/claude-3-5-haiku",
+          model: oneShotCfg.model,
           messages: oneShotMessages,
           temperature: 0.3,
           max_tokens: 900,
