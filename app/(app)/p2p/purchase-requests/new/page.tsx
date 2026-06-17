@@ -332,6 +332,12 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "1 year", value: "1 year contract" },
       { label: "Ongoing / no fixed end", value: "ongoing contract" },
     ]},
+    { id: "start_date", text: "When do you need this to start?", type: "single", options: [
+      { label: "ASAP", value: "start:asap" },
+      { label: "Next week", value: "start:next_week" },
+      { label: "Next month", value: "start:next_month" },
+      { label: "In 2–3 months", value: "start:two_months" },
+    ]},
     { id: "urgency", text: "Priority level?", type: "single", options: [
       { label: "Normal", value: "normal priority" },
       { label: "Urgent", value: "urgent" },
@@ -3504,11 +3510,28 @@ export default function NewPRPage() {
     const deptRaw = answers.dept || ""
     const deptClean = deptRaw.replace(" department", "").replace("Admin / General", "Admin")
     const isUrgent = (answers.urgency || "").toLowerCase().includes("urgent")
-    const timelineRaw = answers.timeline || answers.event_date || answers.qty_date || ""
+    const timelineRaw = answers.timeline || answers.event_date || answers.qty_date || answers.start_date || ""
     const justParts = [answers.scope, answers.issue, answers.event_name, answers.po_ref].filter(Boolean)
     const justDraft = justParts.length > 0
       ? `${justParts.join(". ")}${deptClean ? ` for ${deptClean} department` : ""}${timelineRaw ? `, ${timelineRaw}` : ""}.`
       : ""
+
+    // Parse relative date tokens to actual dates (base: 2026-06-17)
+    const parseRelativeDate = (token: string): string => {
+      const base = new Date(2026, 5, 17) // June 17 2026
+      const fmt = (d: Date) => `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`
+      if (token.includes("start:asap")) return fmt(base)
+      if (token.includes("start:next_week")) { base.setDate(base.getDate()+7); return fmt(base) }
+      if (token.includes("start:next_month")) { base.setMonth(base.getMonth()+1); return fmt(base) }
+      if (token.includes("start:two_months")) { base.setMonth(base.getMonth()+2); return fmt(base) }
+      if (token.includes("this week")) { base.setDate(base.getDate()+3); return fmt(base) }
+      if (token.includes("next week")) { base.setDate(base.getDate()+7); return fmt(base) }
+      if (token.includes("end of month")) return `30/06/2026`
+      if (token.includes("next month")) { base.setMonth(base.getMonth()+1); return fmt(base) }
+      if (token.includes("today")) return fmt(base)
+      return ""
+    }
+    const requiredByDate = parseRelativeDate(timelineRaw)
 
     const newCtx = {
       dept_hint: deptClean || prefillContext?.dept_hint || "",
@@ -3520,6 +3543,7 @@ export default function NewPRPage() {
     if (deptClean && !prDept) setPrDept(deptClean)
     if (isUrgent) setPrUrgency("urgent")
     if (justDraft && !prJustification) setPrJustification(justDraft)
+    if (requiredByDate && !prRequiredBy) setPrRequiredBy(requiredByDate)
 
     // Mark widget completed, post bundled user message
     setChatMessages(prev => {
@@ -3714,6 +3738,23 @@ export default function NewPRPage() {
         if (p.requiredBy) setPrRequiredBy(p.requiredBy)
         if (p.budgetCode) setPrBudgetCode(p.budgetCode)
         if (p.urgency === "urgent") setPrUrgency("urgent")
+        // Override budget code with deterministic dept-based logic if dept is known
+        const knownDept = prefillContext?.dept_hint || p.dept || ""
+        if (knownDept) {
+          const deptUp = knownDept.toUpperCase()
+          const intentForBudget = purchaseIntent || ""
+          const budgetSuffix =
+            intentForBudget === "SERVICES" ? "SVC"
+            : intentForBudget === "FIXED_ASSET" ? "CAPEX"
+            : intentForBudget === "MAINTENANCE" ? null
+            : intentForBudget === "MARKETING_EVENT" ? null
+            : intentForBudget === "RAW_MATERIAL" ? "OPEX"
+            : intentForBudget === "NON_TRADE" ? "OPEX"
+            : null
+          if (intentForBudget === "MAINTENANCE") setPrBudgetCode("MAINT-2026")
+          else if (intentForBudget === "MARKETING_EVENT") setPrBudgetCode("MKT-EVENT-2026")
+          else if (budgetSuffix) setPrBudgetCode(`${deptUp}-${budgetSuffix}-2026`)
+        }
       }
     }
 
