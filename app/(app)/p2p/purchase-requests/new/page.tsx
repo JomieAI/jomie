@@ -7,7 +7,7 @@ import { PageBackButton } from "@/components/ui/page-back-button"
 import {
   Sparkles, ChevronLeft, ChevronRight, Send, Plus, Check, CheckCircle2,
   Building2, TriangleAlert, ArrowRight, Loader2, ShieldCheck,
-  CircleDot, Package, Briefcase, RefreshCw, ChevronDown, Pencil,
+  CircleDot, Package, Briefcase, RefreshCw, RotateCcw, ChevronDown, Pencil,
   Search, X, Minus, AlertCircle, Link2, Warehouse, ChevronUp,
   Store, Globe, Lock, PanelRightClose,
 } from "lucide-react"
@@ -1733,7 +1733,7 @@ const T_LIGHT = {
 
 interface VendorOverridePanelProps {
   confirmedItems: ConfirmedItem[]
-  onVendorSelect: (groupId: string, vendorCode: string, vendorName: string) => void
+  onVendorSelect: (itemCode: string, vendorCode: string, vendorName: string) => void
   onBrowse: (item: ConfirmedItem) => void
   onConfirm: () => void
   onEditVendors?: () => void
@@ -1746,8 +1746,8 @@ function VendorOverridePanel({
 }: VendorOverridePanelProps) {
   const groups = buildSubPRGroups(confirmedItems)
   const totalItems = confirmedItems.reduce((s, i) => s + i.qty, 0)
-  const [groupPickerOpen, setGroupPickerOpen] = React.useState<string | null>(null)
-  const [vendorSearch, setVendorSearch] = React.useState("")
+  const [itemPickerOpen, setItemPickerOpen] = React.useState<string | null>(null)
+  const [itemSearch, setItemSearch] = React.useState("")
 
   const tierColor = (tier: string) => {
     if (tier === "FM + CFO") return { bg:"#FFF0F0", fg:"#DC2626" }
@@ -1755,10 +1755,9 @@ function VendorOverridePanel({
     return { bg:"#F0FDF4", fg:"#16A34A" }
   }
 
-  const filteredVendors = (excludeCode: string) => VENDOR_MASTER.filter(v =>
-    v.code !== excludeCode &&
-    (v.name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
-     v.code.toLowerCase().includes(vendorSearch.toLowerCase()))
+  const filteredVendors = VENDOR_MASTER.filter(v =>
+    v.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
+    v.code.toLowerCase().includes(itemSearch.toLowerCase())
   )
 
   return (
@@ -1830,56 +1829,7 @@ function VendorOverridePanel({
                           {!group.myInvois && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF9C3", color:"#A16207" }}>No MyInvois</span>}
                         </div>
                       </div>
-                      <button
-                        onClick={() => { setGroupPickerOpen(groupPickerOpen === group.id ? null : group.id); setVendorSearch("") }}
-                        className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
-                        style={{
-                          background: groupPickerOpen === group.id ? T_LIGHT.purple : "transparent",
-                          color: groupPickerOpen === group.id ? "#fff" : T_LIGHT.purple,
-                          border: `1px solid ${T_LIGHT.purple}`,
-                        }}>
-                        <RefreshCw size={8}/>
-                        Override vendor
-                      </button>
                     </div>
-                    {groupPickerOpen === group.id && (
-                      <div className="border-b" style={{ borderColor:"#F0F0FA", background:"#F7F7FE" }}>
-                        <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor:"#E8E6F4" }}>
-                          <Search size={11} style={{ color: T_LIGHT.dimText, flexShrink:0 }}/>
-                          <input
-                            autoFocus
-                            type="text"
-                            value={vendorSearch}
-                            onChange={e => setVendorSearch(e.target.value)}
-                            placeholder="Search approved vendors…"
-                            className="flex-1 text-[12px] bg-transparent focus:outline-none"
-                            style={{ color: T_LIGHT.text }}/>
-                          <button onClick={() => { setGroupPickerOpen(null); setVendorSearch("") }}>
-                            <X size={11} style={{ color: T_LIGHT.dimText }}/>
-                          </button>
-                        </div>
-                        <div className="max-h-44 overflow-y-auto bg-white">
-                          {filteredVendors(group.vendorCode).map(v => (
-                            <button
-                              key={v.code}
-                              onClick={() => { onVendorSelect(group.id, v.code, v.name); setGroupPickerOpen(null); setVendorSearch("") }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-gray-50 cursor-pointer">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{v.name}</div>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  {v.approved && <span className="text-[9px] px-1 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>Approved</span>}
-                                  {v.myInvois && <span className="text-[9px] px-1 rounded" style={{ background:"#EFF6FF", color:"#1D4ED8" }}>MyInvois</span>}
-                                </div>
-                              </div>
-                              <ChevronRight size={11} style={{ color:"#CBD5E1", flexShrink:0 }}/>
-                            </button>
-                          ))}
-                          {filteredVendors(group.vendorCode).length === 0 && (
-                            <div className="px-3 py-3 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No other vendors found</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </>
                 )
               })()}
@@ -1922,6 +1872,28 @@ function VendorOverridePanel({
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {isOverridden && (
+                        <button
+                          onClick={() => onVendorSelect(item.code, "", "")}
+                          className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
+                          style={{ background:"rgba(220,38,38,0.06)", color:"#DC2626", border:"1px solid rgba(220,38,38,0.2)" }}>
+                          <RotateCcw size={8}/>
+                          Reset
+                        </button>
+                      )}
+                      {!hasSourceVendor && (
+                        <button
+                          onClick={() => { setItemPickerOpen(itemPickerOpen === item.code ? null : item.code); setItemSearch("") }}
+                          className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
+                          style={{
+                            background: itemPickerOpen === item.code ? T_LIGHT.purple : "transparent",
+                            color: itemPickerOpen === item.code ? "#fff" : T_LIGHT.purple,
+                            border: `1px solid ${T_LIGHT.purple}`,
+                          }}>
+                          <RefreshCw size={8}/>
+                          Change vendor
+                        </button>
+                      )}
                       <button
                         onClick={() => onBrowse(item)}
                         className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
@@ -1931,6 +1903,45 @@ function VendorOverridePanel({
                       </button>
                     </div>
                   </div>
+                  {/* Inline vendor picker */}
+                  {itemPickerOpen === item.code && (
+                    <div className="border-t" style={{ borderColor:"#F0F0FA", background:"#F7F7FE" }}>
+                      <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor:"#E8E6F4" }}>
+                        <Search size={11} style={{ color: T_LIGHT.dimText, flexShrink:0 }}/>
+                        <input
+                          autoFocus
+                          type="text"
+                          value={itemSearch}
+                          onChange={e => setItemSearch(e.target.value)}
+                          placeholder="Search approved vendors…"
+                          className="flex-1 text-[12px] bg-transparent focus:outline-none"
+                          style={{ color: T_LIGHT.text }}/>
+                        <button onClick={() => { setItemPickerOpen(null); setItemSearch("") }}>
+                          <X size={11} style={{ color: T_LIGHT.dimText }}/>
+                        </button>
+                      </div>
+                      <div className="max-h-44 overflow-y-auto bg-white">
+                        {filteredVendors.map(v => (
+                          <button
+                            key={v.code}
+                            onClick={() => { onVendorSelect(item.code, v.code, v.name); setItemPickerOpen(null); setItemSearch("") }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-gray-50 cursor-pointer">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{v.name}</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {v.approved && <span className="text-[9px] px-1 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>Approved</span>}
+                                {v.myInvois && <span className="text-[9px] px-1 rounded" style={{ background:"#EFF6FF", color:"#1D4ED8" }}>MyInvois</span>}
+                              </div>
+                            </div>
+                            <ChevronRight size={11} style={{ color:"#CBD5E1", flexShrink:0 }}/>
+                          </button>
+                        ))}
+                        {filteredVendors.length === 0 && (
+                          <div className="px-3 py-3 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No vendors found</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
               })}
@@ -3097,27 +3108,37 @@ export default function NewPRPage() {
     const isReEdit = wasAtVendorStepRef.current
 
     if (isReEdit) {
-      // Re-edit after vendor step — rebuild grouping and re-confirm
+      // Re-edit after vendor step — rebuild grouping deterministically, skip LLM
       setConfirmedItems(valid)
       setRoundAComplete(true)
       setRoundBComplete(false)
       setShowVendorOverride(true)
       setRightWidth(null)
       setRightPanelView("vendors")
-    } else {
-      // Initial item-add — show items in right panel
-      setRightPanelView("items")
+
+      const userText = `I've updated my item list — ${valid.length} item${valid.length !== 1 ? "s" : ""} now.`
+      const aiResponse: ChatMsg = {
+        role: "ai",
+        text: `Got it — I've re-grouped your updated ${valid.length} item${valid.length !== 1 ? "s" : ""}. Check the right panel for the new vendor grouping. Happy with it?`,
+        actions: [
+          { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
+          { label:"I want to change a vendor", action:"proceed-to-vendor" },
+        ],
+      }
+      setChatMessages(prev => [...prev, { role:"user", text: userText }, aiResponse])
+      return
     }
 
-    // 1. Post user message describing what they did
-    const userText = isReEdit
-      ? `I've updated my item list — ${valid.length} item${valid.length !== 1 ? "s" : ""} now.`
-      : `Done! I've added ${valid.length} item${valid.length !== 1 ? "s" : ""} to the cart.`
+    // Initial item-add — show items in right panel
+    setRightPanelView("items")
+    setRightWidth(null)
+
+    // Post user message then call LLM for acknowledgement
+    const userText = `Done! I've added ${valid.length} item${valid.length !== 1 ? "s" : ""} to the cart.`
     const userMsg: ChatMsg = { role: "user", text: userText }
 
-    // 2. Call Groq so Jomie acknowledges and responds intelligently
     const ctx = {
-      roundAComplete: isReEdit ? true : roundAComplete,
+      roundAComplete,
       roundBComplete: false,
       confirmedItems: valid,
       submittedMessage,
@@ -3130,34 +3151,22 @@ export default function NewPRPage() {
       setIsChatThinking(false)
       const aiMsg: ChatMsg = { role:"ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }
       setChatMessages(prev => [...prev, aiMsg])
-      // Do NOT auto-fire proceed-to-vendor, confirm-vendors, or open-picker here —
-      // user just closed the picker; reopening it would undo their intent
       if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
     }).catch((err) => {
       setIsChatThinking(false)
-      // For rate-limit / auth errors, show the error message directly
       if (err instanceof LLMError && (err.code === "rate_limit" || err.code === "auth")) {
         setChatMessages(prev => [...prev, { role:"ai", text: jomieErrorMessage(err) }])
         return
       }
-      // For other errors, fall back to static messages so the flow continues
-      const fallback: ChatMsg = isReEdit ? {
-        role: "ai",
-        text: `Got it — I've re-grouped your updated ${valid.length} item${valid.length !== 1 ? "s" : ""}. Check the right panel for the new vendor grouping. Happy with it?`,
-        actions: [
-          { label:"Confirm vendors →", primary:true, action:"confirm-vendors" },
-          { label:"I want to change a vendor", action:"proceed-to-vendor" },
-        ],
-      } : {
+      setChatMessages(prev => [...prev, {
         role: "ai",
         text: `Updated! Here's your cart:\n\n${buildItemSummaryText(valid)}\n\nReady to proceed to vendor matching, or want to add more items?`,
         actions: [
           { label:"Yes, proceed to vendor matching →", primary:true, action:"proceed-to-vendor" },
           { label:"Add more items", action:"open-picker" },
         ],
-      }
-      setChatMessages(prev => [...prev, fallback])
+      }])
     })
   }
   const postUserMessage = (label: string, then: () => void) => {
@@ -4887,7 +4896,7 @@ export default function NewPRPage() {
         ) : rightPanelView === "vendors" && roundAComplete ? (
           <VendorOverridePanel
             confirmedItems={confirmedItems}
-            onVendorSelect={(groupId, vendorCode, vendorName) => handleVendorOverride(groupId, vendorCode, vendorName)}
+            onVendorSelect={(itemCode, vendorCode, vendorName) => handleItemVendorOverride(itemCode, vendorCode, vendorName, true)}
             onBrowse={(item) => { setBrowseItem(item); setRightPanelView("review") }}
             onConfirm={() => postUserMessage("Confirm vendor grouping →", handleConfirmVendorMatching)}
             onEditVendors={() => postUserMessage("Edit vendor grouping", () => {
