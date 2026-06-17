@@ -324,11 +324,13 @@ function buildVendorSummaryText(groups: SubPRGroup[], _items: ConfirmedItem[]): 
 interface GroqReply {
   thinking?: string
   text: string
-  action?: "open-picker" | "proceed-to-vendor" | "confirm-vendors" | "apply-vendor" | "reset-vendor" | "suggest-items" | "add-new-item" | null
+  action?: "open-picker" | "proceed-to-vendor" | "confirm-vendors" | "apply-vendor" | "reset-vendor" | "suggest-items" | "add-new-item" | "prefill-form" | null
   payload?: {
     itemCode?: string; vendorCode?: string; vendorName?: string
     items?: { code: string; qty: number }[]
     itemName?: string
+    title?: string; dept?: string; justification?: string; requiredBy?: string; budgetCode?: string; urgency?: string
+    prefill_context?: { intent?: string; dept_hint?: string; timeline_hint?: string; urgency?: string; justification_draft?: string }
   }
   buttons?: ChatMsgAction[]
 }
@@ -338,8 +340,10 @@ function buildJomieSystemPrompt(ctx: {
   roundBComplete: boolean
   confirmedItems: ConfirmedItem[]
   submittedMessage: string
+  purchaseIntent?: string
+  prefillContext?: { dept_hint?: string; timeline_hint?: string; urgency?: string; justification_draft?: string }
 }): string {
-  const { roundAComplete, roundBComplete, confirmedItems, submittedMessage } = ctx
+  const { roundAComplete, roundBComplete, confirmedItems, submittedMessage, purchaseIntent, prefillContext } = ctx
   const hasItems = confirmedItems.length > 0
 
   const itemCatalog = ITEM_MASTER.map(i =>
@@ -359,7 +363,41 @@ function buildJomieSystemPrompt(ctx: {
     const vendorList = `V001=Tech Solutions MY Sdn Bhd (approved, no MyInvois), V002=Digital Hub Malaysia Sdn Bhd (approved, MyInvois), V003=Office World Trading Sdn Bhd (approved, MyInvois), V004=Paper Plus Trading (NOT approved, no MyInvois), V005=Microsoft Malaysia Sdn Bhd (approved, MyInvois), V006=Logitech Authorised Reseller (approved, MyInvois)`
     stateDesc = `CURRENT STATE: Round B — vendor grouping review. Items grouped into ${groups.length} sub-PR(s):\n${groupDesc}\n\nAVAILABLE VENDORS:\n${vendorList}\n\nYOUR ROLE AS AGENT IN ROUND B:\nYou can directly apply vendor changes — you don't just redirect to the UI. When user asks you to change or suggest a vendor:\n1. If you know which item they mean (from context), proceed directly. If not, ask which item with buttons for each item name.\n2. Recommend the best vendor from the available list based on: approval status, MyInvois status, and what makes sense for the item category. Explain your reasoning briefly.\n3. Ask user to confirm with a button, then set action: "apply-vendor" with payload: { itemCode, vendorCode, vendorName }.\n4. To reset an item back to Jomie's original suggestion, use action: "reset-vendor" with payload: { itemCode }.\n5. You can also just apply immediately if the user's intent is clear and they've already confirmed.\nOnly other valid action in Round B: confirm-vendors (when user confirms the whole grouping).`
   } else {
-    stateDesc = "CURRENT STATE: Round B complete. Vendor grouping is confirmed. Guide user toward Round C (budget code, delivery date, urgency)."
+    const intentLabel = purchaseIntent ? `Purchase intent: ${purchaseIntent}` : ""
+    const deptHint = prefillContext?.dept_hint ? `Detected department: ${prefillContext.dept_hint}` : ""
+    const timelineHint = prefillContext?.timeline_hint ? `Timeline hint: ${prefillContext.timeline_hint}` : ""
+    const urgencyHint = prefillContext?.urgency ? `Urgency: ${prefillContext.urgency}` : ""
+    const justDraft = prefillContext?.justification_draft ? `Existing justification draft: "${prefillContext.justification_draft}"` : ""
+    const itemSummary = confirmedItems.map(i => `${i.name} x${i.qty} @ RM${i.unitPrice}`).join(", ")
+    stateDesc = `CURRENT STATE: Round B complete. Vendor grouping is confirmed. The PR form (Context panel) is now open on the right.
+
+CONTEXT GATHERED SO FAR:
+- Original request: "${submittedMessage || "(not captured)"}"
+- Items confirmed: ${itemSummary}
+- ${intentLabel}
+- ${deptHint}
+- ${timelineHint}
+- ${urgencyHint}
+- ${justDraft}
+
+YOUR TASK — fire action "prefill-form" with a fully populated payload. Do this NOW — do not ask the user for anything first.
+
+Build the payload using everything you know:
+1. title: Generate a clear PR title from the items (e.g. "IT Equipment Purchase — Jun 2026", "Office Supplies Restock", "AC Servicing — Main Office")
+2. dept: Infer from context hints above, or from item types. Pick ONE from: IT, Finance, Operations, Admin, Marketing, Production, HR, Facilities, Creative, Legal
+3. justification: Write a complete 2–3 sentence business justification. Use the draft above if available, or write fresh from context. Cover: WHAT is being bought, WHY it's needed, WHEN it's needed.
+4. requiredBy: Extract from timeline_hint if available. Format as YYYY-MM-DD. Use "" if unknown.
+5. budgetCode: Suggest based on dept + intent. Format: [DEPT]-[CAPEX/OPEX/SVC/EVENT]-[YEAR]. Example: IT-CAPEX-2026, ADMIN-OPEX-2026, MKT-EVENT-2026
+6. urgency: "urgent" if any urgency signals, otherwise "normal"
+
+BUDGET CODE RULES:
+- Tech equipment / machinery / furniture (single unit >RM1k) → CAPEX
+- Subscriptions / recurring office expenses → OPEX
+- Professional services / outsourced work → SVC
+- Events / campaigns → EVENT
+- Maintenance / repairs → MAINT
+
+Your text reply should be SHORT: confirm vendor grouping is locked, tell user the form on the right is pre-filled, ask them to review and submit. 2 sentences max.`
   }
 
   return `You are Jomie, an intelligent AI procurement assistant inside a Malaysian audit firm's ERP system. You are warm, sharp, and conversational — like a knowledgeable colleague who happens to know procurement inside out.
@@ -497,7 +535,7 @@ Keep it brief and friendly.`
 - When the user confirms a suggestion, use action "suggest-items" with the exact item code.`
   }
 
-  return `You are Jomie, an AI procurement agent for ABC Retails Sdn Bhd.
+  return `You are Jomie, an AI procurement agent for ABC Retails Sdn Bhd. You are proactive, confident, and efficient — your job is to build the user's purchase request WITH them, not just wait for instructions.
 ${urlContext}
 APPROVED ITEM CATALOG:
 ${itemList}
@@ -505,30 +543,109 @@ ${itemList}
 APPROVED VENDORS:
 ${vendorList}
 
-YOUR PRIMARY JOB: Help the user build their item list by guiding them to the item picker. Do NOT pre-select or recommend catalog items based on context clues alone (e.g. "developer project", "office work", "new hire"). Only suggest a specific catalog item when the user names it explicitly (e.g. "I need a Dell laptop", "add a keyboard").
+══════════════════════════════════════════════
+STEP 1 — CLASSIFY INTENT (do this first, always)
+══════════════════════════════════════════════
+Classify the user's request into exactly ONE of:
+- RAW_MATERIAL: production inputs, raw stock, manufacturing components, reorder
+- NON_TRADE: office/company expenses, stationery, subscriptions, admin supplies
+- SERVICES: outsourced work, professional services, maintenance contracts, non-physical
+- FIXED_ASSET: equipment/machinery/furniture, single unit typically >RM1k, long-term use
+- MAINTENANCE: repair, servicing, spare parts for existing assets
+- MARKETING_EVENT: events, campaigns, promotional materials, client entertainment
 
-WHEN THE USER'S REQUEST IS VAGUE (no specific item named):
-- Acknowledge their goal in one short sentence
-- Immediately guide them to search and add items themselves: action "open-picker"
-- Example: "Got it — let's build your item list. Search the catalog below and add what you need."
-- Do NOT list catalog items unprompted. Do NOT ask "which of these fits your needs?" with a pre-selected shortlist.
+State your classification explicitly in your reply: "I'm treating this as a [INTENT TYPE] purchase — let me know if that's wrong."
 
-WHEN THE USER NAMES A SPECIFIC ITEM:
-- Find the best catalog match and confirm it with the user before adding
-- If not in catalog, acknowledge and offer to register as a new item request
+══════════════════════════════════════════════
+STEP 2 — EXTRACT CONTEXT FROM THE MESSAGE
+══════════════════════════════════════════════
+From the user's message, extract what you can:
+- dept_hint: IT / Finance / HR / Admin / Marketing / Production / Operations / Facilities
+- timeline_hint: any date, deadline, or urgency signal ("next month", "by Friday", "urgent")
+- qty_hint: any quantity mentioned
+- purpose_hint: the business reason for the purchase
+- urgency: "urgent" if user signals time pressure, otherwise "normal"
+
+DEPT INFERENCE DEFAULTS (use when not explicitly stated):
+- Tech equipment → IT
+- New hire setup → IT or HR
+- Office supplies/admin → Admin
+- Production/manufacturing materials → Production
+- Events/campaigns → Marketing
+- Maintenance/repair → Facilities
+- Finance/accounting software → Finance
+
+══════════════════════════════════════════════
+STEP 3 — PROPOSE ITEMS PROACTIVELY
+══════════════════════════════════════════════
+DO NOT default to "open the picker". Instead:
+
+A) If catalog has clear matches for the detected intent + context:
+   → Propose specific items immediately using action "suggest-items"
+   → State your assumptions: "Based on your request, I'm suggesting [items]. Here's why: [brief reason]"
+   → Include qty from context, or ask for confirmation of qty in your text
+   → Add button: "Add more items" (open-picker) so user can extend the list
+
+B) If the catalog has partial/multiple matches:
+   → Show the best 1–2 options and ask which fits
+   → Use action "suggest-items" once user confirms
+   → Do NOT just say "open the picker and look yourself"
+
+C) If no catalog match at all:
+   → Acknowledge, offer to register as new item: action "add-new-item"
+   → Still propose the closest catalog alternative if one exists
+
+D) If user's request is genuinely too vague to propose anything (e.g. "I need to buy something"):
+   → Ask ONE bundled question covering the 2–3 most important missing details
+   → Use action "open-picker" as fallback only after asking
+
+══════════════════════════════════════════════
+STEP 4 — BUNDLED QUESTION (only if critically missing info)
+══════════════════════════════════════════════
+If you cannot propose items because context is insufficient:
+- Ask ALL missing critical questions in ONE message block — never drip one at a time
+- Max 3 questions, all in the same reply
+- Format: bullet points, conversational tone
+- After asking, still include action "open-picker" so user can browse while they think
+
+══════════════════════════════════════════════
+STEP 5 — ALWAYS INCLUDE prefill_context IN PAYLOAD
+══════════════════════════════════════════════
+Regardless of what action you take, ALWAYS include in payload:
+{
+  "prefill_context": {
+    "intent": "[RAW_MATERIAL|NON_TRADE|SERVICES|FIXED_ASSET|MAINTENANCE|MARKETING_EVENT]",
+    "dept_hint": "[dept or empty string]",
+    "timeline_hint": "[date/timeframe string or empty]",
+    "urgency": "[normal|urgent]",
+    "justification_draft": "[2–3 sentence business justification you draft from context]"
+  }
+}
+
+Justification draft format: "This purchase request covers [what] for [purpose/dept]. [Business need]. [Timeline if known]."
 
 ${urlInstruction}
 
 Respond ONLY with this JSON (no markdown fences):
 {
-  "thinking": "brief: what you understood and why",
-  "text": "your reply to the user (use \\n for line breaks)",
-  "action": "suggest-items | open-picker | null",
-  "payload": { "items": [{ "code": "ITEM-CODE-HERE", "qty": 1 }] },
+  "thinking": "1–2 sentences: intent classified, what you extracted, why you responded this way",
+  "text": "your reply (use \\n for line breaks, max 5 lines)",
+  "action": "suggest-items | add-new-item | open-picker | null",
+  "payload": {
+    "items": [{ "code": "EXACT-CODE", "qty": 1 }],
+    "itemName": "only for add-new-item",
+    "prefill_context": {
+      "intent": "",
+      "dept_hint": "",
+      "timeline_hint": "",
+      "urgency": "normal",
+      "justification_draft": ""
+    }
+  },
   "buttons": [{ "label": "Button label", "primary": true, "action": "open-picker" }]
 }
 
-Valid button actions: "open-picker", "proceed-to-vendor". For suggest-items, use exact item codes from the catalog above.`
+Valid button actions: "open-picker", "proceed-to-vendor". Use exact item codes from the catalog above for suggest-items.`
 }
 
 // ── LLM provider config ──────────────────────────────────────────────────────
@@ -631,6 +748,8 @@ async function callGroqJomie(
     roundBComplete: boolean
     confirmedItems: ConfirmedItem[]
     submittedMessage: string
+    purchaseIntent?: string
+    prefillContext?: { dept_hint?: string; timeline_hint?: string; urgency?: string; justification_draft?: string }
   },
   history: ChatMsg[],
   hintAction?: string | null,
@@ -653,7 +772,7 @@ async function callGroqJomie(
     content: m.text.length > 400 ? m.text.slice(0, 400) + "…[truncated]" : m.text,
   }))
 
-  let systemPrompt = buildJomieSystemPrompt(ctx)
+  let systemPrompt = buildJomieSystemPrompt({ ...ctx, purchaseIntent: ctx.purchaseIntent, prefillContext: ctx.prefillContext })
 
   if (product?.title) {
     // Match fetched product against catalog (keyword overlap)
@@ -754,7 +873,7 @@ Keep the reply short (3-4 lines). Be direct and confident — do not ask for per
     throw new LLMError("parse", "Jomie returned an unexpected response.")
   }
 
-  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "apply-vendor", "reset-vendor", "suggest-items", "add-new-item"]
+  const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "apply-vendor", "reset-vendor", "suggest-items", "add-new-item", "prefill-form"]
   if (parsed.action && !validActions.includes(parsed.action)) parsed.action = null
 
   return parsed
@@ -2505,6 +2624,10 @@ export default function NewPRPage() {
   type RightPanelView = "items" | "vendors" | "budget" | "context" | "review" | "submit"
   const [rightPanelView, setRightPanelView] = React.useState<RightPanelView>("review")
 
+  // ── Purchase intent context (threaded from Round A → C) ──
+  const [purchaseIntent,  setPurchaseIntent]  = React.useState("")
+  const [prefillContext,  setPrefillContext]  = React.useState<{ dept_hint?: string; timeline_hint?: string; urgency?: string; justification_draft?: string }>({})
+
   // ── Round C — submission form state ──
   const [prTitle,        setPrTitle]        = React.useState("")
   const [prDept,         setPrDept]         = React.useState("")
@@ -2853,6 +2976,24 @@ export default function NewPRPage() {
         lastBrowseQueryRef.current = userMessage.replace(/^(i (want|need) to (buy|get|order)|buy|get|add|need|want)\s+/i, "").trim() || userMessage
       }
       if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+
+      // Extract prefill_context from first-message response and persist to state
+      const pc = reply.payload?.prefill_context
+      if (pc) {
+        if (pc.intent) setPurchaseIntent(pc.intent)
+        const newCtx = {
+          dept_hint: pc.dept_hint || "",
+          timeline_hint: pc.timeline_hint || "",
+          urgency: pc.urgency || "normal",
+          justification_draft: pc.justification_draft || "",
+        }
+        setPrefillContext(newCtx)
+        // Pre-seed Round C form fields if not already set
+        if (pc.dept_hint && !prDept) setPrDept(pc.dept_hint)
+        if (pc.justification_draft && !prJustification) setPrJustification(pc.justification_draft)
+        if (pc.urgency === "urgent") setPrUrgency("urgent")
+      }
+
       const createButtons = reply.action === "suggest-items" && lastBrowseQueryRef.current
         ? [...(reply.buttons ?? []).filter(b => b.action !== "browse-online"), { label: "Source more options →", primary: false, action: "browse-online" }]
         : reply.buttons
@@ -2871,7 +3012,7 @@ export default function NewPRPage() {
     setInputValue("")
     setChatMessages(prev => [...prev, { role: "user", text: msg }])
     setIsChatThinking(true)
-    const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
+    const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage, purchaseIntent, prefillContext }
     const currentHistory = [...chatMessages]
 
     const runSend = async () => {
@@ -3003,6 +3144,15 @@ export default function NewPRPage() {
         handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
       if (reply.action === "reset-vendor" && reply.payload?.itemCode)
         handleItemVendorOverride(reply.payload.itemCode, "", "", false)
+      if (reply.action === "prefill-form" && reply.payload) {
+        const p = reply.payload
+        if (p.title) setPrTitle(p.title)
+        if (p.dept) setPrDept(p.dept)
+        if (p.justification) setPrJustification(p.justification)
+        if (p.requiredBy) setPrRequiredBy(p.requiredBy)
+        if (p.budgetCode) setPrBudgetCode(p.budgetCode)
+        if (p.urgency === "urgent") setPrUrgency("urgent")
+      }
     }
 
     runSend().catch(err => {
@@ -3142,6 +3292,8 @@ export default function NewPRPage() {
       roundBComplete: false,
       confirmedItems: valid,
       submittedMessage,
+      purchaseIntent,
+      prefillContext,
     }
     const currentHistory = [...chatMessages]
     setChatMessages(prev => [...prev, userMsg])
@@ -3289,7 +3441,7 @@ export default function NewPRPage() {
       setQuestioningInput("")
       setTimeout(handleOpenItemPicker, 80)
     } else {
-      const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
+      const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage, purchaseIntent, prefillContext }
       const currentHistory = [...chatMessages]
 
       // ── Conversational confirmation — "yes", "add", "ok", etc. auto-triggers pending action ──
@@ -3780,7 +3932,7 @@ export default function NewPRPage() {
     }
     // All other actions: post button label as user message, route through Groq
     const userText = label || action
-    const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage }
+    const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage, purchaseIntent, prefillContext }
     const currentHistory = [...chatMessages]
     setChatMessages(prev => [...prev, { role:"user", text: userText }])
     setIsChatThinking(true)
