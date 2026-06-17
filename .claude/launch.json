@@ -1,12 +1,1 @@
-{
-  "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "jomie-out",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "--directory", "out"],
-      "port": 3456,
-      "autoPort": true
-    }
-  ]
-}
+﻿{"version":"0.0.1","configurations":[{"name":"jomie-dev","runtimeExecutable":"npm","runtimeArgs":["run","dev"],"port":3900,"autoPort":false}]}
