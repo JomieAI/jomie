@@ -487,7 +487,12 @@ CONTEXT CAPTURED SO FAR:
 - ${timelineKnown}
 - ${urgencyKnown}
 
-${missingCtx ? `MISSING CONTEXT: ${missingCtx}\nIf the user hasn't answered these yet, ask them now using ONLY these questions (do not invent others):\n${followUpQ}` : "All critical context is captured. Guide user to confirm the cart and proceed to vendor matching."}
+${missingCtx ? `⚠️ MISSING CONTEXT (MANDATORY — collect before proceeding): ${missingCtx}
+
+CRITICAL RULE: Do NOT fire action "proceed-to-vendor" yet. Even if the user says "proceed", "yes", "go ahead", or "next" — you MUST ask the missing questions first. Collect the missing context, then guide them to vendor matching.
+
+Ask ONLY these questions (in a single bundled message, bullet points):
+${followUpQ}` : `✅ All critical context captured. You may now guide the user to confirm the cart and proceed to vendor matching (action: proceed-to-vendor).`}
 
 Help them confirm or adjust the cart, then guide them to vendor matching when ready.`
     } else {
