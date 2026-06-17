@@ -3628,19 +3628,6 @@ export default function NewPRPage() {
         const reply = JSON.parse(raw) as GroqReply
         setIsChatThinking(false)
 
-        // Handle suggest-items from one-shot reply
-        if (reply.action === "suggest-items" && reply.payload?.items?.length) {
-          const matched: ConfirmedItem[] = []
-          for (const { code, qty } of reply.payload.items) {
-            const master = ITEM_MASTER.find(i => i.code === code)
-            if (master) matched.push({ ...master, qty: Math.max(qty, master.moq), stockSkipped: false })
-          }
-          if (matched.length > 0) {
-            setConfirmedItems(matched)
-            setRightPanelView("items")
-          }
-        }
-
         // Update prefill from one-shot response
         const pc = reply.payload?.prefill_context
         if (pc) {
@@ -3649,14 +3636,33 @@ export default function NewPRPage() {
           if (pc.urgency === "urgent") setPrUrgency("urgent")
         }
 
-        const oneShotButtons = reply.action === "suggest-items"
-          ? [...(reply.buttons ?? []), { label: "Add more items", primary: false, action: "open-picker" }]
-          : reply.buttons
+        // Handle suggest-items: post LLM reply text, then auto-advance to review panel
+        if (reply.action === "suggest-items" && reply.payload?.items?.length) {
+          const matched: ConfirmedItem[] = []
+          for (const { code, qty } of reply.payload.items) {
+            const master = ITEM_MASTER.find(i => i.code === code)
+            if (master) matched.push({ ...master, qty: Math.max(qty, master.moq), stockSkipped: false })
+          }
+          if (matched.length > 0) {
+            // Show the one-shot reply text, then silently advance to review
+            setChatMessages(prev => [...prev, {
+              role: "ai" as const,
+              text: reply.text,
+              thinking: reply.thinking,
+            }])
+            setTimeout(() => handleAutoAdvanceToReview(matched), 600)
+            return
+          }
+        }
+
+        // Fallback: no items matched — show reply with open-picker button
         setChatMessages(prev => [...prev, {
           role: "ai" as const,
           text: reply.text,
           thinking: reply.thinking,
-          actions: oneShotButtons,
+          actions: reply.action === "open-picker"
+            ? [{ label: "Open item picker", primary: true, action: "open-picker" }]
+            : reply.buttons,
         }])
         if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
       }).catch(() => {
@@ -4046,6 +4052,75 @@ export default function NewPRPage() {
       setChatMessages(prev => [...prev, vendorMsg])
       setRightPanelSkeletonType(null)
     }, 600)
+  }
+
+  // Fix 6: silently auto-advance through vendor matching straight to review panel
+  // Used after one-shot context collection so user skips the vendor grouping step
+  const handleAutoAdvanceToReview = (items: ConfirmedItem[]) => {
+    pendingNewItemRef.current = null
+    const valid = items.filter(i => i.qty >= i.moq && i.qty > 0)
+    setConfirmedItems(valid)
+    setRoundAComplete(true)
+    setRoundBComplete(true)
+    setShowVendorOverride(false)
+    setRightWidth(null)
+    setRightPanelView("submit")
+    handleConfirmVendors()
+
+    // Generate PR title
+    const now = new Date()
+    const monthYear = now.toLocaleString("en-MY", { month: "short", year: "numeric" })
+    const year = now.getFullYear()
+    const types = [...new Set(valid.map(i => i.itemType ?? "standard"))]
+    const autoTitle = types.includes("service") || types.includes("subscription")
+      ? `Service Request — ${monthYear}`
+      : types.some(t => t === "capex") ? `Capital Equipment Purchase — ${monthYear}`
+      : valid.length === 1 ? `${valid[0].name} Purchase`
+      : `Purchase Request — ${monthYear}`
+    setPrTitle(autoTitle)
+
+    // Generate budget code from intent + dept
+    const dept = prefillContext?.dept_hint || prDept || "GENERAL"
+    const intentType = purchaseIntent || ""
+    const budgetType = intentType === "FIXED_ASSET" || types.some(t => t === "capex") ? "CAPEX"
+      : intentType === "SERVICES" || types.includes("service") ? "SVC"
+      : intentType === "MARKETING_EVENT" ? "EVENT"
+      : intentType === "MAINTENANCE" ? "MAINT"
+      : "OPEX"
+    const autoBudgetCode = budgetType === "MAINT" || budgetType === "EVENT"
+      ? `${budgetType}-${year}`
+      : `${dept.toUpperCase()}-${budgetType}-${year}`
+    setPrBudgetCode(autoBudgetCode)
+
+    // Resolve required-by date from timeline_hint
+    const timeline = prefillContext?.timeline_hint || ""
+    if (timeline && !prRequiredBy) {
+      const lower = timeline.toLowerCase()
+      let resolvedDate = ""
+      if (lower.includes("next month")) { const d = new Date(now.getFullYear(), now.getMonth()+1, 1); resolvedDate = d.toISOString().slice(0,10) }
+      else if (lower.includes("end of month")) { const d = new Date(now.getFullYear(), now.getMonth()+1, 0); resolvedDate = d.toISOString().slice(0,10) }
+      else if (lower.includes("next week")) { const d = new Date(now); d.setDate(d.getDate()+7); resolvedDate = d.toISOString().slice(0,10) }
+      else if (lower.includes("asap") || lower.includes("urgent")) { const d = new Date(now); d.setDate(d.getDate()+3); resolvedDate = d.toISOString().slice(0,10) }
+      if (resolvedDate) setPrRequiredBy(resolvedDate)
+    }
+
+    // Post summary message in chat
+    const groups = buildSubPRGroups(valid)
+    const totalAmt = valid.reduce((s, i) => s + i.unitPrice * i.qty, 0)
+    const itemSummary = valid.length === 1 ? `**${valid[0].name}** ×${valid[0].qty}` : `${valid.length} items`
+    const vendorNames = [...new Set(groups.map(g => g.vendorName).filter(Boolean))]
+    const vendorStr = vendorNames.length === 1 ? vendorNames[0] : vendorNames.join(", ")
+    const tier = groups[0]?.tier ?? "Finance Manager"
+    const warnings: string[] = []
+    groups.forEach(g => { if (!g.myInvois) warnings.push(`${g.vendorName} is not on MyInvois — request e-invoice before PO is issued`) })
+    const unapproved = groups.filter(g => !g.isApproved)
+    if (unapproved.length > 0) warnings.push(`${unapproved.map(g => g.vendorName).join(", ")} is not an approved vendor — sourcing approval required`)
+    const warningText = warnings.length > 0 ? `\n\n⚠️ **Heads up:**\n${warnings.map(w => `- ${w}`).join("\n")}` : ""
+
+    setChatMessages(prev => [...prev, {
+      role: "ai" as const,
+      text: `✓ All set! Here's your PR summary:\n\n- Items: ${itemSummary} via **${vendorStr}** — RM ${totalAmt.toLocaleString()}\n- Approval route: **${tier}**\n\nPR form is pre-filled on the right — review and adjust if needed, then hit **Submit PR** to send for approval.${warningText}`,
+    }])
   }
 
   const handleConfirmVendorMatching = () => {
