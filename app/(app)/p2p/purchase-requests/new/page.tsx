@@ -382,20 +382,23 @@ CONTEXT GATHERED SO FAR:
 
 YOUR TASK — fire action "prefill-form" with a fully populated payload. Do this NOW — do not ask the user for anything first.
 
+TODAY'S DATE: ${new Date().toISOString().slice(0, 10)} (use this to resolve relative dates like "next month", "end of July", "next week")
+
 Build the payload using everything you know:
 1. title: Generate a clear PR title from the items (e.g. "IT Equipment Purchase — Jun 2026", "Office Supplies Restock", "AC Servicing — Main Office")
 2. dept: Infer from context hints above, or from item types. Pick ONE from: IT, Finance, Operations, Admin, Marketing, Production, HR, Facilities, Creative, Legal
 3. justification: Write a complete 2–3 sentence business justification. Use the draft above if available, or write fresh from context. Cover: WHAT is being bought, WHY it's needed, WHEN it's needed.
-4. requiredBy: Extract from timeline_hint if available. Format as YYYY-MM-DD. Use "" if unknown.
-5. budgetCode: Suggest based on dept + intent. Format: [DEPT]-[CAPEX/OPEX/SVC/EVENT]-[YEAR]. Example: IT-CAPEX-2026, ADMIN-OPEX-2026, MKT-EVENT-2026
+4. requiredBy: Extract from timeline_hint if available. Resolve relative dates using TODAY'S DATE above — "next month" means the 1st of next month, "end of July" means 2026-07-31, etc. Format as YYYY-MM-DD. Use "" ONLY if absolutely no timeline was mentioned.
+5. budgetCode: ALWAYS provide a budget code — never leave this empty. Infer from dept + intent type. Format: [DEPT]-[TYPE]-[YEAR]. Examples: IT-CAPEX-2026, ADMIN-OPEX-2026, MKT-EVENT-2026, IT-SVC-2026, MAINT-2026
 6. urgency: "urgent" if any urgency signals, otherwise "normal"
 
-BUDGET CODE RULES:
-- Tech equipment / machinery / furniture (single unit >RM1k) → CAPEX
-- Subscriptions / recurring office expenses → OPEX
-- Professional services / outsourced work → SVC
-- Events / campaigns → EVENT
-- Maintenance / repairs → MAINT
+BUDGET CODE RULES (MANDATORY — always output one):
+- Tech equipment / machinery / furniture (single unit >RM1k) → [DEPT]-CAPEX-[YEAR]
+- Subscriptions / recurring office expenses → [DEPT]-OPEX-[YEAR]
+- Professional services / outsourced work → [DEPT]-SVC-[YEAR]
+- Events / campaigns → MKT-EVENT-[YEAR]
+- Maintenance / repairs → MAINT-[YEAR]
+- When in doubt: default to [DEPT]-OPEX-[YEAR]
 
 Your text reply should be SHORT: confirm vendor grouping is locked, tell user the form on the right is pre-filled, ask them to review and submit. 2 sentences max.`
   }
@@ -454,7 +457,8 @@ RESPONSE FORMAT — always return valid JSON, nothing else:
 {
   "thinking": "1-2 sentences: what you understood from the user's message and why you're responding this way",
   "text": "Your conversational reply (max 4 lines, use \\n for line breaks)",
-  "action": "suggest-items | open-picker | proceed-to-vendor | confirm-vendors | apply-vendor | reset-vendor | null",
+  "action": "suggest-items | open-picker | proceed-to-vendor | confirm-vendors | apply-vendor | reset-vendor | prefill-form | null",
+  "payload": {},
   "buttons": [
     { "label": "Short button label", "primary": true, "action": "action-string" }
   ]
@@ -462,8 +466,9 @@ RESPONSE FORMAT — always return valid JSON, nothing else:
 
 - "thinking" is always required — briefly explain your reasoning (shown to user as collapsible context).
 - "action" triggers automatically in the UI — must match one of the valid actions or null.
-- For apply-vendor: also include "payload": { "itemCode": "<item code string>", "vendorCode": "<V00X>", "vendorName": "<full vendor name>" }
-- For reset-vendor: also include "payload": { "itemCode": "<item code string>" }
+- For apply-vendor: payload = { "itemCode": "<code>", "vendorCode": "<V00X>", "vendorName": "<full name>" }
+- For reset-vendor: payload = { "itemCode": "<code>" }
+- For prefill-form: payload = { "title": "<PR title>", "dept": "<dept>", "justification": "<2-3 sentences>", "requiredBy": "<YYYY-MM-DD or empty>", "budgetCode": "<DEPT-TYPE-YEAR>", "urgency": "<normal|urgent>" }
 - "buttons" are shown as clickable chips — always include relevant next-step buttons.
 - action in buttons must be one of: open-picker, proceed-to-vendor, confirm-vendors, edit-items.
 - Respond ONLY with the JSON object. No markdown fences, no explanation outside it.`
@@ -660,7 +665,7 @@ const LLM_CONFIG = {
   },
   openrouter: {
     url: "https://openrouter.ai/api/v1/chat/completions",
-    model: "anthropic/claude-haiku-4-5-20251001",
+    model: "anthropic/claude-3-5-haiku",
     getKey: () => process.env.NEXT_PUBLIC_OPENROUTER_API_KEY ?? "",
   },
 }
@@ -2898,34 +2903,7 @@ export default function NewPRPage() {
         return
       }
 
-      // DETERMINISTIC CATALOG MATCH — keyword search on text queries (no URL)
-      if (!urlMatch) {
-        const msgWords = userMessage.toLowerCase().split(/\s+/).filter(w => w.length > 3)
-        const catalogMatches = ITEM_MASTER.filter(item => {
-          const itemWords = (item.name + " " + item.spec).toLowerCase()
-          return msgWords.some(w => itemWords.includes(w))
-        })
-        if (catalogMatches.length > 0) {
-          const thinking = `User said: "${userMessage}". Keyword match found ${catalogMatches.length} item(s): ${catalogMatches.map(i => i.code).join(", ")}.`
-          let text: string
-          if (catalogMatches.length === 1) {
-            const m = catalogMatches[0]
-            text = `Found a catalog match:\n\n**${m.name}** (${m.code})\n${m.spec}\nRM ${m.unitPrice} / ${m.uom} · MOQ: ${m.moq}\n\nIs this what you're looking for?`
-          } else {
-            const list = catalogMatches.map(m => `- **${m.name}** (${m.code}) — RM ${m.unitPrice}`).join("\n")
-            text = `Found ${catalogMatches.length} catalog matches:\n\n${list}\n\nWhich one do you need?`
-          }
-          const actions = [
-            ...catalogMatches.slice(0, 2).map(m => ({ label: `Add ${m.name}`, primary: true, action: `suggest-item:${m.code}` })),
-            { label: "Search catalog", primary: false, action: "open-picker" },
-          ]
-          setIsChatThinking(false)
-          setChatMessages([{ role: "ai", text, thinking, actions }])
-          return
-        }
-      }
-
-      // NORMAL LLM PATH — no catalog match found, let LLM handle complex queries
+      // LLM PATH — always call LLM for first message (Steps 1-5: classify intent, propose items, prefill context)
       console.log("[Jomie] userMessage sent to LLM:", userMessage)
       console.log("[Jomie] model:", cfg.model, "provider:", provider)
       const res = await fetch(cfg.url, {
@@ -3358,11 +3336,13 @@ export default function NewPRPage() {
     setRightWidth(null)
     handleConfirmVendors()
 
-    // Auto-suggest PR title from item types
     const currentItems = confirmedItems.filter(i => i.qty >= i.moq)
     const types = [...new Set(currentItems.map(i => i.itemType ?? "standard"))]
     const now = new Date()
     const monthYear = now.toLocaleString("en-MY", { month: "short", year: "numeric" })
+    const year = now.getFullYear()
+
+    // Auto-generate PR title
     const autoTitle = types.length === 1 && types[0] === "capex"
       ? `Capital Equipment Purchase — ${monthYear}`
       : types.includes("service") || types.includes("subscription")
@@ -3371,6 +3351,43 @@ export default function NewPRPage() {
       ? `${currentItems[0].name} Purchase`
       : `Purchase Request — ${monthYear}`
     setPrTitle(autoTitle)
+
+    // Auto-compute budget code from intent + dept
+    const dept = prefillContext?.dept_hint || "GENERAL"
+    const intentType = purchaseIntent || ""
+    const budgetType =
+      intentType === "FIXED_ASSET" || types.some(t => t === "capex") ? "CAPEX"
+      : intentType === "SERVICES" || types.includes("service") ? "SVC"
+      : intentType === "MARKETING_EVENT" ? "EVENT"
+      : intentType === "MAINTENANCE" ? "MAINT"
+      : "OPEX"
+    const autoBudgetCode = budgetType === "MAINT" || budgetType === "EVENT"
+      ? `${budgetType}-${year}`
+      : `${dept.toUpperCase()}-${budgetType}-${year}`
+    setPrBudgetCode(autoBudgetCode)
+
+    // Auto-compute requiredBy from timeline_hint
+    const timeline = prefillContext?.timeline_hint || ""
+    if (timeline) {
+      const lower = timeline.toLowerCase()
+      let resolvedDate = ""
+      if (lower.includes("next month")) {
+        const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+        resolvedDate = d.toISOString().slice(0, 10)
+      } else if (lower.includes("end of") || lower.includes("end of month")) {
+        const d = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        resolvedDate = d.toISOString().slice(0, 10)
+      } else if (lower.includes("next week")) {
+        const d = new Date(now)
+        d.setDate(d.getDate() + 7)
+        resolvedDate = d.toISOString().slice(0, 10)
+      } else if (lower.includes("urgent") || lower.includes("asap")) {
+        const d = new Date(now)
+        d.setDate(d.getDate() + 3)
+        resolvedDate = d.toISOString().slice(0, 10)
+      }
+      if (resolvedDate) setPrRequiredBy(resolvedDate)
+    }
 
     setRightPanelView("submit")
     setRightWidth(null)

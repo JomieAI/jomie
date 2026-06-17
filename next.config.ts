@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   images: { unoptimized: true },
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  experimental: { cpus: 2 },
 }
 
 export default nextConfig
