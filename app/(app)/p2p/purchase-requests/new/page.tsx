@@ -1733,7 +1733,7 @@ const T_LIGHT = {
 
 interface VendorOverridePanelProps {
   confirmedItems: ConfirmedItem[]
-  onVendorSelect: (itemCode: string, vendorCode: string, vendorName: string) => void
+  onVendorSelect: (groupId: string, vendorCode: string, vendorName: string) => void
   onBrowse: (item: ConfirmedItem) => void
   onConfirm: () => void
   onEditVendors?: () => void
@@ -1746,8 +1746,8 @@ function VendorOverridePanel({
 }: VendorOverridePanelProps) {
   const groups = buildSubPRGroups(confirmedItems)
   const totalItems = confirmedItems.reduce((s, i) => s + i.qty, 0)
-  const [itemPickerOpen, setItemPickerOpen] = React.useState<string | null>(null)
-  const [itemSearch, setItemSearch] = React.useState("")
+  const [groupPickerOpen, setGroupPickerOpen] = React.useState<string | null>(null)
+  const [vendorSearch, setVendorSearch] = React.useState("")
 
   const tierColor = (tier: string) => {
     if (tier === "FM + CFO") return { bg:"#FFF0F0", fg:"#DC2626" }
@@ -1755,9 +1755,10 @@ function VendorOverridePanel({
     return { bg:"#F0FDF4", fg:"#16A34A" }
   }
 
-  const filteredVendors = VENDOR_MASTER.filter(v =>
-    v.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
-    v.code.toLowerCase().includes(itemSearch.toLowerCase())
+  const filteredVendors = (excludeCode: string) => VENDOR_MASTER.filter(v =>
+    v.code !== excludeCode &&
+    (v.name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+     v.code.toLowerCase().includes(vendorSearch.toLowerCase()))
   )
 
   return (
@@ -1813,36 +1814,80 @@ function VendorOverridePanel({
                   )
                 }
                 return (
-                  <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor:"#F0F0FA", background:"#FAFAFF" }}>
-                    <div className="size-5 rounded flex items-center justify-center shrink-0" style={{ background:"rgba(93,94,244,0.08)" }}>
-                      <Store size={10} style={{ color: T_LIGHT.purple }}/>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-semibold truncate" style={{ color: T_LIGHT.text }}>
-                        {group.vendorName || "Vendor TBD"}
+                  <>
+                    <div className="px-4 py-2.5 border-b flex items-center gap-2" style={{ borderColor:"#F0F0FA", background:"#FAFAFF" }}>
+                      <div className="size-5 rounded flex items-center justify-center shrink-0" style={{ background:"rgba(93,94,244,0.08)" }}>
+                        <Store size={10} style={{ color: T_LIGHT.purple }}/>
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className="text-[9px] font-medium" style={{ color: T_LIGHT.dimText }}>Jomie's suggestion</span>
-                        {group.isApproved && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>✓ Approved</span>}
-                        {!group.isApproved && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FFF7ED", color:"#EA580C" }}>⚠ Unapproved</span>}
-                        {!group.myInvois && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF9C3", color:"#A16207" }}>No MyInvois</span>}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold truncate" style={{ color: T_LIGHT.text }}>
+                          {group.vendorName || "Vendor TBD"}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span className="text-[9px] font-medium" style={{ color: T_LIGHT.dimText }}>Jomie's suggestion</span>
+                          {group.isApproved && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>✓ Approved</span>}
+                          {!group.isApproved && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FFF7ED", color:"#EA580C" }}>⚠ Unapproved</span>}
+                          {!group.myInvois && group.vendorCode && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background:"#FEF9C3", color:"#A16207" }}>No MyInvois</span>}
+                        </div>
                       </div>
+                      <button
+                        onClick={() => { setGroupPickerOpen(groupPickerOpen === group.id ? null : group.id); setVendorSearch("") }}
+                        className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
+                        style={{
+                          background: groupPickerOpen === group.id ? T_LIGHT.purple : "transparent",
+                          color: groupPickerOpen === group.id ? "#fff" : T_LIGHT.purple,
+                          border: `1px solid ${T_LIGHT.purple}`,
+                        }}>
+                        <RefreshCw size={8}/>
+                        Override vendor
+                      </button>
                     </div>
-                  </div>
+                    {groupPickerOpen === group.id && (
+                      <div className="border-b" style={{ borderColor:"#F0F0FA", background:"#F7F7FE" }}>
+                        <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor:"#E8E6F4" }}>
+                          <Search size={11} style={{ color: T_LIGHT.dimText, flexShrink:0 }}/>
+                          <input
+                            autoFocus
+                            type="text"
+                            value={vendorSearch}
+                            onChange={e => setVendorSearch(e.target.value)}
+                            placeholder="Search approved vendors…"
+                            className="flex-1 text-[12px] bg-transparent focus:outline-none"
+                            style={{ color: T_LIGHT.text }}/>
+                          <button onClick={() => { setGroupPickerOpen(null); setVendorSearch("") }}>
+                            <X size={11} style={{ color: T_LIGHT.dimText }}/>
+                          </button>
+                        </div>
+                        <div className="max-h-44 overflow-y-auto bg-white">
+                          {filteredVendors(group.vendorCode).map(v => (
+                            <button
+                              key={v.code}
+                              onClick={() => { onVendorSelect(group.id, v.code, v.name); setGroupPickerOpen(null); setVendorSearch("") }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-gray-50 cursor-pointer">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{v.name}</div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {v.approved && <span className="text-[9px] px-1 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>Approved</span>}
+                                  {v.myInvois && <span className="text-[9px] px-1 rounded" style={{ background:"#EFF6FF", color:"#1D4ED8" }}>MyInvois</span>}
+                                </div>
+                              </div>
+                              <ChevronRight size={11} style={{ color:"#CBD5E1", flexShrink:0 }}/>
+                            </button>
+                          ))}
+                          {filteredVendors(group.vendorCode).length === 0 && (
+                            <div className="px-3 py-3 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No other vendors found</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )
               })()}
 
               {/* Item rows */}
               {group.items.map(item => {
-                const activeVendorCode = item.preferredVendorCode || group.vendorCode
                 const isOverridden = !!item.preferredVendorName
-                const availableVendors = filteredVendors.filter(v => v.code !== activeVendorCode)
-                // New item sourced from URL with a known shop → Browse only (user can find same item elsewhere)
-                // New item manually added with no shop → Change vendor + Browse (full flexibility)
-                // Catalog item → Change vendor + Browse (existing behaviour)
                 const hasSourceVendor = item.isNew && !!item.shop
-                const showChangeVendor = !hasSourceVendor
-                const showBrowse = true
                 return (
                 <div key={item.code} style={{ borderBottom:"1px solid #F0F0FA" }}>
                   {/* Item row */}
@@ -1877,83 +1922,15 @@ function VendorOverridePanel({
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Reset — only for overridden items */}
-                      {isOverridden && (
-                        <button
-                          onClick={() => onVendorSelect(item.code, "", "")}
-                          className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all"
-                          style={{ background:"transparent", color:"#94A3B8", border:"1px solid #E2E8F0" }}
-                          title="Reset to Jomie's suggestion">
-                          <X size={8}/>
-                          Reset
-                        </button>
-                      )}
-                      {/* Change vendor from master list — for manually added items and catalog items */}
-                      {showChangeVendor && (
-                        <button
-                          onClick={() => { setItemPickerOpen(itemPickerOpen === item.code ? null : item.code); setItemSearch("") }}
-                          className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all"
-                          style={{
-                            background: itemPickerOpen === item.code ? T_LIGHT.purple : "transparent",
-                            color: itemPickerOpen === item.code ? "#fff" : T_LIGHT.purple,
-                            border:`1px solid ${T_LIGHT.purple}`,
-                          }}>
-                          <RefreshCw size={8}/>
-                          {isOverridden ? "Change" : "Change vendor"}
-                        </button>
-                      )}
-                      {/* Browse — always available, lets user find same item from other vendors/platforms */}
-                      {showBrowse && (
-                        <button
-                          onClick={() => onBrowse(item)}
-                          className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
-                          style={{ background:"rgba(93,94,244,0.08)", color: T_LIGHT.purple, border:"1px solid rgba(93,94,244,0.15)" }}>
-                          <Globe size={8}/>
-                          {hasSourceVendor ? "Browse other" : "Browse"}
-                        </button>
-                      )}
+                      <button
+                        onClick={() => onBrowse(item)}
+                        className="flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-medium cursor-pointer transition-all shrink-0"
+                        style={{ background:"rgba(93,94,244,0.08)", color: T_LIGHT.purple, border:"1px solid rgba(93,94,244,0.15)" }}>
+                        <Globe size={8}/>
+                        {hasSourceVendor ? "Browse other" : "Browse"}
+                      </button>
                     </div>
                   </div>
-
-                  {/* Inline vendor search — shown when this item's picker is open */}
-                  {itemPickerOpen === item.code && (
-                    <div className="mx-3 mb-2.5 rounded-lg overflow-hidden border" style={{ borderColor: T_LIGHT.border }}>
-                      <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: T_LIGHT.border, background:"#F7F7FE" }}>
-                        <Search size={11} style={{ color: T_LIGHT.dimText, flexShrink:0 }}/>
-                        <input
-                          autoFocus
-                          type="text"
-                          value={itemSearch}
-                          onChange={e => setItemSearch(e.target.value)}
-                          placeholder="Search vendors…"
-                          className="flex-1 text-[12px] bg-transparent focus:outline-none"
-                          style={{ color: T_LIGHT.text }}/>
-                        <button onClick={() => setItemPickerOpen(null)}>
-                          <X size={11} style={{ color: T_LIGHT.dimText }}/>
-                        </button>
-                      </div>
-                      <div className="max-h-44 overflow-y-auto bg-white">
-                        {availableVendors.map(v => (
-                          <button
-                            key={v.code}
-                            onClick={() => { onVendorSelect(item.code, v.code, v.name); setItemPickerOpen(null); setItemSearch("") }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-gray-50 cursor-pointer">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[12px] font-medium truncate" style={{ color: T_LIGHT.text }}>{v.name}</div>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                {v.approved && <span className="text-[9px] px-1 rounded" style={{ background:"#F0FDF4", color:"#16A34A" }}>Approved</span>}
-                                {v.myInvois && <span className="text-[9px] px-1 rounded" style={{ background:"#EFF6FF", color:"#1D4ED8" }}>MyInvois</span>}
-                              </div>
-                            </div>
-                            <ChevronRight size={11} style={{ color:"#CBD5E1", flexShrink:0 }}/>
-                          </button>
-                        ))}
-                        {availableVendors.length === 0 && (
-                          <div className="px-3 py-3 text-center text-[11px]" style={{ color: T_LIGHT.dimText }}>No other vendors found</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )
               })}
@@ -4910,7 +4887,7 @@ export default function NewPRPage() {
         ) : rightPanelView === "vendors" && roundAComplete ? (
           <VendorOverridePanel
             confirmedItems={confirmedItems}
-            onVendorSelect={(itemCode, vendorCode, vendorName) => handleItemVendorOverride(itemCode, vendorCode, vendorName, true)}
+            onVendorSelect={(groupId, vendorCode, vendorName) => handleVendorOverride(groupId, vendorCode, vendorName)}
             onBrowse={(item) => { setBrowseItem(item); setRightPanelView("review") }}
             onConfirm={() => postUserMessage("Confirm vendor grouping →", handleConfirmVendorMatching)}
             onEditVendors={() => postUserMessage("Edit vendor grouping", () => {
