@@ -965,6 +965,86 @@ interface FetchedProduct {
   source?: string   // "jsonld" | "og" | "html" | "demo" | "failed"
 }
 
+function buildOneShotSystemPrompt(
+  intent: string,
+  answers: Record<string, string>,
+  originalMessage: string
+): string {
+  const itemList = ITEM_MASTER.map(i =>
+    `${i.code} | ${i.name} | ${i.spec} | ${i.uom} | RM ${i.unitPrice} | ${i.purchaseType.toUpperCase()} | MOQ: ${i.moq}`
+  ).join("\n")
+
+  const vendorList = VENDOR_MASTER.map(v =>
+    `${v.code} | ${v.name} | ${v.approved ? "Approved" : "NOT approved"} | MyInvois: ${v.myInvois ? "Yes" : "No"}`
+  ).join("\n")
+
+  const contextLines = Object.entries(answers)
+    .filter(([, v]) => v && !v.startsWith("start:"))
+    .map(([k, v]) => `- ${k}: ${v}`)
+    .join("\n")
+
+  return `You are Jomie, an AI procurement agent for ABC Retails Sdn Bhd.
+
+The user submitted a purchase request and has just answered a context-collection questionnaire. You now have COMPLETE context. Your job is to produce a full, confident one-shot response.
+
+══════════════════════════════════════════════
+PURCHASE INTENT: ${intent}
+ORIGINAL REQUEST: "${originalMessage}"
+
+COLLECTED CONTEXT:
+${contextLines}
+══════════════════════════════════════════════
+
+APPROVED ITEM CATALOG:
+${itemList}
+
+APPROVED VENDORS:
+${vendorList}
+
+══════════════════════════════════════════════
+YOUR TASK — ONE-SHOT COMPLETE RESPONSE
+══════════════════════════════════════════════
+
+You have all the context. Now do ALL of the following in a single reply:
+
+1. SUGGEST ITEMS: Match the intent + context to the best items in the catalog.
+   - Use action "suggest-items" with exact item codes
+   - State which item(s) you chose and why (1 line per item)
+   - Include realistic qty based on context
+   - If no exact match: use action "open-picker" and explain what to look for
+
+2. DRAFT JUSTIFICATION: Write a 2–3 sentence business justification using the collected context.
+   Include: what is being purchased, why it's needed, when it's needed by.
+
+3. PREFILL CONTEXT: Include a complete prefill_context payload using all collected answers.
+
+4. REPLY TEXT: Confident, concise — 3–5 lines max.
+   Lead with what you're suggesting, not with a question.
+   End with: "Ready to confirm these items and move to vendor matching?"
+
+══════════════════════════════════════════════
+
+Respond ONLY with this JSON (no markdown fences):
+{
+  "thinking": "1–2 sentences: what you matched and why",
+  "text": "your reply (use \\n for line breaks, max 5 lines)",
+  "action": "suggest-items | open-picker | null",
+  "payload": {
+    "items": [{ "code": "EXACT-CODE", "qty": 1 }],
+    "prefill_context": {
+      "intent": "${intent}",
+      "dept_hint": "",
+      "timeline_hint": "",
+      "urgency": "normal",
+      "justification_draft": ""
+    }
+  },
+  "buttons": [{ "label": "Button label", "primary": true, action: "proceed-to-vendor" }]
+}
+
+Valid button actions: "open-picker", "proceed-to-vendor". Use exact item codes from the catalog above.`
+}
+
 function buildFirstMessageSystemPrompt(product?: FetchedProduct, externalUrl?: string): string {
   const itemList = ITEM_MASTER.map(i =>
     `${i.code} | ${i.name} | ${i.spec} | ${i.uom} | RM ${i.unitPrice} | ${i.purchaseType.toUpperCase()} | MOQ: ${i.moq}`
@@ -1060,70 +1140,25 @@ DEPT INFERENCE DEFAULTS (use when not explicitly stated):
 - Finance/accounting software → Finance
 
 ══════════════════════════════════════════════
-STEP 3 — PROPOSE ITEMS PROACTIVELY
+STEP 3 — ACKNOWLEDGE AND HOLD
 ══════════════════════════════════════════════
-DO NOT default to "open the picker". Instead:
+DO NOT suggest items yet. A context-collection widget will appear automatically to gather details from the user.
 
-A) If catalog has clear matches for the detected intent + context:
-   → Propose specific items immediately using action "suggest-items"
-   → State your assumptions: "Based on your request, I'm suggesting [items]. Here's why: [brief reason]"
-   → Include qty from context, or ask for confirmation of qty in your text
-   → Add button: "Add more items" (open-picker) so user can extend the list
+Your job in this first reply is ONLY to:
+1. Confirm you understood what they need (1 sentence)
+2. State the intent classification: "I'm treating this as a [INTENT] request — let me know if that's wrong."
+3. Mention 1 key thing you already know from their message (dept, urgency, or purpose)
 
-B) If the catalog has partial/multiple matches:
-   → Show the best 1–2 options and ask which fits
-   → Use action "suggest-items" once user confirms
-   → Do NOT just say "open the picker and look yourself"
-
-C) If no catalog match at all:
-   → Acknowledge, offer to register as new item: action "add-new-item"
-   → Still propose the closest catalog alternative if one exists
-
-D) If user's request is genuinely too vague to propose anything (e.g. "I need to buy something"):
-   → Ask ONE bundled question covering the 2–3 most important missing details
-   → Use action "open-picker" as fallback only after asking
+Keep your reply to 2–3 lines MAX. Do not list items. Do not ask questions. Do not use action "suggest-items" or "open-picker".
+Set action to null.
 
 ══════════════════════════════════════════════
-STEP 4 — BUNDLED QUESTION (only if critically missing info)
+STEP 4 — CONTEXT WIDGET WILL HANDLE QUESTIONS
 ══════════════════════════════════════════════
-If you cannot propose items because context is insufficient:
-- Ask ALL missing critical questions in ONE message block — never drip one at a time
-- Max 3 questions, all in the same reply
-- Format: bullet points, conversational tone
-- After asking, still include action "open-picker" so user can browse while they think
-- Use EXACTLY the question set for the classified intent below — do not invent generic questions
+Do NOT ask questions in this reply. The system will display a structured context widget automatically after your response.
+The widget will collect all the details needed (department, scope, timeline, urgency, etc.) in a guided step-by-step flow.
 
-INTENT-SPECIFIC QUESTIONS (use when you cannot propose items):
-
-FIXED_ASSET (laptops, servers, furniture, equipment):
-- Which department is this for, and who are the end users?
-- Any spec requirements? (e.g. brand, RAM, storage, or "standard corporate setup" is fine)
-- When do you need it by?
-
-RAW_MATERIAL (production inputs, inventory stock):
-- What's the production order or batch reference this is for?
-- What quantity do you need, and what's the required delivery date?
-- Any preferred supplier or brand?
-
-NON_TRADE (office supplies, subscriptions, admin expenses):
-- Which department is requesting this?
-- Is this a one-time purchase or recurring (monthly / annual)?
-- Any quantity or spec requirements?
-
-SERVICES (IT support, cleaning, consultancy, outsourced work):
-- What exactly do you need the vendor to do? (scope / deliverable)
-- What's the contract period? (start date and duration)
-- Do you have a preferred vendor, or open to suggestions?
-
-MAINTENANCE (repairs, servicing, spare parts):
-- Which asset needs servicing? (name, model, or asset tag)
-- What's the issue or service needed?
-- Is this urgent / breakdown, or a scheduled maintenance?
-
-MARKETING_EVENT (events, campaigns, exhibitions):
-- What's the event name and purpose?
-- When is the event?
-- What's the total approved budget ceiling for this event?
+Your reply text should be warm but short — 2–3 lines only.
 
 ══════════════════════════════════════════════
 STEP 5 — ALWAYS INCLUDE prefill_context IN PAYLOAD
@@ -3484,14 +3519,13 @@ export default function NewPRPage() {
         if (pc.urgency === "urgent") setPrUrgency("urgent")
       }
 
-      const createButtons = reply.action === "suggest-items" && lastBrowseQueryRef.current
-        ? [...(reply.buttons ?? []).filter(b => b.action !== "browse-online"), { label: "Source more options →", primary: false, action: "browse-online" }]
-        : reply.buttons
       const classifiedIntent = reply.payload?.prefill_context?.intent
-      const isAskingQuestions = !reply.action || reply.action === "open-picker"
-      const questionFlow = classifiedIntent && isAskingQuestions && INTENT_QUESTION_FLOWS[classifiedIntent]
+      // Fix 5: always attach question widget on first message — suppress item-suggestion buttons
+      const questionFlow = classifiedIntent && INTENT_QUESTION_FLOWS[classifiedIntent]
         ? { intent: classifiedIntent, questions: INTENT_QUESTION_FLOWS[classifiedIntent] }
         : undefined
+      // Only show buttons if no widget (e.g. URL flow or unclassified)
+      const createButtons = questionFlow ? undefined : reply.buttons
       setChatMessages([{ role: "ai", text: reply.text, thinking: reply.thinking, actions: createButtons, questionFlow }])
     }
 
@@ -3566,12 +3600,72 @@ export default function NewPRPage() {
       setTimeout(handleProceedToVendor, 400)
     } else {
       setIsChatThinking(true)
-      const ctx = { roundAComplete, roundBComplete, confirmedItems: currentItems, submittedMessage: bundledText, purchaseIntent: intent, prefillContext: newCtx }
-      callGroqJomie(bundledText, ctx, [...chatMessages, { role: "user" as const, text: bundledText }], null).then(reply => {
+      // Fix 5: one-shot call using dedicated system prompt with full context
+      const apiKey = localStorage.getItem("jomie_openrouter_key") || ""
+      const oneShotMessages = [
+        { role: "system", content: buildOneShotSystemPrompt(intent, answers, submittedMessage) },
+        { role: "user", content: bundledText },
+      ]
+      fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://jomie.app",
+          "X-Title": "Jomie",
+        },
+        body: JSON.stringify({
+          model: "anthropic/claude-3-5-haiku",
+          messages: oneShotMessages,
+          temperature: 0.3,
+          max_tokens: 900,
+        }),
+      }).then(r => r.text()).then(resText => {
+        const json = JSON.parse(resText)
+        let raw = json.choices[0].message.content ?? ""
+        raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim()
+        const reply = JSON.parse(raw) as GroqReply
         setIsChatThinking(false)
-        setChatMessages(prev => [...prev, { role: "ai" as const, text: reply.text, thinking: reply.thinking, actions: reply.buttons }])
+
+        // Handle suggest-items from one-shot reply
+        if (reply.action === "suggest-items" && reply.payload?.items?.length) {
+          const matched: ConfirmedItem[] = []
+          for (const { code, qty } of reply.payload.items) {
+            const master = ITEM_MASTER.find(i => i.code === code)
+            if (master) matched.push({ ...master, qty: Math.max(qty, master.moq), stockSkipped: false })
+          }
+          if (matched.length > 0) {
+            setConfirmedItems(matched)
+            setRightPanelView("items")
+          }
+        }
+
+        // Update prefill from one-shot response
+        const pc = reply.payload?.prefill_context
+        if (pc) {
+          if (pc.justification_draft && !prJustification) setPrJustification(pc.justification_draft)
+          if (pc.dept_hint && !prDept) setPrDept(pc.dept_hint)
+          if (pc.urgency === "urgent") setPrUrgency("urgent")
+        }
+
+        const oneShotButtons = reply.action === "suggest-items"
+          ? [...(reply.buttons ?? []), { label: "Add more items", primary: false, action: "open-picker" }]
+          : reply.buttons
+        setChatMessages(prev => [...prev, {
+          role: "ai" as const,
+          text: reply.text,
+          thinking: reply.thinking,
+          actions: oneShotButtons,
+        }])
         if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
-      }).catch(() => setIsChatThinking(false))
+      }).catch(() => {
+        setIsChatThinking(false)
+        setChatMessages(prev => [...prev, {
+          role: "ai" as const,
+          text: "I have your context — please use the item picker to add items to your request.",
+          actions: [{ label: "Open item picker", primary: true, action: "open-picker" }],
+        }])
+      })
     }
   }
 
