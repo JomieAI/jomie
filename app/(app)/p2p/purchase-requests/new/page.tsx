@@ -3202,6 +3202,8 @@ export default function NewPRPage() {
     setRoundBComplete(true)
     setShowVendorOverride(false)
     setVendorPickerOpen(null)
+    setRightPanelView("submit")
+    setRightWidth(null)
     handleConfirmVendors()
 
     // Auto-suggest PR title from item types
@@ -4780,10 +4782,8 @@ export default function NewPRPage() {
           const NAV_TABS: { key: RightPanelView; label: string; enabled: boolean }[] = [
             { key: "items",   label: "Items",   enabled: confirmedItems.length > 0 },
             { key: "vendors", label: "Vendors", enabled: roundAComplete },
-            { key: "budget",  label: "Budget",  enabled: false },
-            { key: "context", label: "Context", enabled: false },
             { key: "review",  label: "Review",  enabled: true },
-            { key: "submit",  label: "Submit PR", enabled: roundBComplete },
+            { key: "submit",  label: "Context", enabled: roundBComplete },
           ]
           const activeLabel = NAV_TABS.find(t => t.key === rightPanelView)?.label ?? "Review"
           return (
