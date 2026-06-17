@@ -3658,7 +3658,7 @@ export default function NewPRPage() {
               text: reply.text,
               thinking: reply.thinking,
             }])
-            setTimeout(() => handleAutoAdvanceToReview(matched), 600)
+            setTimeout(() => handleAutoAdvanceToReview(matched, answers), 600)
             return
           }
         }
@@ -4064,7 +4064,7 @@ export default function NewPRPage() {
 
   // Fix 6: silently auto-advance through vendor matching straight to review panel
   // Used after one-shot context collection so user skips the vendor grouping step
-  const handleAutoAdvanceToReview = (items: ConfirmedItem[]) => {
+  const handleAutoAdvanceToReview = (items: ConfirmedItem[], answers?: Record<string, string>) => {
     pendingNewItemRef.current = null
     const valid = items.filter(i => i.qty >= i.moq && i.qty > 0)
     setConfirmedItems(valid)
@@ -4086,6 +4086,35 @@ export default function NewPRPage() {
       : valid.length === 1 ? `${valid[0].name} Purchase`
       : `Purchase Request — ${monthYear}`
     setPrTitle(autoTitle)
+
+    // Build richer justification from collected answers
+    if (answers && !prJustification) {
+      const startTokenLabels: Record<string, string> = {
+        "start:asap": "immediately", "start:next_week": "starting next week",
+        "start:next_month": "starting next month", "start:two_months": "starting in 2–3 months",
+      }
+      const deptStr = (answers.dept || "").replace(" department", "")
+      const scopeStr = answers.scope || ""
+      const contractStr = answers.contract_length || ""
+      const startStr = startTokenLabels[answers.start_date || ""] || ""
+      const urgencyStr = (answers.urgency || "").toLowerCase().includes("urgent") ? "This is an urgent request." : ""
+      const assetStr = answers.asset || ""
+      const issueStr = answers.issue || ""
+      const eventStr = answers.event_name || ""
+      const budgetStr = answers.budget || ""
+      const poStr = answers.po_ref || ""
+
+      const parts = [scopeStr || issueStr || eventStr || poStr, assetStr].filter(Boolean)
+      const contextDetails = [contractStr, startStr].filter(Boolean).join(", ")
+      const richJust = [
+        parts.length > 0 ? parts.join(". ") : "",
+        deptStr ? `for the ${deptStr} department` : "",
+        contextDetails ? `(${contextDetails})` : "",
+        budgetStr ? `Budget ceiling: ${budgetStr}.` : "",
+        urgencyStr,
+      ].filter(Boolean).join(" ").trim()
+      if (richJust) setPrJustification(richJust)
+    }
 
     // Generate budget code from intent + dept
     const dept = prefillContext?.dept_hint || prDept || "GENERAL"
@@ -4125,9 +4154,29 @@ export default function NewPRPage() {
     if (unapproved.length > 0) warnings.push(`${unapproved.map(g => g.vendorName).join(", ")} is not an approved vendor — sourcing approval required`)
     const warningText = warnings.length > 0 ? `\n\n⚠️ **Heads up:**\n${warnings.map(w => `- ${w}`).join("\n")}` : ""
 
+    // Build context lines from collected widget answers
+    const startTokenLabelsChat: Record<string, string> = {
+      "start:asap": "ASAP", "start:next_week": "next week",
+      "start:next_month": "next month", "start:two_months": "in 2–3 months",
+    }
+    const contextLines: string[] = []
+    if (answers) {
+      if (answers.dept) contextLines.push(`- Department: **${answers.dept}**`)
+      if (answers.scope) contextLines.push(`- Scope: **${answers.scope}**`)
+      if (answers.issue) contextLines.push(`- Issue: **${answers.issue}**`)
+      if (answers.asset) contextLines.push(`- Asset: **${answers.asset}**`)
+      if (answers.event_name) contextLines.push(`- Event: **${answers.event_name}**`)
+      if (answers.contract_length) contextLines.push(`- Contract: **${answers.contract_length}**`)
+      if (answers.start_date) contextLines.push(`- Start: **${startTokenLabelsChat[answers.start_date] ?? answers.start_date}**`)
+      if (answers.urgency) contextLines.push(`- Priority: **${answers.urgency}**`)
+      if (answers.budget) contextLines.push(`- Budget ceiling: **${answers.budget}**`)
+      if (answers.vendor_pref && answers.vendor_pref !== "(skipped)") contextLines.push(`- Vendor preference: **${answers.vendor_pref}**`)
+    }
+    const contextBlock = contextLines.length > 0 ? `\n\n**Context collected:**\n${contextLines.join("\n")}` : ""
+
     setChatMessages(prev => [...prev, {
       role: "ai" as const,
-      text: `✓ All set! Here's your PR summary:\n\n- Items: ${itemSummary} via **${vendorStr}** — RM ${totalAmt.toLocaleString()}\n- Approval route: **${tier}**\n\nPR form is pre-filled on the right — review and adjust if needed, then hit **Submit PR** to send for approval.${warningText}`,
+      text: `✓ All set! Here's your PR summary:\n\n- Items: ${itemSummary} via **${vendorStr}** — RM ${totalAmt.toLocaleString()}\n- Approval route: **${tier}**${contextBlock}\n\nPR form is pre-filled on the right — review and adjust if needed, then hit **Submit PR** to send for approval.${warningText}`,
     }])
   }
 
