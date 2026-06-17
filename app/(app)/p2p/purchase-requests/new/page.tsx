@@ -258,11 +258,116 @@ interface ChatMsgAction {
   action: string   // ChatActionType or dynamic e.g. "suggest-item:CODE" / "add-new-item-from-url"
 }
 
+interface ChipGroup {
+  group: string
+  items: { label: string; value: string }[]
+}
+
 interface ChatMsg {
   role: "user" | "ai"
   text: string
   thinking?: string
   actions?: ChatMsgAction[]
+  chips?: ChipGroup[]
+}
+
+const INTENT_CHIPS: Record<string, ChipGroup[]> = {
+  FIXED_ASSET: [
+    { group: "Department", items: [
+      { label: "IT", value: "IT department" },
+      { label: "Finance", value: "Finance department" },
+      { label: "HR", value: "HR department" },
+      { label: "Admin", value: "Admin / General" },
+      { label: "Operations", value: "Operations department" },
+    ]},
+    { group: "Timeline", items: [
+      { label: "This week", value: "needed this week" },
+      { label: "Next week", value: "needed next week" },
+      { label: "End of month", value: "needed by end of month" },
+      { label: "Next month", value: "needed next month" },
+      { label: "Flexible", value: "no urgent timeline" },
+    ]},
+    { group: "Urgency", items: [
+      { label: "Normal", value: "normal priority" },
+      { label: "Urgent", value: "urgent" },
+    ]},
+  ],
+  SERVICES: [
+    { group: "Department", items: [
+      { label: "IT", value: "IT department" },
+      { label: "Finance", value: "Finance department" },
+      { label: "HR", value: "HR department" },
+      { label: "Operations", value: "Operations department" },
+      { label: "Admin", value: "Admin / General" },
+    ]},
+    { group: "Contract length", items: [
+      { label: "1 month", value: "1 month contract" },
+      { label: "3 months", value: "3 months contract" },
+      { label: "6 months", value: "6 months contract" },
+      { label: "1 year", value: "1 year contract" },
+      { label: "Ongoing", value: "ongoing, no fixed end" },
+    ]},
+    { group: "Urgency", items: [
+      { label: "Normal", value: "normal priority" },
+      { label: "Urgent", value: "urgent" },
+    ]},
+  ],
+  MAINTENANCE: [
+    { group: "Urgency", items: [
+      { label: "Urgent – breakdown", value: "urgent, equipment breakdown" },
+      { label: "Scheduled", value: "scheduled maintenance, not urgent" },
+    ]},
+    { group: "Timeline", items: [
+      { label: "Today", value: "needed today" },
+      { label: "This week", value: "needed this week" },
+      { label: "Next week", value: "needed next week" },
+    ]},
+  ],
+  MARKETING_EVENT: [
+    { group: "Budget ceiling", items: [
+      { label: "< RM 5k", value: "budget under RM 5,000" },
+      { label: "RM 5k–20k", value: "budget RM 5,000 to RM 20,000" },
+      { label: "RM 20k–50k", value: "budget RM 20,000 to RM 50,000" },
+      { label: "> RM 50k", value: "budget above RM 50,000" },
+    ]},
+    { group: "Timeline", items: [
+      { label: "This week", value: "event this week" },
+      { label: "2 weeks", value: "event in 2 weeks" },
+      { label: "Next month", value: "event next month" },
+      { label: "2–3 months", value: "event in 2-3 months" },
+    ]},
+  ],
+  RAW_MATERIAL: [
+    { group: "Urgency", items: [
+      { label: "Normal", value: "normal priority" },
+      { label: "Urgent – production risk", value: "urgent, production at risk" },
+    ]},
+    { group: "Timeline", items: [
+      { label: "This week", value: "needed this week" },
+      { label: "Next week", value: "needed next week" },
+      { label: "End of month", value: "needed by end of month" },
+      { label: "Next month", value: "needed next month" },
+    ]},
+  ],
+  NON_TRADE: [
+    { group: "Department", items: [
+      { label: "IT", value: "IT department" },
+      { label: "Finance", value: "Finance department" },
+      { label: "HR", value: "HR department" },
+      { label: "Admin", value: "Admin / General" },
+      { label: "All depts", value: "all departments" },
+    ]},
+    { group: "Frequency", items: [
+      { label: "One-time", value: "one-time purchase" },
+      { label: "Monthly", value: "monthly recurring" },
+      { label: "Quarterly", value: "quarterly recurring" },
+      { label: "Annual", value: "annual recurring" },
+    ]},
+    { group: "Urgency", items: [
+      { label: "Normal", value: "normal priority" },
+      { label: "Urgent", value: "urgent" },
+    ]},
+  ],
 }
 
 // ─── Intent detection ────────────────────────────────────────────────────────
@@ -3008,13 +3113,33 @@ export default function NewPRPage() {
       const createButtons = reply.action === "suggest-items" && lastBrowseQueryRef.current
         ? [...(reply.buttons ?? []).filter(b => b.action !== "browse-online"), { label: "Source more options →", primary: false, action: "browse-online" }]
         : reply.buttons
-      setChatMessages([{ role: "ai", text: reply.text, thinking: reply.thinking, actions: createButtons }])
+      const classifiedIntent = reply.payload?.prefill_context?.intent
+      const isAskingQuestions = !reply.action || reply.action === "open-picker"
+      const chips = classifiedIntent && isAskingQuestions ? (INTENT_CHIPS[classifiedIntent] ?? undefined) : undefined
+      setChatMessages([{ role: "ai", text: reply.text, thinking: reply.thinking, actions: createButtons, chips }])
     }
 
     runCreate().catch((err) => {
       setIsChatThinking(false)
       setChatMessages([{ role: "ai", text: jomieErrorMessage(err), actions: [{ label:"Open item picker", primary:true, action:"open-picker" }] }])
     })
+  }
+
+  const handleChipClick = (value: string) => {
+    if (isChatThinking) return
+    const ctx = { roundAComplete, roundBComplete, confirmedItems, submittedMessage, purchaseIntent, prefillContext }
+    const currentHistory = [...chatMessages]
+    setChatMessages(prev => [...prev, { role: "user", text: value }])
+    setIsChatThinking(true)
+    callGroqJomie(value, ctx, [...currentHistory, { role: "user", text: value }], null).then(reply => {
+      setIsChatThinking(false)
+      const msg: ChatMsg = { role: "ai", text: reply.text, thinking: reply.thinking, actions: reply.buttons }
+      setChatMessages(prev => [...prev, msg])
+      if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+      if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
+      if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
+        handleItemVendorOverride(reply.payload.itemCode, reply.payload.vendorCode, reply.payload.vendorName ?? "", true)
+    }).catch(() => setIsChatThinking(false))
   }
 
   const handleSend = () => {
@@ -4688,6 +4813,39 @@ export default function NewPRPage() {
                           onMouseLeave={e => { e.currentTarget.style.opacity = "1" }}>
                           {act.label}
                         </button>
+                      ))}
+                    </div>
+                  )}
+                  {msg.chips && msg.chips.length > 0 && (
+                    <div className="flex flex-col gap-2 mt-3 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                      {msg.chips.map((group, gi) => (
+                        <div key={gi} className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] font-semibold uppercase tracking-widest w-full mb-0.5"
+                            style={{ color: "rgba(255,255,255,0.28)" }}>
+                            {group.group}
+                          </span>
+                          {group.items.map((chip, ci) => (
+                            <button
+                              key={ci}
+                              onClick={() => handleChipClick(chip.value)}
+                              className="px-2.5 py-1 rounded-full text-[12px] font-medium cursor-pointer transition-all"
+                              style={{
+                                background: "rgba(93,94,244,0.1)",
+                                color: "rgba(255,255,255,0.65)",
+                                border: "1px solid rgba(93,94,244,0.22)",
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.background = "rgba(93,94,244,0.25)"
+                                e.currentTarget.style.color = "#fff"
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.background = "rgba(93,94,244,0.1)"
+                                e.currentTarget.style.color = "rgba(255,255,255,0.65)"
+                              }}>
+                              {chip.label}
+                            </button>
+                          ))}
+                        </div>
                       ))}
                     </div>
                   )}
