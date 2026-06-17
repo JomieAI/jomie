@@ -1,1 +1,1 @@
-﻿{"version":"0.0.1","configurations":[{"name":"jomie-dev","runtimeExecutable":"npm","runtimeArgs":["run","dev"],"port":3900,"autoPort":false}]}
+{"version":"0.0.1","configurations":[{"name":"jomie-static","runtimeExecutable":"npx","runtimeArgs":["serve","out","-l","3900"],"port":3900,"autoPort":false},{"name":"jomie-dev","runtimeExecutable":"npm","runtimeArgs":["run","dev"],"port":3901,"autoPort":false}]}

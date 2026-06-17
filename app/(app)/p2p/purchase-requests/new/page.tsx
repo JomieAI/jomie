@@ -318,7 +318,13 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "Admin / General", value: "Admin department" },
       { label: "Legal", value: "Legal department" },
     ]},
-    { id: "scope", text: "What do you need the vendor to do?", type: "text", placeholder: "e.g. On-site IT helpdesk, 8h/day Mon–Fri..." },
+    { id: "scope", text: "What do you need the vendor to do?", type: "text", options: [
+      { label: "On-site IT support / helpdesk", value: "On-site IT helpdesk support, 8h/day Mon–Fri" },
+      { label: "Remote / virtual support", value: "Remote IT support and helpdesk" },
+      { label: "Manpower supply", value: "Manpower supply / outsourced staff" },
+      { label: "Project-based consulting", value: "Project-based consulting and advisory" },
+      { label: "Cleaning / facility services", value: "Cleaning and facility management services" },
+    ], placeholder: "e.g. On-site IT helpdesk, 8h/day Mon–Fri..." },
     { id: "contract_length", text: "Contract length?", type: "single", options: [
       { label: "1 month", value: "1 month contract" },
       { label: "3 months", value: "3 months contract" },
@@ -340,8 +346,19 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "Urgent — equipment breakdown", value: "urgent, equipment breakdown" },
       { label: "Scheduled maintenance", value: "scheduled maintenance, not urgent" },
     ]},
-    { id: "asset", text: "Which asset needs servicing?", type: "text", placeholder: "e.g. Carrier AC Unit, Floor 3, Asset Tag FA-0042..." },
-    { id: "issue", text: "What's the issue or service needed?", type: "text", placeholder: "e.g. Compressor failure, cooling not working..." },
+    { id: "asset", text: "Which asset needs servicing?", type: "text", options: [
+      { label: "Air conditioning unit", value: "Air conditioning unit" },
+      { label: "Printer / copier", value: "Printer / copier" },
+      { label: "Server / network equipment", value: "Server / network equipment" },
+      { label: "Vehicle", value: "Company vehicle" },
+      { label: "Generator / electrical", value: "Generator / electrical system" },
+    ], placeholder: "e.g. Carrier AC Unit, Floor 3, Asset Tag FA-0042..." },
+    { id: "issue", text: "What's the issue or service needed?", type: "text", options: [
+      { label: "Breakdown — not working", value: "Equipment breakdown, not working" },
+      { label: "Performance degraded", value: "Performance degraded, needs servicing" },
+      { label: "Scheduled service / PPM", value: "Scheduled preventive maintenance" },
+      { label: "Spare parts replacement", value: "Spare parts replacement needed" },
+    ], placeholder: "e.g. Compressor failure, cooling not working..." },
     { id: "timeline", text: "When do you need it done?", type: "single", options: [
       { label: "Today", value: "needed today" },
       { label: "This week", value: "needed this week" },
@@ -349,7 +366,13 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
     ]},
   ],
   MARKETING_EVENT: [
-    { id: "event_name", text: "What's the event name and purpose?", type: "text", placeholder: "e.g. Q3 Client Appreciation Dinner, KL..." },
+    { id: "event_name", text: "What's the event name and purpose?", type: "text", options: [
+      { label: "Client appreciation / dinner", value: "Client appreciation dinner" },
+      { label: "Product launch", value: "Product launch event" },
+      { label: "Team building / company event", value: "Team building / company event" },
+      { label: "Trade show / exhibition", value: "Trade show / exhibition booth" },
+      { label: "Training / seminar", value: "Training / seminar" },
+    ], placeholder: "e.g. Q3 Client Appreciation Dinner, KL..." },
     { id: "event_date", text: "When is the event?", type: "single", options: [
       { label: "This week", value: "event this week" },
       { label: "2 weeks away", value: "event in 2 weeks" },
@@ -372,8 +395,15 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "Normal", value: "normal priority" },
       { label: "Urgent — production at risk", value: "urgent, production at risk" },
     ]},
-    { id: "po_ref", text: "Production order or batch reference?", type: "text", placeholder: "e.g. PO-2026-0042, Batch #7, Job ref: PRJ-18..." },
-    { id: "qty_date", text: "Quantity needed and required delivery date?", type: "text", placeholder: "e.g. 500 units, needed by 30 June..." },
+    { id: "po_ref", text: "Production order or batch reference?", type: "text", options: [
+      { label: "No reference — ad hoc restock", value: "Ad hoc restock, no production order" },
+      { label: "Standing reorder", value: "Standing reorder / regular replenishment" },
+    ], placeholder: "e.g. PO-2026-0042, Batch #7, Job ref: PRJ-18..." },
+    { id: "qty_date", text: "Quantity needed and required delivery date?", type: "text", options: [
+      { label: "Small batch — this week", value: "Small batch, needed this week" },
+      { label: "Standard order — next week", value: "Standard order quantity, needed next week" },
+      { label: "Bulk order — end of month", value: "Bulk order, needed by end of month" },
+    ], placeholder: "e.g. 500 units, needed by 30 June..." },
     { id: "supplier", text: "Any preferred supplier or brand?", type: "single", optional: true, options: [
       { label: "Open to suggestions", value: "open to supplier suggestions" },
       { label: "Yes — we have a preferred supplier", value: "has preferred supplier" },
@@ -549,13 +579,16 @@ function QuestionWidget({
   const current = questions[currentIdx]
   const total = questions.length
   const isLast = currentIdx === total - 1
+  // text-type questions with options start in option view, pure text starts in text view
+  const hasMixedMode = current.type === "text" && !!current.options
 
   React.useEffect(() => {
-    setShowText(current.type === "text")
+    const pureText = current.type === "text" && !current.options
+    setShowText(pureText)
     setTextValue("")
     setSelected(null)
-    if (current.type === "text") setTimeout(() => inputRef.current?.focus(), 60)
-  }, [currentIdx, current.type])
+    if (pureText) setTimeout(() => inputRef.current?.focus(), 60)
+  }, [currentIdx, current.type, current.options])
 
   const advance = (newAnswers: Record<string, string>) => {
     if (isLast) { onComplete(newAnswers) } else { setAnswers(newAnswers); setCurrentIdx(i => i + 1) }
@@ -568,8 +601,8 @@ function QuestionWidget({
 
   const handleTextNext = () => {
     const val = textValue.trim()
-    if (!val && !current.optional) return
-    advance({ ...answers, ...(val ? { [current.id]: val } : {}) })
+    if (!val) return
+    advance({ ...answers, [current.id]: val })
   }
 
   const handleSkip = () => advance({ ...answers })
@@ -577,6 +610,9 @@ function QuestionWidget({
   const purple = "#5D5EF4"
   const rowBg = "rgba(255,255,255,0.02)"
   const rowBorder = "0.5px solid rgba(255,255,255,0.06)"
+
+  // Show options when: pure single-select, or hybrid text+options not yet toggled to text view
+  const showOptions = !!current.options && !showText
 
   return (
     <div style={{
@@ -593,10 +629,10 @@ function QuestionWidget({
         }}>{currentIdx + 1} / {total}</span>
       </div>
 
-      {/* Options */}
-      {current.options && !showText && (
+      {/* Options (single-select or hybrid) */}
+      {showOptions && (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {current.options.map((opt, i) => {
+          {current.options!.map((opt, i) => {
             const isSel = selected === opt.value
             return (
               <button key={i} onClick={() => handleOptionClick(opt.value)} style={{
@@ -618,26 +654,24 @@ function QuestionWidget({
               </button>
             )
           })}
-          {/* "None of these" toggle */}
-          {current.placeholder && (
-            <button onClick={() => { setShowText(true); setTimeout(() => inputRef.current?.focus(), 60) }} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              background: rowBg, border: rowBorder, borderRadius: 8, padding: "9px 12px", cursor: "pointer", textAlign: "left",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)" }}
-            onMouseLeave={e => { e.currentTarget.style.background = rowBg }}>
-              <span style={{
-                width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: "rgba(255,255,255,0.06)", fontSize: 12, color: "rgba(255,255,255,0.3)",
-              }}>✎</span>
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.32)", fontStyle: "italic" }}>None of these — type my answer</span>
-            </button>
-          )}
+          {/* "None of these — type my answer" always shown for hybrid questions */}
+          <button onClick={() => { setShowText(true); setTimeout(() => inputRef.current?.focus(), 60) }} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            background: rowBg, border: rowBorder, borderRadius: 8, padding: "9px 12px", cursor: "pointer", textAlign: "left",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)" }}
+          onMouseLeave={e => { e.currentTarget.style.background = rowBg }}>
+            <span style={{
+              width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "rgba(255,255,255,0.06)", fontSize: 12, color: "rgba(255,255,255,0.3)",
+            }}>✎</span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.32)", fontStyle: "italic" }}>None of these — type my answer</span>
+          </button>
         </div>
       )}
 
-      {/* Text input */}
+      {/* Text input — pure text questions or hybrid after toggle */}
       {(current.type === "text" || showText) && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {showText && current.options && (
@@ -657,10 +691,8 @@ function QuestionWidget({
             }}
           />
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
-            {current.optional && (
-              <button onClick={handleSkip} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.28)", fontSize: 11, cursor: "pointer" }}>Skip</button>
-            )}
-            <button onClick={handleTextNext} disabled={!textValue.trim() && !current.optional} style={{
+            <button onClick={handleSkip} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.28)", fontSize: 11, cursor: "pointer" }}>Skip</button>
+            <button onClick={handleTextNext} disabled={!textValue.trim()} style={{
               background: textValue.trim() ? purple : "rgba(93,94,244,0.25)",
               color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px",
               fontSize: 12, fontWeight: 600, cursor: textValue.trim() ? "pointer" : "default",
@@ -669,26 +701,26 @@ function QuestionWidget({
         </div>
       )}
 
-      {/* Skip for single-select optional */}
-      {current.type === "single" && current.optional && !showText && (
-        <button onClick={handleSkip} style={{
-          background: "none", border: "none", color: "rgba(255,255,255,0.25)", fontSize: 11, cursor: "pointer", padding: "0 0 2px", textAlign: "left",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
-        onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.25)" }}>
-          Skip this question
-        </button>
-      )}
-
-      {/* Skip all */}
-      {!current.optional && currentIdx === 0 && (
-        <button onClick={onSkipAll} style={{
-          background: "none", border: "none", color: "rgba(255,255,255,0.2)", fontSize: 11, cursor: "pointer", padding: "0 0 2px", textAlign: "left",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.45)" }}
-        onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.2)" }}>
-          Skip all — proceed without context
-        </button>
+      {/* Footer row: skip this question + skip all (Q1 only) */}
+      {showOptions && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button onClick={handleSkip} style={{
+            background: "none", border: "none", color: "rgba(255,255,255,0.25)", fontSize: 11, cursor: "pointer", padding: "0 0 2px",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
+          onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.25)" }}>
+            Skip this question
+          </button>
+          {currentIdx === 0 && (
+            <button onClick={onSkipAll} style={{
+              background: "none", border: "none", color: "rgba(255,255,255,0.18)", fontSize: 11, cursor: "pointer", padding: "0 0 2px",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.4)" }}
+            onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.18)" }}>
+              Skip all →
+            </button>
+          )}
+        </div>
       )}
     </div>
   )
@@ -5476,7 +5508,7 @@ export default function NewPRPage() {
         )}
 
         {/* ── Bottom sticky: questioning + confirmed/submitted ── */}
-        {(chatState === "questioning" || chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && (
+        {(chatState === "questioning" || chatState === "confirmed" || chatState === "submitting" || chatState === "a2-pass") && !chatMessages.some(m => m.questionFlow && !m.questionFlow.completed) && (
         <div className="shrink-0 pt-4 flex flex-col gap-2">
           <div className="relative">
             {slashOpen && chatState === "questioning" && (
