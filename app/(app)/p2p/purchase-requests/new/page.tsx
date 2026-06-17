@@ -1243,7 +1243,7 @@ function ItemCard({ item, inventorySkipped, onQtyChange, onRemove, onSkipInvento
             <div className="text-[9px] mb-1" style={{ color:"rgba(255,255,255,0.4)" }}>Item type</div>
             <select
               value={draft.itemType}
-              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value }))}
+              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value as ItemType }))}
               className="w-full px-2 py-1.5 rounded-lg text-[11px] text-white border focus:outline-none cursor-pointer"
               style={{ borderColor:"rgba(186,117,23,0.4)", background:"rgba(0,0,0,0.4)" }}>
               {ITEM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -2033,7 +2033,7 @@ function CartItemRow({ item, tc, onQtyChange, onRemove, onUpdate }: {
             <div className="text-[9px] mb-1" style={{ color:"#6B7280" }}>Item type</div>
             <select
               value={draft.itemType}
-              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value }))}
+              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value as ItemType }))}
               className="w-full px-2 py-1.5 rounded-lg text-[11px] border focus:outline-none cursor-pointer"
               style={{ borderColor:"#F6D08A", background:"#FFFFF8", color:"#1C1B4B" }}>
               {ITEM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -2351,7 +2351,7 @@ function RightPanelItemRow({ item, onUpdate, onRemove }: {
             <div className="text-[9px] mb-1 text-gray-500">Item type</div>
             <select
               value={draft.itemType}
-              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value }))}
+              onChange={e => setDraft(d => ({ ...d, itemType: e.target.value as ItemType }))}
               className="w-full px-2 py-1.5 rounded-lg text-[11px] border focus:outline-none cursor-pointer text-gray-800"
               style={{ borderColor:"#F6D08A", background:"#FFFFF8" }}>
               {ITEM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
