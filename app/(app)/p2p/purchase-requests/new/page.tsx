@@ -5147,7 +5147,7 @@ export default function NewPRPage() {
               const focusStyle = { border:`1px solid ${T.purple}` }
 
               return (
-                <div className="flex flex-col h-full">
+                <div className="flex flex-col h-full px-4 pt-4 pb-4">
                   {/* Header */}
                   <div className="shrink-0 pb-3 mb-3 flex items-center justify-between" style={{ borderBottom:"1px solid #E9E8F5" }}>
                     <div className="flex items-center gap-2">
