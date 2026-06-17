@@ -308,6 +308,12 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "Urgent", value: "urgent" },
     ]},
     { id: "users", text: "Who are the end users? (optional)", type: "text", placeholder: "e.g. 3 new hires joining next month...", optional: true },
+    { id: "estimated_value", text: "Estimated total value?", type: "single", optional: true, options: [
+      { label: "Under RM 5,000", value: "estimated RM 3,000" },
+      { label: "RM 5,000 – 20,000", value: "estimated RM 10,000" },
+      { label: "RM 20,000 – 50,000", value: "estimated RM 30,000" },
+      { label: "Above RM 50,000", value: "estimated RM 60,000" },
+    ]},
   ],
   SERVICES: [
     { id: "dept", text: "Which department is requesting this?", type: "single", options: [
@@ -342,9 +348,14 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "Normal", value: "normal priority" },
       { label: "Urgent", value: "urgent" },
     ]},
-    { id: "vendor_pref", text: "Do you have a preferred vendor?", type: "single", optional: true, options: [
+    { id: "vendor_pref", text: "Preferred vendor name? (optional)", type: "text", optional: true, options: [
       { label: "Open to suggestions", value: "open to vendor suggestions" },
-      { label: "Yes — I have someone in mind", value: "has preferred vendor" },
+    ], placeholder: "e.g. Tech Solutions MY Sdn Bhd..." },
+    { id: "estimated_value", text: "Estimated monthly value?", type: "single", optional: true, options: [
+      { label: "Under RM 5,000 / month", value: "estimated RM 3,000" },
+      { label: "RM 5,000 – 10,000 / month", value: "estimated RM 7,500" },
+      { label: "RM 10,000 – 30,000 / month", value: "estimated RM 20,000" },
+      { label: "Above RM 30,000 / month", value: "estimated RM 40,000" },
     ]},
   ],
   MAINTENANCE: [
@@ -370,6 +381,12 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "This week", value: "needed this week" },
       { label: "Next week", value: "needed next week" },
     ]},
+    { id: "estimated_value", text: "Estimated service cost?", type: "single", optional: true, options: [
+      { label: "Under RM 1,000", value: "estimated RM 500" },
+      { label: "RM 1,000 – 5,000", value: "estimated RM 2,500" },
+      { label: "RM 5,000 – 20,000", value: "estimated RM 10,000" },
+      { label: "Above RM 20,000", value: "estimated RM 30,000" },
+    ]},
   ],
   MARKETING_EVENT: [
     { id: "event_name", text: "What's the event name and purpose?", type: "text", options: [
@@ -391,17 +408,23 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "RM 20,000 – 50,000", value: "budget RM 20,000 to RM 50,000" },
       { label: "Above RM 50,000", value: "budget above RM 50,000" },
     ]},
-    { id: "vendor_pref", text: "Any preferred vendors?", type: "single", optional: true, options: [
+    { id: "vendor_pref", text: "Preferred vendor name? (optional)", type: "text", optional: true, options: [
       { label: "Open to suggestions", value: "open to vendor suggestions" },
-      { label: "Yes — I have vendors in mind", value: "has preferred vendors" },
-    ]},
+    ], placeholder: "e.g. Event Works Sdn Bhd..." },
   ],
   RAW_MATERIAL: [
+    { id: "material", text: "What material do you need?", type: "text", options: [
+      { label: "Packaging material", value: "Packaging material" },
+      { label: "Chemicals / solvents", value: "Chemicals / solvents" },
+      { label: "Metal / steel components", value: "Metal / steel components" },
+      { label: "Plastic / polymer resin", value: "Plastic / polymer resin" },
+      { label: "Fabric / textile", value: "Fabric / textile" },
+    ], placeholder: "e.g. Polypropylene resin 25kg bags, corrugated boxes..." },
     { id: "urgency", text: "How urgent is this?", type: "single", options: [
       { label: "Normal", value: "normal priority" },
       { label: "Urgent — production at risk", value: "urgent, production at risk" },
     ]},
-    { id: "po_ref", text: "Production order or batch reference?", type: "text", options: [
+    { id: "po_ref", text: "Production order or batch reference?", type: "text", optional: true, options: [
       { label: "No reference — ad hoc restock", value: "Ad hoc restock, no production order" },
       { label: "Standing reorder", value: "Standing reorder / regular replenishment" },
     ], placeholder: "e.g. PO-2026-0042, Batch #7, Job ref: PRJ-18..." },
@@ -409,10 +432,15 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "Small batch — this week", value: "Small batch, needed this week" },
       { label: "Standard order — next week", value: "Standard order quantity, needed next week" },
       { label: "Bulk order — end of month", value: "Bulk order, needed by end of month" },
-    ], placeholder: "e.g. 500 units, needed by 30 June..." },
-    { id: "supplier", text: "Any preferred supplier or brand?", type: "single", optional: true, options: [
+    ], placeholder: "e.g. 500 kg, needed by 30 June..." },
+    { id: "supplier", text: "Preferred supplier name? (optional)", type: "text", optional: true, options: [
       { label: "Open to suggestions", value: "open to supplier suggestions" },
-      { label: "Yes — we have a preferred supplier", value: "has preferred supplier" },
+    ], placeholder: "e.g. ABC Chemical Trading Sdn Bhd..." },
+    { id: "estimated_value", text: "Estimated total value?", type: "single", optional: true, options: [
+      { label: "Under RM 5,000", value: "estimated RM 3,000" },
+      { label: "RM 5,000 – 20,000", value: "estimated RM 10,000" },
+      { label: "RM 20,000 – 50,000", value: "estimated RM 30,000" },
+      { label: "Above RM 50,000", value: "estimated RM 60,000" },
     ]},
   ],
   NON_TRADE: [
@@ -434,6 +462,12 @@ const INTENT_QUESTION_FLOWS: Record<string, QuestionDef[]> = {
       { label: "Urgent", value: "urgent" },
     ]},
     { id: "spec", text: "Any quantity or spec requirements? (optional)", type: "text", placeholder: "e.g. 10 units, A4 80gsm, subscription for 5 users...", optional: true },
+    { id: "estimated_value", text: "Estimated total value?", type: "single", optional: true, options: [
+      { label: "Under RM 1,000", value: "estimated RM 500" },
+      { label: "RM 1,000 – 5,000", value: "estimated RM 2,500" },
+      { label: "RM 5,000 – 20,000", value: "estimated RM 10,000" },
+      { label: "Above RM 20,000", value: "estimated RM 30,000" },
+    ]},
   ],
 }
 
@@ -832,7 +866,33 @@ ${followUpQ}` : `✅ All critical context captured. You may now guide the user t
 
 Help them confirm or adjust the cart, then guide them to vendor matching when ready.`
     } else {
-      stateDesc = `CURRENT STATE: Round A — user has no items yet.\n\nAPPROVED ITEM CATALOG (use exact codes for suggest-items):\n${itemCatalog}\n\nIf the user confirms a previously suggested item (e.g. says "yes", "correct", "add it"), use action "suggest-items" with the exact item code from the catalog above. Never invent item codes.`
+      stateDesc = `CURRENT STATE: Round A — user has no items yet.
+
+INTENT CLASSIFICATION — HIGHEST PRIORITY (check this FIRST before anything else):
+When the user describes a purchase CATEGORY without naming a specific product, classify it into one of these intents and IMMEDIATELY return action "prefill-form" with payload.prefill_context.intent set. Do NOT ask a follow-up question — the widget will collect details.
+
+Intents and their triggers:
+- FIXED_ASSET: buying hardware, laptops, monitors, machinery, furniture, equipment
+- SERVICES: hiring vendors, IT support, outsourced manpower, consulting, cleaning, helpdesk
+- MAINTENANCE: repairs, servicing, fixing, maintenance works, facility upkeep
+- MARKETING_EVENT: events, roadshows, campaigns, promotions, printing, banners
+- RAW_MATERIAL: raw materials, stock, inventory, production inputs, materials, supplies for production
+- NON_TRADE: office supplies, stationery, consumables, sundry, miscellaneous items
+
+EXAMPLES (always return action "prefill-form" for these):
+- "my boss ask me to order raw material" → action:"prefill-form", intent:"RAW_MATERIAL"
+- "we need to hire IT support" → action:"prefill-form", intent:"SERVICES"
+- "need to fix the office AC" → action:"prefill-form", intent:"MAINTENANCE"
+- "order stationery for the office" → action:"prefill-form", intent:"NON_TRADE"
+
+For action "prefill-form" triggered by intent classification:
+- text: one short sentence acknowledging the category (e.g. "Got it — I'll collect a few details about your raw material needs.")
+- payload: { prefill_context: { intent: "<INTENT>", dept_hint: "<dept if mentioned or null>", urgency: "<if mentioned or null>" } }
+
+APPROVED ITEM CATALOG (use exact codes for suggest-items only when user names a specific item):
+${itemCatalog}
+
+If the user confirms a previously suggested item (e.g. says "yes", "correct", "add it"), use action "suggest-items" with the exact item code from the catalog above. Never invent item codes.`
     }
   } else if (roundAComplete && !roundBComplete) {
     const groups = buildSubPRGroups(confirmedItems)
@@ -1416,13 +1476,21 @@ Keep the reply short (3-4 lines). Be direct and confident — do not ask for per
   } catch {
     throw new LLMError("parse", "Jomie received an unreadable response.")
   }
-  const raw = data.choices?.[0]?.message?.content ?? "{}"
+  const rawContent = data.choices?.[0]?.message?.content ?? "{}"
+  // Strip markdown code fences if the model wrapped its JSON
+  const raw = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim()
 
   let parsed: GroqReply
   try {
     parsed = JSON.parse(raw) as GroqReply
   } catch {
-    throw new LLMError("parse", "Jomie returned an unexpected response.")
+    // Last-resort: try extracting a JSON object from within the response
+    const jsonMatch = rawContent.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      try { parsed = JSON.parse(jsonMatch[0]) as GroqReply } catch { throw new LLMError("parse", "Jomie returned an unexpected response.") }
+    } else {
+      throw new LLMError("parse", "Jomie returned an unexpected response.")
+    }
   }
 
   const validActions = ["open-picker", "proceed-to-vendor", "confirm-vendors", "apply-vendor", "reset-vendor", "suggest-items", "add-new-item", "prefill-form"]
@@ -3535,6 +3603,61 @@ export default function NewPRPage() {
     })
   }
 
+  const buildFreeFormItem = (intent: string, answers: Record<string, string>, originalMsg: string): ConfirmedItem => {
+    // Derive item name from the most descriptive answer
+    const descParts = [answers.material, answers.scope, answers.issue, answers.asset, answers.event_name].filter(Boolean)
+    const rawName = descParts[0] || originalMsg || "New Item Request"
+    const name = rawName.length > 60 ? rawName.slice(0, 57) + "…" : rawName
+
+    // Parse estimated price from "estimated RM X,XXX" pattern
+    const estRaw = answers.estimated_value || ""
+    const priceMatch = estRaw.match(/RM\s*([\d,]+)/)
+    const unitPrice = priceMatch ? parseInt(priceMatch[1].replace(/,/g, "")) : 0
+
+    // Parse qty from qty_date answer (first number found)
+    const qtyMatch = (answers.qty_date || "").match(/(\d+)/)
+    const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1
+
+    // GL code and purchase type by intent
+    const isCapex = intent === "FIXED_ASSET"
+    const purchaseType: "capex" | "opex" = isCapex ? "capex" : "opex"
+    const glCode = isCapex ? "GL-7200-CAPEX"
+      : intent === "SERVICES" ? "GL-6300-OPEX"
+      : intent === "MAINTENANCE" ? "GL-6400-OPEX"
+      : "GL-6100-OPEX"
+    const itemType: ItemType = isCapex ? "capex" : intent === "SERVICES" ? "service" : "standard"
+    const noPhysicalDelivery = intent === "SERVICES"
+
+    // Try to match vendor from free-text supplier/vendor_pref answer
+    const vendorHint = (answers.supplier || answers.vendor_pref || "").toLowerCase()
+    const isOpenToSuggestions = vendorHint.includes("open to") || vendorHint.includes("has preferred")
+    const vendorMatch = !isOpenToSuggestions && vendorHint.length > 3
+      ? VENDOR_MASTER.find(v => v.name.toLowerCase().split(" ").some(word => word.length > 3 && vendorHint.includes(word)))
+      : undefined
+
+    const spec = [descParts.slice(1).join(". "), answers.po_ref, answers.contract_length, answers.qty_date]
+      .filter(Boolean).join(" · ") || `${intent} request — details to be confirmed with vendor`
+
+    return {
+      code: `NEW-${intent.slice(0, 3)}-${Date.now().toString().slice(-6)}`,
+      name,
+      spec,
+      uom: intent === "SERVICES" ? "month" : intent === "RAW_MATERIAL" ? "unit" : "unit",
+      unitPrice,
+      purchaseType,
+      itemType,
+      glCode,
+      vendorCode: vendorMatch?.code ?? "",
+      moq: 1,
+      qty: Math.max(qty, 1),
+      stockSkipped: false,
+      isNew: true,
+      sourceType: "new-item-pending",
+      noPhysicalDelivery,
+      ...(vendorMatch ? { preferredVendorCode: vendorMatch.code, preferredVendorName: vendorMatch.name } : {}),
+    }
+  }
+
   const handleQuestionFlowComplete = (answers: Record<string, string>, intent: string) => {
     // Build bundled summary text — translate start:* tokens to readable labels
     const startTokenLabels: Record<string, string> = {
@@ -3663,23 +3786,23 @@ export default function NewPRPage() {
           }
         }
 
-        // Fallback: no items matched — show reply with open-picker button
+        // Fallback: no catalog match — build a free-form line item from widget answers
+        const freeFormItem = buildFreeFormItem(intent, answers, submittedMessage)
         setChatMessages(prev => [...prev, {
           role: "ai" as const,
-          text: reply.text,
+          text: reply.text || `Got it — I've created a line item for your request. Review the details on the right and adjust if needed before submitting.`,
           thinking: reply.thinking,
-          actions: reply.action === "open-picker"
-            ? [{ label: "Open item picker", primary: true, action: "open-picker" }]
-            : reply.buttons,
         }])
-        if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+        setTimeout(() => handleAutoAdvanceToReview([freeFormItem], answers), 600)
       }).catch(() => {
         setIsChatThinking(false)
+        // Even on error, build free-form item so the flow doesn't dead-end
+        const freeFormItem = buildFreeFormItem(intent, answers, submittedMessage)
         setChatMessages(prev => [...prev, {
           role: "ai" as const,
-          text: "I have your context — please use the item picker to add items to your request.",
-          actions: [{ label: "Open item picker", primary: true, action: "open-picker" }],
+          text: "I've created a line item from your request — review and adjust the details on the right before submitting.",
         }])
+        setTimeout(() => handleAutoAdvanceToReview([freeFormItem], answers), 600)
       })
     }
   }
@@ -6387,6 +6510,14 @@ export default function NewPRPage() {
                     {/* Sub-PR preview */}
                     <div>
                       {fieldLabel("Sub-PRs to be created")}
+                      {confirmedItems.some(i => i.sourceType === "new-item-pending") && (
+                        <div className="flex items-start gap-2 rounded-lg px-3 py-2 mb-2" style={{ background:"#FFF7ED", border:"1px solid #FED7AA" }}>
+                          <TriangleAlert size={12} className="shrink-0 mt-0.5" style={{ color:"#C2410C" }}/>
+                          <div className="text-[10px] leading-relaxed" style={{ color:"#9A3412" }}>
+                            <span className="font-semibold">New item — pending registration.</span> Procurement will register this item in the master list before issuing the PO.
+                          </div>
+                        </div>
+                      )}
                       <div className="flex flex-col gap-1.5">
                         {groups.map((g, i) => (
                           <div key={i} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background:"#fff", border:"0.5px solid #E5E7EB" }}>
@@ -6394,8 +6525,11 @@ export default function NewPRPage() {
                               <div className="text-[11px] font-semibold text-gray-700">{g.vendorName || "Vendor TBD"}</div>
                               <div className="text-[10px] text-gray-400">{g.items.length} item{g.items.length !== 1 ? "s" : ""} · {g.tier}</div>
                             </div>
-                            <div className="text-[12px] font-mono font-semibold text-gray-800">
-                              RM {g.total.toLocaleString("en-MY")}
+                            <div className="flex flex-col items-end gap-0.5">
+                              <div className="text-[12px] font-mono font-semibold text-gray-800">
+                                {g.total === 0 ? "TBD" : `RM ${g.total.toLocaleString("en-MY")}`}
+                              </div>
+                              {g.total === 0 && <div className="text-[9px]" style={{ color:"#F59E0B" }}>Confirm price before submit</div>}
                             </div>
                           </div>
                         ))}
