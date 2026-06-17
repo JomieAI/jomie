@@ -2953,7 +2953,7 @@ export default function NewPRPage() {
         // Store query for browse-online and inject sourcing button
         lastBrowseQueryRef.current = userMessage.replace(/^(i (want|need) to (buy|get|order)|buy|get|add|need|want)\s+/i, "").trim() || userMessage
       }
-      if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
+      // open-picker: do NOT auto-open on first message — user clicks the button themselves
 
       // Extract prefill_context from first-message response and persist to state
       const pc = reply.payload?.prefill_context
@@ -3392,9 +3392,27 @@ export default function NewPRPage() {
     setRightPanelView("submit")
     setRightWidth(null)
 
+    // Build smart post-generation summary
+    const groups = buildSubPRGroups(currentItems)
+    const totalAmt = currentItems.reduce((s, i) => s + i.unitPrice * i.qty, 0)
+    const itemSummary = currentItems.length === 1
+      ? `**${currentItems[0].name}** ×${currentItems[0].qty}`
+      : `${currentItems.length} items`
+    const vendorNames = [...new Set(groups.map(g => g.vendorName).filter(Boolean))]
+    const vendorStr = vendorNames.length === 1 ? vendorNames[0] : vendorNames.join(", ")
+    const tier = groups[0]?.tier ?? "Finance Manager"
+    const warnings: string[] = []
+    groups.forEach(g => { if (!g.myInvois) warnings.push(`${g.vendorName} is not on MyInvois — request e-invoice before PO is issued`) })
+    const unapproved = groups.filter(g => !g.isApproved)
+    if (unapproved.length > 0) warnings.push(`${unapproved.map(g => g.vendorName).join(", ")} is not an approved vendor — sourcing approval required`)
+
+    const warningText = warnings.length > 0
+      ? `\n\n⚠️ **Heads up:**\n${warnings.map(w => `- ${w}`).join("\n")}`
+      : ""
+
     const doneMsg: ChatMsg = {
       role: "ai",
-      text: "✓ Vendor grouping confirmed. I've pre-filled the PR form on the right — review and adjust the details, then hit **Submit PR** to send it for approval.",
+      text: `✓ All set! Here's what I've prepared:\n\n- Items: **${itemSummary}** via **${vendorStr}** — RM ${totalAmt.toLocaleString()}\n- Approval route: **${tier}**\n\nPR form is pre-filled on the right — review and adjust if needed, then hit **Submit PR** to send for approval.${warningText}`,
     }
     setChatMessages(prev => [...prev, doneMsg])
   }
@@ -3920,6 +3938,12 @@ export default function NewPRPage() {
     if (action === "proceed-to-vendor") {
       setChatMessages(prev => [...prev, { role: "user" as const, text: label || "Yes, proceed to vendor matching →" }])
       handleProceedToVendor()
+      return
+    }
+    // confirm-vendors — deterministic, never LLM — avoids stale confirmedItems in LLM context
+    if (action === "confirm-vendors") {
+      setChatMessages(prev => [...prev, { role: "user" as const, text: label || "Confirm vendors →" }])
+      setTimeout(handleConfirmVendorMatching, 50)
       return
     }
     // Special case: open-picker and edit-items don't go through LLM — open directly
@@ -4586,7 +4610,25 @@ export default function NewPRPage() {
                       </div>
                     </details>
                   )}
-                  <div className="text-[14px] text-white leading-5 whitespace-pre-line">{msg.text}</div>
+                  <div className="text-[14px] text-white leading-5">
+                    {msg.text.split("\n").map((line, li) => {
+                      if (line.startsWith("- ") || line.startsWith("• ")) {
+                        const content = line.replace(/^[-•]\s/, "")
+                        return (
+                          <div key={li} className="flex gap-1.5 mt-0.5">
+                            <span style={{ color: "rgba(255,255,255,0.45)", flexShrink: 0 }}>•</span>
+                            <span>{content.split(/\*\*(.+?)\*\*/g).map((part, pi) => pi % 2 === 1 ? <strong key={pi}>{part}</strong> : part)}</span>
+                          </div>
+                        )
+                      }
+                      const parts = line.split(/\*\*(.+?)\*\*/g)
+                      return (
+                        <div key={li} className={li > 0 ? "mt-0.5" : ""}>
+                          {parts.map((part, pi) => pi % 2 === 1 ? <strong key={pi}>{part}</strong> : part)}
+                        </div>
+                      )
+                    })}
+                  </div>
                   {msg.actions && msg.actions.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {msg.actions.map((act, ai) => (
