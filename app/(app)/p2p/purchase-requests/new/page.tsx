@@ -490,14 +490,10 @@ NOTE: I tried to fetch this product page automatically but ${urlPlatform} blocke
 3. Ask them: "What is the product name and approximate price? I'll then suggest whether to add it as a new item or use an approved catalog equivalent."
 Keep it brief and friendly.`
   } else {
-    urlInstruction = `Search the APPROVED ITEM CATALOG above for what the user wants to buy. You MUST suggest specific items from the catalog — do not ask the user to search themselves.
-
-RULES:
+    urlInstruction = `CATALOG MATCH RULES (when user names a specific item):
 - If you find a match (even partial — e.g. "laptop" matches "Dell Latitude 5540 Laptop"), show the item name, spec, code, and price, then ask "Is this what you're looking for?"
 - If you find multiple matches, list all of them and ask which one fits.
 - If truly no match exists in the catalog, say so briefly and ask for more details (brand, type, quantity).
-- NEVER use action "open-picker" in the first message — always try to match from the catalog first.
-- NEVER tell the user to search themselves. YOU search the catalog.
 - When the user confirms a suggestion, use action "suggest-items" with the exact item code.`
   }
 
@@ -2518,8 +2514,17 @@ export default function NewPRPage() {
   const [rightWidth, setRightWidth] = React.useState<number | null>(0)
   const [isPanelLoading, setIsPanelLoading] = React.useState(false)
   const [rightPanelSkeletonType, setRightPanelSkeletonType] = React.useState<null | "cart" | "vendors" | "preview">(null)
-  type RightPanelView = "items" | "vendors" | "budget" | "context" | "review"
+  type RightPanelView = "items" | "vendors" | "budget" | "context" | "review" | "submit"
   const [rightPanelView, setRightPanelView] = React.useState<RightPanelView>("review")
+
+  // ── Round C — submission form state ──
+  const [prTitle,        setPrTitle]        = React.useState("")
+  const [prDept,         setPrDept]         = React.useState("")
+  const [prJustification,setPrJustification]= React.useState("")
+  const [prRequiredBy,   setPrRequiredBy]   = React.useState("")
+  const [prBudgetCode,   setPrBudgetCode]   = React.useState("")
+  const [prUrgency,      setPrUrgency]      = React.useState<"normal" | "urgent">("normal")
+  const [isSubmitting,   setIsSubmitting]   = React.useState(false)
   const [rightNavOpen, setRightNavOpen] = React.useState(false)
   const rightNavRef   = React.useRef<HTMLDivElement>(null)
   const endRef        = React.useRef<HTMLDivElement>(null)
@@ -3209,13 +3214,30 @@ export default function NewPRPage() {
 
   const handleConfirmVendorMatching = () => {
     setRoundBComplete(true)
-    setShowVendorOverride(false)   // close vendor override panel if open
+    setShowVendorOverride(false)
     setVendorPickerOpen(null)
     handleConfirmVendors()
+
+    // Auto-suggest PR title from item types
+    const currentItems = confirmedItems.filter(i => i.qty >= i.moq)
+    const types = [...new Set(currentItems.map(i => i.itemType ?? "standard"))]
+    const now = new Date()
+    const monthYear = now.toLocaleString("en-MY", { month: "short", year: "numeric" })
+    const autoTitle = types.length === 1 && types[0] === "capex"
+      ? `Capital Equipment Purchase — ${monthYear}`
+      : types.includes("service") || types.includes("subscription")
+      ? `Service Request — ${monthYear}`
+      : currentItems.length === 1
+      ? `${currentItems[0].name} Purchase`
+      : `Purchase Request — ${monthYear}`
+    setPrTitle(autoTitle)
+
+    setRightPanelView("submit")
+    setRightWidth(null)
+
     const doneMsg: ChatMsg = {
       role: "ai",
-      text: "✓ Vendor grouping confirmed. All sub-PRs are ready.\n\nNext up: Round C — budget code, delivery date, and urgency flag. This tells Finance and the approvers when and where items are needed.\n\nReady to continue?",
-      actions: [{ label:"Continue to Round C →", primary:true, action:"confirm-vendors" }],
+      text: "✓ Vendor grouping confirmed. I've pre-filled the PR form on the right — review and adjust the details, then hit **Submit PR** to send it for approval.",
     }
     setChatMessages(prev => [...prev, doneMsg])
   }
@@ -3559,7 +3581,20 @@ export default function NewPRPage() {
           return
         }
 
-        setChatMessages(prev => [...prev, { role:"ai", text:reply.text, thinking:reply.thinking, actions:reply.buttons }])
+        if (reply.action === "suggest-items" && reply.payload?.items?.length) {
+          const toAdd: ConfirmedItem[] = []
+          for (const { code, qty } of reply.payload.items) {
+            const master = ITEM_MASTER.find(i => i.code === code)
+            if (master && !confirmedItems.some(i => i.code === code))
+              toAdd.push({ ...master, qty: Math.max(qty, master.moq), stockSkipped: false })
+          }
+          if (toAdd.length > 0) { setConfirmedItems(prev => [...prev, ...toAdd]); setRightPanelView("items"); setRightWidth(null) }
+          lastBrowseQueryRef.current = val.replace(/^(i (want|need) to (buy|get|order)|buy|get|add|need|want)\s+/i, "").trim() || val
+        }
+        const questioningButtons = reply.action === "suggest-items" && lastBrowseQueryRef.current
+          ? [...(reply.buttons ?? []).filter((b: {action:string}) => b.action !== "browse-online"), { label: "Source more options →", primary: false, action: "browse-online" }]
+          : reply.buttons
+        setChatMessages(prev => [...prev, { role:"ai", text:reply.text, thinking:reply.thinking, actions:questioningButtons }])
         if (reply.action === "open-picker") setTimeout(handleOpenItemPicker, 100)
         if (reply.action === "confirm-vendors") handleConfirmVendorMatching()
         if (reply.action === "apply-vendor" && reply.payload?.itemCode && reply.payload?.vendorCode)
@@ -3967,7 +4002,7 @@ export default function NewPRPage() {
       {/* ── Chat — flex:1, content centered at max 600px ── */}
       <div className="flex flex-col min-h-0 flex-1 min-w-[500px] relative">
         <div className="flex flex-col min-h-0 h-full w-full max-w-[700px] mx-auto"
-          style={{ padding: chatState === "idle" ? "0 16px 16px" : "24px 16px 0", gap:0 }}>
+          style={{ padding: chatState === "idle" ? "0 16px 16px" : "20px 16px 16px", gap:0 }}>
 
         {/* ══ IDLE: Starter screen ══ */}
         {chatState === "idle" ? (
@@ -5080,6 +5115,214 @@ export default function NewPRPage() {
                 </div>
               )}
             </div>
+
+          ) : rightPanelView === "submit" ? (
+            /* ── Round C: PR Submission Form ── */
+            (() => {
+              const total = confirmedItems.reduce((sum, i) => sum + i.unitPrice * i.qty, 0)
+              const groups = buildSubPRGroups(confirmedItems)
+              const approvalTier = total >= 50000 ? "Finance Manager + CFO" : total >= 10000 ? "Finance Manager" : "Department Head"
+              const DEPTS = ["IT","Finance","Operations","Admin","Marketing","Production","HR","Facilities","Creative","Legal"]
+
+              const handleSubmit = async () => {
+                if (!prTitle.trim() || !prDept || !prJustification.trim()) return
+                setIsSubmitting(true)
+                await new Promise(r => setTimeout(r, 1000))
+                const saved = getSavedPRs()
+                const newId = buildNextPRId(saved.length)
+                const now = new Date()
+                savePR({
+                  id: newId,
+                  title: prTitle.trim(),
+                  sub: confirmedItems.map(i => i.name).join(" · "),
+                  message: prJustification.trim(),
+                  requester: "Lim Wei Xiang",
+                  requesterInitials: "LW",
+                  date: now.toLocaleDateString("en-MY", { day:"numeric", month:"short" }),
+                  dept: prDept,
+                  amount: total.toLocaleString("en-MY", { minimumFractionDigits:0, maximumFractionDigits:0 }),
+                  budget: "150,000",
+                  status: "pending",
+                  phase: "A1",
+                  purchaseType: confirmedItems.some(i => (i.unitPrice ?? 0) >= 1000) ? "capex" : "nontrade",
+                  aiFlags: 0,
+                  createdAt: now.getTime(),
+                })
+                router.push(`/p2p/purchase-requests/${newId}`)
+              }
+
+              const fieldLabel = (text: string, required = false) => (
+                <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color:"#9CA3AF", fontFamily:"var(--font-inter)" }}>
+                  {text}{required && <span style={{ color:T.purple }}> *</span>}
+                </div>
+              )
+              const inputCls = "w-full rounded-lg px-3 py-2 text-[13px] text-gray-800 focus:outline-none transition-all"
+              const inputStyle = { background:"#fff", border:"1px solid #E5E7EB", fontFamily:"var(--font-inter)" }
+              const focusStyle = { border:`1px solid ${T.purple}` }
+
+              return (
+                <div className="flex flex-col h-full">
+                  {/* Header */}
+                  <div className="shrink-0 pb-3 mb-3 flex items-center justify-between" style={{ borderBottom:"1px solid #E9E8F5" }}>
+                    <div className="flex items-center gap-2">
+                      <div className="size-5 rounded-md flex items-center justify-center" style={{ background:T.purpleLight }}>
+                        <CheckCircle2 size={11} style={{ color:T.purple }} strokeWidth={2.5}/>
+                      </div>
+                      <span className="text-[12px] font-semibold text-gray-700" style={{ fontFamily:"var(--font-pjs)" }}>Submit PR</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full" style={{ background:T.purpleLight, color:T.purple }}>Round C</span>
+                  </div>
+
+                  {/* Summary strip */}
+                  <div className="shrink-0 rounded-lg px-3 py-2.5 mb-4 grid grid-cols-3 gap-2" style={{ background:"#F3F2FF", border:`0.5px solid ${T.purple}22` }}>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-wider mb-0.5" style={{ color:T.purpleText }}>Items</div>
+                      <div className="text-[13px] font-bold" style={{ color:T.purpleText }}>{confirmedItems.length}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-wider mb-0.5" style={{ color:T.purpleText }}>Total</div>
+                      <div className="text-[13px] font-bold tabular-nums" style={{ color:T.purpleText }}>RM {total.toLocaleString("en-MY")}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-wider mb-0.5" style={{ color:T.purpleText }}>Approver</div>
+                      <div className="text-[10px] font-semibold leading-tight" style={{ color:T.purpleText }}>{approvalTier}</div>
+                    </div>
+                  </div>
+
+                  {/* Form */}
+                  <div className="flex-1 overflow-y-auto flex flex-col gap-4 pr-0.5" style={{ scrollbarWidth:"none" }}>
+
+                    {/* PR Title */}
+                    <div>
+                      {fieldLabel("PR Title", true)}
+                      <input
+                        value={prTitle}
+                        onChange={e => setPrTitle(e.target.value)}
+                        onFocus={e => Object.assign(e.currentTarget.style, focusStyle)}
+                        onBlur={e => Object.assign(e.currentTarget.style, { border:"1px solid #E5E7EB" })}
+                        className={inputCls}
+                        style={inputStyle}
+                        placeholder="e.g. IT Equipment Purchase"
+                      />
+                    </div>
+
+                    {/* Department */}
+                    <div>
+                      {fieldLabel("Department", true)}
+                      <select
+                        value={prDept}
+                        onChange={e => setPrDept(e.target.value)}
+                        className={inputCls}
+                        style={{ ...inputStyle, cursor:"pointer", appearance:"none", backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat:"no-repeat", backgroundPosition:"right 10px center", paddingRight:28 }}
+                      >
+                        <option value="">Select department…</option>
+                        {DEPTS.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+
+                    {/* Justification */}
+                    <div>
+                      {fieldLabel("Business Justification", true)}
+                      <textarea
+                        value={prJustification}
+                        onChange={e => setPrJustification(e.target.value)}
+                        onFocus={e => Object.assign(e.currentTarget.style, focusStyle)}
+                        onBlur={e => Object.assign(e.currentTarget.style, { border:"1px solid #E5E7EB" })}
+                        rows={3}
+                        className={inputCls}
+                        style={{ ...inputStyle, resize:"none" }}
+                        placeholder="Why is this purchase needed?"
+                      />
+                    </div>
+
+                    {/* Required by + Budget Code row */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        {fieldLabel("Required By")}
+                        <input
+                          type="date"
+                          value={prRequiredBy}
+                          onChange={e => setPrRequiredBy(e.target.value)}
+                          onFocus={e => Object.assign(e.currentTarget.style, focusStyle)}
+                          onBlur={e => Object.assign(e.currentTarget.style, { border:"1px solid #E5E7EB" })}
+                          className={inputCls}
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        {fieldLabel("Budget Code")}
+                        <input
+                          value={prBudgetCode}
+                          onChange={e => setPrBudgetCode(e.target.value)}
+                          onFocus={e => Object.assign(e.currentTarget.style, focusStyle)}
+                          onBlur={e => Object.assign(e.currentTarget.style, { border:"1px solid #E5E7EB" })}
+                          className={inputCls}
+                          style={inputStyle}
+                          placeholder="e.g. IT-CAPEX-2025"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Urgency */}
+                    <div>
+                      {fieldLabel("Priority")}
+                      <div className="flex gap-2">
+                        {(["normal","urgent"] as const).map(u => (
+                          <button key={u} onClick={() => setPrUrgency(u)}
+                            className="flex-1 h-8 rounded-lg text-[12px] font-semibold transition-all cursor-pointer capitalize"
+                            style={{
+                              background: prUrgency === u ? (u === "urgent" ? "#FEF3C7" : T.purpleLight) : "#fff",
+                              border: prUrgency === u ? `1px solid ${u === "urgent" ? "#FCD34D" : T.purple}` : "1px solid #E5E7EB",
+                              color: prUrgency === u ? (u === "urgent" ? "#92400E" : T.purpleText) : "#6B7280",
+                            }}>
+                            {u === "urgent" ? "⚡ Urgent" : "Normal"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Sub-PR preview */}
+                    <div>
+                      {fieldLabel("Sub-PRs to be created")}
+                      <div className="flex flex-col gap-1.5">
+                        {groups.map((g, i) => (
+                          <div key={i} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background:"#fff", border:"0.5px solid #E5E7EB" }}>
+                            <div>
+                              <div className="text-[11px] font-semibold text-gray-700">{g.vendorName || "Vendor TBD"}</div>
+                              <div className="text-[10px] text-gray-400">{g.items.length} item{g.items.length !== 1 ? "s" : ""} · {g.tier}</div>
+                            </div>
+                            <div className="text-[12px] font-mono font-semibold text-gray-800">
+                              RM {g.total.toLocaleString("en-MY")}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Submit button */}
+                  <div className="shrink-0 pt-3 mt-3" style={{ borderTop:"1px solid #E9E8F5" }}>
+                    <button
+                      onClick={handleSubmit}
+                      disabled={!prTitle.trim() || !prDept || !prJustification.trim() || isSubmitting}
+                      className="w-full h-10 rounded-lg text-[13px] font-semibold text-white flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      style={{
+                        background: (!prTitle.trim() || !prDept || !prJustification.trim()) ? "#D1D5DB" : T.purple,
+                        cursor: (!prTitle.trim() || !prDept || !prJustification.trim()) ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {isSubmitting
+                        ? <><Loader2 size={14} className="animate-spin"/>Submitting…</>
+                        : <><CheckCircle2 size={14} strokeWidth={2.5}/>Submit PR for Approval</>
+                      }
+                    </button>
+                    <p className="text-center text-[10px] mt-2" style={{ color:"#9CA3AF" }}>
+                      PR will be routed to <span style={{ color:T.purpleText, fontWeight:600 }}>{approvalTier}</span>
+                    </p>
+                  </div>
+                </div>
+              )
+            })()
 
           ) : rightPanelView === "budget" || rightPanelView === "context" ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
