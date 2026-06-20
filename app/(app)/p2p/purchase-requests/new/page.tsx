@@ -871,19 +871,24 @@ Help them confirm or adjust the cart, then guide them to vendor matching when re
 INTENT CLASSIFICATION — HIGHEST PRIORITY (check this FIRST before anything else):
 When the user describes a purchase CATEGORY without naming a specific product, classify it into one of these intents and IMMEDIATELY return action "prefill-form" with payload.prefill_context.intent set. Do NOT ask a follow-up question — the widget will collect details.
 
-Intents and their triggers:
-- FIXED_ASSET: buying hardware, laptops, monitors, machinery, furniture, equipment
-- SERVICES: hiring vendors, IT support, outsourced manpower, consulting, cleaning, helpdesk
-- MAINTENANCE: repairs, servicing, fixing, maintenance works, facility upkeep
-- MARKETING_EVENT: events, roadshows, campaigns, promotions, printing, banners
-- RAW_MATERIAL: raw materials, stock, inventory, production inputs, materials, supplies for production
-- NON_TRADE: office supplies, stationery, consumables, sundry, miscellaneous items
+Intents and their triggers — classify ANY of these keywords/contexts immediately:
+- FIXED_ASSET: hardware, laptop, monitor, server, machinery, furniture, equipment, asset, device, printer
+- SERVICES: hire, vendor, IT support, manpower, outsource, consulting, cleaning, helpdesk, contractor, retainer
+- MAINTENANCE: repair, fix, service, maintenance, breakdown, upkeep, PPM, replace part
+- MARKETING_EVENT: event, meeting, conference, seminar, roadshow, campaign, dinner, team building, exhibition, promotion, printing, banner, trade show, refreshments for meeting, catering, venue
+- RAW_MATERIAL: raw material, stock, inventory, production, restock, material, ingredient, component, batch, BOM
+- NON_TRADE: stationery, office supplies, consumables, sundry, pantry, miscellaneous, tissue, paper, pen
 
-EXAMPLES (always return action "prefill-form" for these):
+CRITICAL: "order for my meeting", "arrange for the conference", "prepare for team event" → MARKETING_EVENT
+CRITICAL: Any message mentioning a CATEGORY (not a specific named product) → return "prefill-form" with the matching intent. Do NOT try to match catalog items.
+
+EXAMPLES (always return action "prefill-form" for these — never suggest-items):
+- "order for my meeting next week" → action:"prefill-form", intent:"MARKETING_EVENT"
 - "my boss ask me to order raw material" → action:"prefill-form", intent:"RAW_MATERIAL"
 - "we need to hire IT support" → action:"prefill-form", intent:"SERVICES"
 - "need to fix the office AC" → action:"prefill-form", intent:"MAINTENANCE"
 - "order stationery for the office" → action:"prefill-form", intent:"NON_TRADE"
+- "buy a new laptop for the team" → action:"prefill-form", intent:"FIXED_ASSET"
 
 For action "prefill-form" triggered by intent classification:
 - text: one short sentence acknowledging the category (e.g. "Got it — I'll collect a few details about your raw material needs.")
@@ -1272,7 +1277,7 @@ const LLM_CONFIG = {
   },
   openrouter: {
     url: "https://openrouter.ai/api/v1/chat/completions",
-    model: "anthropic/claude-3-5-haiku",
+    model: "anthropic/claude-haiku-4-5",
     getKey: () => process.env.NEXT_PUBLIC_OPENROUTER_API_KEY ?? "",
   },
 }
@@ -3728,7 +3733,7 @@ export default function NewPRPage() {
         text: "Got it — context captured. Moving to vendor matching now.",
         thinking: `Context collected: ${bundledText}. ${currentItems.length} item(s) in cart. Proceeding deterministically.`,
       }])
-      setTimeout(handleProceedToVendor, 400)
+      setTimeout(() => handleAutoAdvanceToReview(confirmedItems), 400)
     } else {
       setIsChatThinking(true)
       // Fix 5: one-shot call using dedicated system prompt with full context
@@ -4822,7 +4827,7 @@ export default function NewPRPage() {
               : confirmText,
             thinking: `User confirmed adding ${master.code} (${master.name}). Added to cart at RM ${master.unitPrice} × ${master.moq} ${master.uom}. Cart now has ${confirmedItems.length + 1} item(s).`,
             actions: showQuestionFlow ? undefined : [
-              { label: "Proceed to vendor matching", primary: true, action: "proceed-to-vendor" },
+              { label: "Review & Submit PR →", primary: true, action: "proceed-to-vendor" },
               { label: "Add more items", primary: false, action: "open-picker" },
             ],
             questionFlow: showQuestionFlow && purchaseIntent ? { intent: purchaseIntent, questions: postAddQuestions! } : undefined,
@@ -4863,7 +4868,7 @@ export default function NewPRPage() {
             text: `Added **${pending.title}** as a new item request (${code}) to your cart.${isDummy ? "\n\n> ⚠️ Based on placeholder data — please verify specs and price before submitting." : ""}\n\nThis will require **item master approval** before the PR can be processed. You can adjust the quantity and details in the cart.\n\nAnything else to add, or ready to proceed to vendor matching?`,
             thinking: `User confirmed new item from ${pending.sourcePlatform}. Assigned code ${code}. Price: RM ${pending.price}. ${isDummy ? "Source is dummy placeholder." : "Source is scraped data."} Pending item master approval. ${pending.shop ? `Seller: ${pending.shop}.` : ""}`,
             actions: [
-              { label: "Proceed to vendor matching", primary: true, action: "proceed-to-vendor" },
+              { label: "Review & Submit PR →", primary: true, action: "proceed-to-vendor" },
               { label: "Add more items", primary: false, action: "open-picker" },
             ] },
         ])
@@ -4933,14 +4938,14 @@ export default function NewPRPage() {
         ])
         return
       }
-      setChatMessages(prev => [...prev, { role: "user" as const, text: label || "Yes, proceed to vendor matching →" }])
-      handleProceedToVendor()
+      setChatMessages(prev => [...prev, { role: "user" as const, text: label || "Yes, proceed to review →" }])
+      handleAutoAdvanceToReview(confirmedItems)
       return
     }
     // proceed-to-vendor-force — user explicitly skips context questions
     if (action === "proceed-to-vendor-force") {
       setChatMessages(prev => [...prev, { role: "user" as const, text: label || "Skip — proceed anyway" }])
-      handleProceedToVendor()
+      handleAutoAdvanceToReview(confirmedItems)
       return
     }
     // confirm-vendors — deterministic, never LLM — avoids stale confirmedItems in LLM context
@@ -5666,7 +5671,7 @@ export default function NewPRPage() {
                       <QuestionWidget
                         questions={msg.questionFlow.questions}
                         onComplete={(ans) => handleQuestionFlowComplete(ans, msg.questionFlow!.intent)}
-                        onSkipAll={handleProceedToVendor}
+                        onSkipAll={() => handleAutoAdvanceToReview(confirmedItems)}
                       />
                     </div>
                   )}
@@ -6333,10 +6338,10 @@ export default function NewPRPage() {
               </div>
               {!roundBComplete && (
                 <div className="px-4 py-3 border-t border-gray-100">
-                  <button onClick={() => postUserMessage("Confirm Items & Set Vendors →", handleProceedToVendor)}
+                  <button onClick={() => handleAutoAdvanceToReview(confirmedItems)}
                     className="w-full py-2.5 rounded-xl text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
                     style={{ background: T.purple }}>
-                    Confirm Items &amp; Set Vendors →
+                    Review &amp; Submit PR →
                   </button>
                 </div>
               )}
