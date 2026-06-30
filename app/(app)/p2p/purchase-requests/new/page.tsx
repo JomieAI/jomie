@@ -3608,6 +3608,64 @@ export default function NewPRPage() {
     })
   }
 
+  const URL_ITEM_CATEGORY_MAP: Record<string, { label: string; intent: string; itemType: ItemType; purchaseType: "capex"|"opex"; glCode: string }> = {
+    "Fixed Asset (equipment / machinery)": { label: "Fixed Asset", intent: "FIXED_ASSET", itemType: "capex", purchaseType: "capex", glCode: "GL-7200-CAPEX" },
+    "Office Supplies / Non-Trade":         { label: "Office Supplies", intent: "NON_TRADE", itemType: "standard", purchaseType: "opex", glCode: "GL-6100-OPEX" },
+    "Services / Contractor":               { label: "Services", intent: "SERVICES", itemType: "service", purchaseType: "opex", glCode: "GL-6300-OPEX" },
+    "Marketing / Event":                   { label: "Marketing / Event", intent: "MARKETING_EVENT", itemType: "standard", purchaseType: "opex", glCode: "GL-6100-OPEX" },
+    "Maintenance / Repair":               { label: "Maintenance", intent: "MAINTENANCE", itemType: "standard", purchaseType: "opex", glCode: "GL-6400-OPEX" },
+    "Raw Materials / Inventory":           { label: "Raw Materials", intent: "RAW_MATERIAL", itemType: "standard", purchaseType: "opex", glCode: "GL-6100-OPEX" },
+  }
+
+  const inferUrlCategory = (price: number, platform?: string): string => {
+    if (price >= 1000) return "Fixed Asset (equipment / machinery)"
+    if (platform === "1688") return "Raw Materials / Inventory"
+    if (platform === "shopee" || platform === "lazada") return "Office Supplies / Non-Trade"
+    return "Office Supplies / Non-Trade"
+  }
+
+  const buildUrlItemQuestions = (inferredCategory: string): QuestionDef[] => {
+    const ALL_CATEGORIES = Object.keys(URL_ITEM_CATEGORY_MAP)
+    const orderedCategories = [inferredCategory, ...ALL_CATEGORIES.filter(c => c !== inferredCategory)]
+    return [
+      {
+        id: "category",
+        text: "Category — does this look right?",
+        type: "single" as const,
+        options: orderedCategories.map(c => ({ label: c, value: c })),
+      },
+      {
+        id: "dept",
+        text: "Which department is requesting this?",
+        type: "single" as const,
+        options: [
+          { label: "Finance", value: "Finance department" },
+          { label: "IT", value: "IT department" },
+          { label: "Operations", value: "Operations department" },
+          { label: "HR & Admin", value: "Admin / General department" },
+          { label: "Sales & Marketing", value: "Sales department" },
+        ],
+      },
+      {
+        id: "urgency",
+        text: "How urgent is this?",
+        type: "single" as const,
+        options: [
+          { label: "Normal — within 2 weeks", value: "Normal — within 2 weeks" },
+          { label: "Urgent — needed ASAP", value: "Urgent — needed immediately" },
+          { label: "Planned — next month", value: "Planned — next month" },
+        ],
+      },
+      {
+        id: "business_reason",
+        text: "Brief reason for this purchase?",
+        type: "text" as const,
+        placeholder: "e.g. Replacement for broken unit, new staff onboarding…",
+        optional: true,
+      },
+    ]
+  }
+
   const buildFreeFormItem = (intent: string, answers: Record<string, string>, originalMsg: string): ConfirmedItem => {
     // Derive item name from the most descriptive answer
     const descParts = [answers.material, answers.scope, answers.issue, answers.asset, answers.event_name].filter(Boolean)
@@ -3727,13 +3785,34 @@ export default function NewPRPage() {
 
     // Proceed or ask LLM
     const currentItems = confirmedItems
-    if (currentItems.length > 0) {
+
+    // URL_ITEM: update the pending new item's category/type from widget answers before advancing
+    let itemsToReview = currentItems
+    if (intent === "URL_ITEM" && answers.category) {
+      const catMeta = URL_ITEM_CATEGORY_MAP[answers.category]
+      if (catMeta) {
+        itemsToReview = currentItems.map(i =>
+          i.isNew && i.sourceType === "new-item-pending"
+            ? { ...i, itemType: catMeta.itemType, purchaseType: catMeta.purchaseType, glCode: catMeta.glCode }
+            : i
+        )
+        setPurchaseIntent(catMeta.intent)
+      }
+    }
+
+    if (itemsToReview.length > 0) {
+      const categoryLabel = intent === "URL_ITEM" && answers.category
+        ? URL_ITEM_CATEGORY_MAP[answers.category]?.label ?? "purchase"
+        : "purchase"
+      const summaryText = intent === "URL_ITEM"
+        ? `Got it — categorized as **${categoryLabel}**. Preparing your PR now.`
+        : "Got it — context captured. Preparing your PR now."
       setChatMessages(prev => [...prev, {
         role: "ai" as const,
-        text: "Got it — context captured. Moving to vendor matching now.",
-        thinking: `Context collected: ${bundledText}. ${currentItems.length} item(s) in cart. Proceeding deterministically.`,
+        text: summaryText,
+        thinking: `Context collected: ${bundledText}. ${itemsToReview.length} item(s) in cart. Proceeding deterministically.`,
       }])
-      setTimeout(() => handleAutoAdvanceToReview(confirmedItems), 400)
+      setTimeout(() => handleAutoAdvanceToReview(itemsToReview, answers), 400)
     } else {
       setIsChatThinking(true)
       // Fix 5: one-shot call using dedicated system prompt with full context
@@ -4232,7 +4311,8 @@ export default function NewPRPage() {
       const budgetStr = answers.budget || ""
       const poStr = answers.po_ref || ""
 
-      const parts = [scopeStr || issueStr || eventStr || poStr, assetStr].filter(Boolean)
+      const businessReasonStr = answers.business_reason || ""
+      const parts = [scopeStr || issueStr || eventStr || poStr || businessReasonStr, assetStr].filter(Boolean)
       const contextDetails = [contractStr, startStr].filter(Boolean).join(", ")
       const richJust = [
         parts.length > 0 ? parts.join(". ") : "",
@@ -4289,7 +4369,9 @@ export default function NewPRPage() {
     }
     const contextLines: string[] = []
     if (answers) {
+      if (answers.category) contextLines.push(`- Category: **${URL_ITEM_CATEGORY_MAP[answers.category]?.label ?? answers.category}**`)
       if (answers.dept) contextLines.push(`- Department: **${answers.dept}**`)
+      if (answers.business_reason) contextLines.push(`- Reason: **${answers.business_reason}**`)
       if (answers.scope) contextLines.push(`- Scope: **${answers.scope}**`)
       if (answers.issue) contextLines.push(`- Issue: **${answers.issue}**`)
       if (answers.asset) contextLines.push(`- Asset: **${answers.asset}**`)
@@ -4862,15 +4944,16 @@ export default function NewPRPage() {
         setRightWidth(null)
         pendingNewItemRef.current = null
         const isDummy = pending.source === "demo"
+        const inferredCat = inferUrlCategory(pending.price, pending.sourcePlatform)
+        const catMeta = URL_ITEM_CATEGORY_MAP[inferredCat]
+        const urlQuestions = buildUrlItemQuestions(inferredCat)
         setChatMessages(prev => [...prev,
           { role: "user" as const, text: label || "Add as new item" },
           { role: "ai" as const,
-            text: `Added **${pending.title}** as a new item request (${code}) to your cart.${isDummy ? "\n\n> ⚠️ Based on placeholder data — please verify specs and price before submitting." : ""}\n\nThis will require **item master approval** before the PR can be processed. You can adjust the quantity and details in the cart.\n\nAnything else to add, or ready to proceed to vendor matching?`,
-            thinking: `User confirmed new item from ${pending.sourcePlatform}. Assigned code ${code}. Price: RM ${pending.price}. ${isDummy ? "Source is dummy placeholder." : "Source is scraped data."} Pending item master approval. ${pending.shop ? `Seller: ${pending.shop}.` : ""}`,
-            actions: [
-              { label: "Review & Submit PR →", primary: true, action: "proceed-to-vendor" },
-              { label: "Add more items", primary: false, action: "open-picker" },
-            ] },
+            text: `Added **${pending.title}** to your cart.${isDummy ? " ⚠️ Placeholder data — verify specs & price before submitting." : ""}\n\nThis looks like a **${catMeta.label}** purchase — let me grab a few details before we proceed:`,
+            thinking: `User confirmed new item from ${pending.sourcePlatform}. Assigned code ${code}. Price: RM ${pending.price}. Inferred category: ${catMeta.label}. Showing URL context widget.`,
+            questionFlow: { intent: "URL_ITEM", questions: urlQuestions },
+          },
         ])
       }
       return
