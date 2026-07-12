@@ -1,7 +1,10 @@
-import { Inter, Plus_Jakarta_Sans, Lora } from "next/font/google"
+import { Inter, Plus_Jakarta_Sans, Lora, Figtree } from "next/font/google"
 import "./globals.css"
 import { cn } from "@/lib/utils"
 import AgentationToolbar from "@/components/agentation-toolbar"
+
+const figtree = Figtree({subsets:['latin'],variable:'--font-sans'});
+
 
 // Inter — all UI chrome (nav labels, badges, buttons, header)
 const inter = Inter({
@@ -37,13 +40,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("dark antialiased", inter.variable, plusJakartaSans.variable, lora.variable)}
+      className={cn("antialiased", inter.variable, plusJakartaSans.variable, lora.variable, "font-sans", figtree.variable)}
       suppressHydrationWarning
     >
-      <body className="font-inter text-foreground" style={{
-        background: "linear-gradient(45deg, #141137 0%, #191647 100%)",
-        minHeight: "100vh",
-      }}>
+      <body className="font-inter text-foreground bg-background" style={{ minHeight: "100vh" }}>
         {children}
         <AgentationToolbar />
       </body>

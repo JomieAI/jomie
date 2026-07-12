@@ -17,8 +17,19 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ─── AP Invoice types (mirrors backend models/invoice.py) ────────────────────
 
+export interface PaymentVoucher {
+  pv_number: string
+  amount: number
+  status: string
+  payment_date: string
+  payment_method: string
+  payment_ref: string | null
+  bank_name: string | null
+  bank_account_no: string | null
+}
+
 export type UrgencyBucket = "overdue" | "due_3d" | "due_7d" | "due_30d" | "future"
-export type InvoiceStatus  = "pending_review" | "approved" | "rejected" | "paid" | "overdue"
+export type InvoiceStatus  = "pending_review" | "approved" | "rejected" | "paid" | "overdue" | "partially_paid"
 export type InvoiceOrigin  = "local" | "foreign" | "unknown"
 export type DuplicateRisk  = "none" | "possible" | "exact"
 
@@ -37,6 +48,10 @@ export interface InvoiceListItem {
   duplicate_risk: DuplicateRisk
   source: string
   created_at: string
+  // Phase 2 fields (optional — backend populates when supported)
+  payment_type?: string | null
+  work_order_ref?: string | null
+  low_gl_confidence_count?: number  // count of line items with gl_confidence < 0.85
 }
 
 export interface LineItemRow {
@@ -49,10 +64,15 @@ export interface LineItemRow {
   tax_code: string | null
   tax_amount: number | null
   item_type: string | null
-  bom_signal: boolean
+  bom_signal?: boolean | string | null
   project_code: string | null
   gl_code: string | null
   gl_desc: string | null
+  // Phase 2 GL audit fields
+  gl_confidence?: number | null
+  gl_confirmed_at?: string | null
+  gl_overridden?: boolean | null
+  sst_claimable?: boolean | null
 }
 
 export interface InvoiceDetailResponse extends InvoiceListItem {
@@ -77,6 +97,28 @@ export interface InvoiceDetailResponse extends InvoiceListItem {
   email_body_html: string | null
   project_reference: string | null
   line_items: LineItemRow[]
+  // Phase 2 fields
+  payment_series_id?: string | null
+  payment_series_sequence?: number | null
+  total_contract_value?: number | null
+  project_id?: string | null
+  project_assigned_by?: string | null
+  project_confidence?: number | null
+  quotation_ref?: string | null
+  discount_amount?: number | null
+  gross_before_discount?: number | null
+  // Milestone / payment tracking
+  milestone_sequence?: number | null
+  milestone_description?: string | null
+  milestone_percentage?: number | null
+  amount_paid?: number | null
+  amount_outstanding?: number | null
+  // Document tracking
+  po_substitute_type?: string | null
+  do_number?: string | null
+  do_received?: boolean | null
+  do_signed_returned?: boolean | null
+  payment_vouchers?: PaymentVoucher[]
 }
 
 // ─── AP Invoice endpoints ─────────────────────────────────────────────────────

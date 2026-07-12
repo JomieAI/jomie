@@ -4,34 +4,48 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
-  Sparkles, ChevronRight, ArrowLeft, CheckCircle2, XCircle, AlertTriangle,
+  Sparkles, ChevronRight, ArrowLeft, CheckCircle2, AlertTriangle,
   Globe, Building2, Star, Edit3, Send, Paperclip, Mail, MessageSquare,
   FileText, ZoomIn, ZoomOut, RotateCcw, Download, ThumbsUp, ThumbsDown,
+  Link2, ListChecks, Info, Check, X, Minus, ChevronDown, ChevronUp, CreditCard,
 } from "lucide-react"
-import { getInvoice, updateLineItemGL, type InvoiceDetailResponse } from "@/lib/api"
+import { getInvoice, updateLineItemGL, type InvoiceDetailResponse, type PaymentVoucher } from "@/lib/api"
+import {
+  isMockMode, getMockInvoiceDetail, getMockCompliance, getMockContractByRef,
+  getMockProject, type ComplianceCheck,
+} from "@/lib/mock"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 
 const T = {
-  purple:      "#5D5EF4",
-  purpleLight: "#EEEDFE",
-  purpleText:  "#3C3489",
-  teal:        "#1D9E75",
-  tealLight:   "#E1F5EE",
-  tealText:    "#085041",
-  amber:       "#BA7517",
-  amberLight:  "#FAEEDA",
-  amberText:   "#633806",
-  red:         "#E24B4A",
-  redLight:    "#FCEBEB",
-  redText:     "#791F1F",
-  border:      "#676488",
-  dimText:     "#98A2B3",
+  purple:     "#5D5EF4",
+  purpleLight:"#EEEDFE",
+  purpleText: "#3C3489",
+  teal:       "#1D9E75",
+  tealLight:  "#E1F5EE",
+  tealText:   "#085041",
+  amber:      "#BA7517",
+  amberLight: "#FAEEDA",
+  amberText:  "#633806",
+  red:        "#E24B4A",
+  redLight:   "#FCEBEB",
+  redText:    "#791F1F",
+  border:     "#676488",
+  dimText:    "#98A2B3",
+  blue:       "#185FA5",
+  blueLight:  "#E6F1FB",
+  blueBorder: "#85B7EB",
+  blueText:   "#0C447C",
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface LineItem {
+export interface LineItem {
   description: string
   qty: number | null
   uom: string | null
@@ -40,6 +54,8 @@ interface LineItem {
   gl_code: string | null
   gl_desc: string | null
   confidence: number
+  gl_confidence?: number | null
+  sst_claimable?: boolean | null
 }
 
 export interface InvoiceDetail {
@@ -59,7 +75,7 @@ export interface InvoiceDetail {
   tax_type: string | null
   total_myr: number
   urgency_bucket: "overdue" | "due_3d" | "due_7d" | "due_30d" | "future"
-  status: "pending_review" | "approved" | "rejected" | "paid" | "overdue"
+  status: "pending_review" | "approved" | "rejected" | "paid" | "overdue" | "partially_paid"
   origin: "local" | "foreign" | "unknown"
   is_einvoice_verified: boolean
   discount_available: boolean
@@ -67,6 +83,7 @@ export interface InvoiceDetail {
   duplicate_risk: "none" | "possible" | "exact"
   source: string
   project_code: string | null
+  project_id?: string | null
   cost_centre: string | null
   po_reference: string | null
   bill_to_name: string
@@ -77,9 +94,29 @@ export interface InvoiceDetail {
   ai_insight: string
   ai_source: string
   created_at: string
+  // Extended fields
+  payment_type?: string | null
+  work_order_ref?: string | null
+  milestone_sequence?: number | null
+  milestone_description?: string | null
+  milestone_percentage?: number | null
+  amount_paid?: number | null
+  amount_outstanding?: number | null
+  po_substitute_type?: string | null
+  do_number?: string | null
+  do_received?: boolean | null
+  do_signed_returned?: boolean | null
+  payment_vouchers?: PaymentVoucher[]
+  payment_series_id?: string | null
+  payment_series_sequence?: number | null
+  total_contract_value?: number | null
+  quotation_ref?: string | null
+  email_from?: string | null
+  email_subject?: string | null
+  email_body_html?: string | null
 }
 
-// ─── Demo data ────────────────────────────────────────────────────────────────
+// ─── Demo data (legacy fallback) ──────────────────────────────────────────────
 
 export const DEMO_DETAILS: Record<string, InvoiceDetail> = {
   "inv-001": {
@@ -124,53 +161,176 @@ export const DEMO_DETAILS: Record<string, InvoiceDetail> = {
     ai_insight: "e-Invoice verified via MyInvois. SST input tax RM 7,800 claimable against SST registration. Line item 3 flagged as potential CAPEX — verify capitalisation threshold (RM 10,000). PO-2024-0056 matched.",
     ai_source: "jomie-sst-baseline.md:v1.5 → SST18:S38 · lhdn-capex-threshold.md:v2.1",
     created_at: "2024-06-01T08:00:00Z",
-  },
-  "inv-002": {
-    id: "inv-002",
-    vendor_name_raw: "SKY Renovation Sdn Bhd",
-    vendor_tin: "C19981234567",
-    vendor_reg_no: "199801056789-B",
-    vendor_address: "No 5, Jalan Kilang Midah, Cheras, 56100 Kuala Lumpur",
-    vendor_country: "MY",
-    invoice_number: "SKY-2024-0234",
-    invoice_date: "2024-06-01",
-    due_date: "2024-06-21",
-    payment_terms: "2/10 Net 20",
-    currency: "MYR",
-    subtotal: 35000,
-    tax_amount: 3500,
-    tax_type: "SST",
-    total_myr: 38500,
-    urgency_bucket: "due_3d",
-    status: "pending_review",
-    origin: "local",
-    is_einvoice_verified: false,
-    discount_available: true,
-    discount_savings_myr: 770,
-    duplicate_risk: "none",
-    source: "manual_upload",
-    project_code: "PROJ-2024-03",
-    cost_centre: "ADMIN",
-    po_reference: null,
-    bill_to_name: "ABC Retails Sdn Bhd",
-    bill_to_address: "Level 8, Wisma ABC, 88 Jalan Ampang, 50450 Kuala Lumpur",
-    bill_to_tin: "C20050087654",
-    confidence_scores: {
-      vendor_name: 0.97, vendor_tin: 0.88, invoice_number: 0.99,
-      invoice_date: 0.95, due_date: 0.91, total: 0.99, line_items: 0.85,
-    },
-    line_items: [
-      { description: "Office Renovation — Partition Works", qty: 1, uom: "lot", unit_price: 22000, amount: 22000, gl_code: "1430", gl_desc: "Leasehold Improvements", confidence: 0.83 },
-      { description: "Electrical Wiring & Fittings", qty: 1, uom: "lot", unit_price: 8000, amount: 8000, gl_code: "1410", gl_desc: "Capital Expenditure — Equipment", confidence: 0.79 },
-      { description: "Painting & Finishing Works", qty: 1, uom: "lot", unit_price: 5000, amount: 5000, gl_code: "5310", gl_desc: "Building Maintenance", confidence: 0.89 },
-    ],
-    ai_insight: "Early payment discount: pay by 11 Jun to save RM 770 (2%). No MyInvois QR detected — request e-invoice from vendor before approving to comply with LHDN Phase 2 mandate. Renovation items may qualify as leasehold improvements (capital).",
-    ai_source: "lhdn-einvoice-mandate.md:v3.0 → Phase2:para4 · jomie-capex-rules.md:v1.2",
-    created_at: "2024-06-10T09:15:00Z",
+    payment_vouchers: [],
   },
 }
 
 const DEFAULT_DETAIL = DEMO_DETAILS["inv-001"]
+
+// ─── Mock email thread data ───────────────────────────────────────────────────
+
+type EmailTier = 1 | 2 | 3
+
+interface MockEmail {
+  id: string
+  from_name: string
+  from_email: string
+  to_label: string
+  date: string
+  subject: string
+  body: string
+  tier: EmailTier
+  tier_reason: string
+  attachments?: string[]
+}
+
+const MOCK_EMAIL_THREADS: Record<string, MockEmail[]> = {
+  // Sorted newest first (descending by date)
+  "00000000-0000-0000-0000-000000000001": [
+    {
+      id: "e-012", from_name: "Woon Weng Sing", from_email: "wengsing@mynetassist.com",
+      to_label: "me, chanheng@jomeinvoice.my, Thomas, Finance", date: "18 Jun 2026, 11:41",
+      subject: "Invoice NA0626-0023, dated 16/06/2026, for JOM EINVOICE SDN BHD | WO 2026-0264",
+      body: "Dear Our Value Customers,\n\nGood day!\n\nEnclosed herewith Invoice.-NA0626-0023 & DO.-DO0626-0020 for RM 8,164.80. Please remit payment at your earliest convenience.\n\nAppreciate if you could sign & return the DO for our Audit purposes.",
+      tier: 1, tier_reason: "Invoice submission — RM 8,164.80",
+      attachments: ["NA0626-0023.pdf", "DO0626-0020.pdf"],
+    },
+    {
+      id: "e-011", from_name: "Thony Chwa", from_email: "thony@jomeinvoice.my",
+      to_label: "Woon Weng Sing", date: "17 Jun 2026, 10:30",
+      subject: "Re: VAPT Final Report — Sign-off",
+      body: "Hi Woon,\n\nReports received and reviewed. Management has signed off. Please go ahead and issue the final invoice.\n\nRegards,\nThony",
+      tier: 3, tier_reason: "Internal sign-off",
+    },
+    {
+      id: "e-010", from_name: "Thomas Tay", from_email: "thomas.tay@mynetassist.com",
+      to_label: "Thony Chwa", date: "15 Jun 2026, 14:20",
+      subject: "VAPT Final Assessment Report Delivered",
+      body: "Hi Thony,\n\nFinal Assessment Report attached. All critical and high findings from M2 are confirmed remediated.\n\nThis completes our VAPT engagement per quotation NASB-Q-TT-20260423-AGMO-CSPS-SPA-VAPT-001v0.1.\n\nOur finance team will issue the final invoice shortly.\n\nBest,\nThomas",
+      tier: 3, tier_reason: "Final report delivery",
+      attachments: ["VAPT-Final-Assessment-AGMO-CSPS-SPA-v1.0.pdf"],
+    },
+    {
+      id: "e-009", from_name: "Thomas Tay", from_email: "thomas.tay@mynetassist.com",
+      to_label: "Thony Chwa", date: "5 Jun 2026, 09:45",
+      subject: "VAPT Initial Assessment Report Delivered",
+      body: "Hi Thony,\n\nAttached: VAPT Initial Assessment Report for AGMO CSPS SPA.\n\nHighlights: 2 Critical (patched), 3 High, 7 Medium, 12 Low/Info. All critical findings verified as fixed in re-test.\n\nFinal Report to follow within 2 weeks.\n\nBest,\nThomas",
+      tier: 3, tier_reason: "Report delivery",
+      attachments: ["VAPT-Initial-Assessment-AGMO-CSPS-SPA-v1.0.pdf"],
+    },
+    {
+      id: "e-008", from_name: "Thomas Tay", from_email: "thomas.tay@mynetassist.com",
+      to_label: "Thony Chwa", date: "20 May 2026, 11:00",
+      subject: "VAPT Week 2 — Findings Summary",
+      body: "Hi Thony,\n\nWeek 2 complete. Findings to date:\n- 2 High (SQL injection, broken auth)\n- 5 Medium\n- 8 Informational\n\nFull remediation guidance in the initial report. Expected delivery: end of May.\n\nBest,\nThomas",
+      tier: 3, tier_reason: "Technical progress update",
+    },
+    {
+      id: "e-007", from_name: "Thomas Tay", from_email: "thomas.tay@mynetassist.com",
+      to_label: "Thony Chwa", date: "12 May 2026, 16:30",
+      subject: "VAPT Week 1 Update",
+      body: "Hi Thony,\n\nCompleted external network discovery and initial reconnaissance. No critical findings so far. Web application testing commences tomorrow.\n\nNext update: end of week 2.\n\nBest,\nThomas",
+      tier: 3, tier_reason: "Technical progress update",
+    },
+    {
+      id: "e-006", from_name: "Woon Weng Sing", from_email: "wengsing@mynetassist.com",
+      to_label: "me, chanheng@jomeinvoice.my, Thomas, Finance", date: "8 May 2026, 15:44",
+      subject: "Invoice NA0526-0010, dated 26/05/2026, for JOM EINVOICE SDN BHD | WO 2026-0264",
+      body: "Dear Our Value Customers,\n\nGood day!\n\nEnclosed herewith Invoice.-NA0526-0010 & DO.-DO0526-0010 for RM 8,164.80. Please remit payment at your earliest convenience.\n\nAppreciate if you could sign & return the DO for our Audit purposes.",
+      tier: 1, tier_reason: "Invoice submission — RM 8,164.80",
+      attachments: ["NA0526-0010.pdf", "DO0526-0010.pdf"],
+    },
+    {
+      id: "e-005", from_name: "Thomas Tay", from_email: "thomas.tay@mynetassist.com",
+      to_label: "Thony Chwa", date: "29 Apr 2026, 09:15",
+      subject: "Received — VAPT Kick-off",
+      body: "Hi Thony,\n\nThank you. Signed quotation received. Let us schedule a kick-off meeting this week.\n\nProposed: Thursday 2 May, 10am via Teams?\n\nBest,\nThomas",
+      tier: 3, tier_reason: "Meeting scheduling",
+    },
+    {
+      id: "e-004", from_name: "Thony Chwa", from_email: "thony@jomeinvoice.my",
+      to_label: "Thomas Tay", date: "28 Apr 2026, 22:47",
+      subject: "Signed Quotation — WO 2026-0264",
+      body: "Hi Thomas,\n\nPlease find the signed quotation. Please proceed with the engagement.\n\nWO reference: WO-2026-0264\n\nRegards,\nThony",
+      tier: 2, tier_reason: "Signed PO — contract confirmation",
+      attachments: ["NASB-Q-TT-20260423-AGMO-CSPS-SPA-VAPT-001v0.1 (signed).pdf"],
+    },
+    {
+      id: "e-003", from_name: "Thomas Tay", from_email: "thomas.tay@mynetassist.com",
+      to_label: "Thony Chwa", date: "24 Apr 2026, 15:30",
+      subject: "Re: VAPT Quotation — Answers",
+      body: "Hi Thony,\n\n1. Timeline: 3–4 weeks from kick-off\n2. Mobile apps out of scope\n3. Report per OWASP/CVSSv3 with executive summary\n\nBest,\nThomas",
+      tier: 3, tier_reason: "Scope clarification reply",
+    },
+    {
+      id: "e-002", from_name: "Thony Chwa", from_email: "thony@jomeinvoice.my",
+      to_label: "Thomas Tay", date: "24 Apr 2026, 10:05",
+      subject: "Re: VAPT Quotation — Questions",
+      body: "Hi Thomas,\n\nA few clarifying questions on scope:\n1. Estimated timeline?\n2. Mobile apps in scope?\n3. Report format?\n\nThanks,\nThony",
+      tier: 3, tier_reason: "Scope clarification",
+    },
+    {
+      id: "e-001", from_name: "Thomas Tay", from_email: "thomas.tay@mynetassist.com",
+      to_label: "Thony Chwa", date: "22 Apr 2026, 14:22",
+      subject: "VAPT Quotation — AGMO CSPS SPA",
+      body: "Dear Thony,\n\nPlease find attached our quotation for VAPT services for the AGMO CSPS SPA project.\n\nTotal: RM 16,329.60 (incl. 8% SST)\nPayment terms: 50% on PO, 40% on initial report, 10% on final report\n\nBest regards,\nThomas Tay",
+      tier: 3, tier_reason: "Quotation — pre-contract",
+      attachments: ["NASB-Q-TT-20260423-AGMO-CSPS-SPA-VAPT-001v0.1.pdf"],
+    },
+  ],
+}
+
+// ─── Mock AI findings per invoice ─────────────────────────────────────────────
+
+type FindingLevel = "blue" | "amber" | "green"
+
+interface AIFinding {
+  level: FindingLevel
+  title: string
+  description: string
+  citation?: string
+}
+
+const MOCK_AI_FINDINGS: Record<string, AIFinding[]> = {
+  "00000000-0000-0000-0000-000000000001": [
+    {
+      level: "blue",
+      title: "Final payment — contract series",
+      description: "BEING FINAL 50% PAYMENT detected. Milestone 2 of 2. Contract NASB-Q-TT-20260423 · Total RM 16,329.60",
+      citation: "invoiceClassification.md@v1.2",
+    },
+    {
+      level: "green",
+      title: "MyInvois validated — LHDN compliant",
+      description: "QR code present and verified.",
+      citation: "jomie-sst-baseline.md@v1.5",
+    },
+    {
+      level: "amber",
+      title: "Possible duplicate — same amount as prior invoice",
+      description: "Both NA0526-0010 and this invoice are RM 8,164.80. Expected for milestone payments — confirm before approving.",
+      citation: "duplicateDetection.md@v1.1",
+    },
+    {
+      level: "amber",
+      title: "SST not claimable — blocked input category",
+      description: "Service Tax RM 464.80 cannot be claimed as input tax. Professional IT security services are a blocked input.",
+      citation: "jomie-sst-baseline.md@v1.5 · SST18:S38",
+    },
+    {
+      level: "blue",
+      title: "Project assigned — WO 2026-0264 (82% of budget)",
+      description: "Matched from email subject. RM 3,670 remaining.",
+      citation: "invoiceClassification.md@v1.2",
+    },
+    {
+      level: "blue",
+      title: "2 items ready to add to item master",
+      description: "External Network Penetration Testing and VAPT Assessment Reports not in item master.",
+      citation: "itemMaster.md@v1.3",
+    },
+  ],
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -179,11 +339,11 @@ const fmtDate = (s: string | null) =>
   s ? new Date(s).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) : "—"
 
 const URGENCY_CONFIG = {
-  overdue:  { label: "Overdue",  color: T.red,     bg: T.redLight,   border: T.red   },
-  due_3d:   { label: "Due ≤3d",  color: T.amber,   bg: T.amberLight, border: T.amber },
-  due_7d:   { label: "Due ≤7d",  color: T.amber,   bg: T.amberLight, border: T.amber },
-  due_30d:  { label: "Due ≤30d", color: T.dimText, bg: "rgba(255,255,255,0.04)", border: T.border },
-  future:   { label: "Future",   color: T.dimText, bg: "rgba(255,255,255,0.04)", border: T.border },
+  overdue: { label: "Overdue",  color: T.red,     bg: T.redLight,   border: T.red   },
+  due_3d:  { label: "Due ≤3d",  color: T.amber,   bg: T.amberLight, border: T.amber },
+  due_7d:  { label: "Due ≤7d",  color: T.amber,   bg: T.amberLight, border: T.amber },
+  due_30d: { label: "Due ≤30d", color: T.dimText, bg: "rgba(255,255,255,0.04)", border: T.border },
+  future:  { label: "Future",   color: T.dimText, bg: "rgba(255,255,255,0.04)", border: T.border },
 }
 
 const STATUS_CONFIG = {
@@ -192,19 +352,28 @@ const STATUS_CONFIG = {
   rejected:       { label: "Rejected",       color: T.redText,  bg: T.redLight },
   paid:           { label: "Paid",           color: T.dimText,  bg: "rgba(255,255,255,0.06)" },
   overdue:        { label: "Overdue",        color: T.redText,  bg: T.redLight },
+  partially_paid: { label: "Partial",        color: T.tealText, bg: T.tealLight },
+}
+
+const STATUS_BADGE_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant"]> = {
+  pending_review: "status-pending",
+  approved:       "status-approved",
+  paid:           "status-paid",
+  overdue:        "status-overdue",
+  partially_paid: "status-partial",
+  rejected:       "status-rejected",
 }
 
 function ConfidenceBadge({ score }: { score: number }) {
   if (score >= 0.80) return null
   return (
-    <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded ml-1.5"
-      style={{ background: T.amberLight, color: T.amberText }}>
+    <Badge variant="urgency-7d" className="ml-1.5 gap-0.5 h-4 text-[9px]">
       <AlertTriangle size={8} strokeWidth={2}/> {Math.round(score * 100)}%
-    </span>
+    </Badge>
   )
 }
 
-// ─── Mock PDF Viewer ──────────────────────────────────────────────────────────
+// ─── PDF Viewer ───────────────────────────────────────────────────────────────
 
 function PDFViewer({ invoice, signedUrl }: { invoice: InvoiceDetail; signedUrl?: string | null }) {
   const [zoom, setZoom] = React.useState(100)
@@ -223,173 +392,557 @@ function PDFViewer({ invoice, signedUrl }: { invoice: InvoiceDetail; signedUrl?:
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => setZoom(z => Math.max(50, z - 10))}
-            className="size-6 rounded flex items-center justify-center cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.06)" }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}>
-            <ZoomOut size={11} color="rgba(255,255,255,0.5)" strokeWidth={2}/>
-          </button>
+          <Button onClick={() => setZoom(z => Math.max(50, z - 10))}
+            variant="ghost" size="icon"
+            className="size-6 rounded text-white/50 hover:bg-white/12 hover:text-white/70">
+            <ZoomOut size={11} strokeWidth={2}/>
+          </Button>
           <span className="text-[10px] font-mono w-10 text-center" style={{ color: "rgba(255,255,255,0.4)" }}>
             {zoom}%
           </span>
-          <button onClick={() => setZoom(z => Math.min(200, z + 10))}
-            className="size-6 rounded flex items-center justify-center cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.06)" }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}>
-            <ZoomIn size={11} color="rgba(255,255,255,0.5)" strokeWidth={2}/>
-          </button>
-          <button onClick={() => setZoom(100)}
-            className="size-6 rounded flex items-center justify-center cursor-pointer ml-1"
-            style={{ background: "rgba(255,255,255,0.06)" }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}>
-            <RotateCcw size={10} color="rgba(255,255,255,0.5)" strokeWidth={2}/>
-          </button>
-          <button className="size-6 rounded flex items-center justify-center cursor-pointer ml-1"
-            style={{ background: "rgba(255,255,255,0.06)" }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}>
-            <Download size={11} color="rgba(255,255,255,0.5)" strokeWidth={2}/>
-          </button>
+          <Button onClick={() => setZoom(z => Math.min(200, z + 10))}
+            variant="ghost" size="icon"
+            className="size-6 rounded text-white/50 hover:bg-white/12 hover:text-white/70">
+            <ZoomIn size={11} strokeWidth={2}/>
+          </Button>
+          <Button onClick={() => setZoom(100)}
+            variant="ghost" size="icon"
+            className="size-6 rounded ml-1 text-white/50 hover:bg-white/12 hover:text-white/70">
+            <RotateCcw size={10} strokeWidth={2}/>
+          </Button>
+          <Button variant="ghost" size="icon"
+            className="size-6 rounded ml-1 text-white/50 hover:bg-white/12 hover:text-white/70">
+            <Download size={11} strokeWidth={2}/>
+          </Button>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto flex items-start justify-center p-6">
         {signedUrl ? (
-          <iframe
-            src={signedUrl}
-            title="Invoice document"
+          <iframe src={signedUrl} title="Invoice document"
             className="w-full h-full rounded-lg shadow-2xl"
-            style={{ minHeight: 720, border: "none", background: "#fff" }}
-          />
+            style={{ minHeight: 720, border: "none", background: "#fff" }}/>
         ) : (
-        <div style={{
-          transform: `scale(${zoom / 100})`,
-          transformOrigin: "top center",
-          transition: "transform 0.15s ease",
-          width: "520px",
-          flexShrink: 0,
-        }}>
-          <div className="rounded-lg shadow-2xl overflow-hidden" style={{ background: "#fff", minHeight: 720 }}>
-            <div className="px-10 pt-10 pb-6">
-              <div className="flex items-center justify-between mb-6">
-                <div className="text-[13px] font-semibold text-gray-500 tracking-wide uppercase">
-                  {invoice.vendor_name_raw}
+          <div style={{
+            transform: `scale(${zoom / 100})`,
+            transformOrigin: "top center",
+            transition: "transform 0.15s ease",
+            width: "520px",
+            flexShrink: 0,
+          }}>
+            <div className="rounded-lg shadow-2xl overflow-hidden" style={{ background: "#fff", minHeight: 720 }}>
+              <div className="px-10 pt-10 pb-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="text-[13px] font-semibold text-gray-500 tracking-wide uppercase">
+                    {invoice.vendor_name_raw}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[28px] font-black tracking-tight text-gray-900">INVOICE</div>
+                    <div className="text-[11px] text-gray-500 mt-0.5 font-mono">{invoice.invoice_number}</div>
+                    {invoice.is_einvoice_verified && (
+                      <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-semibold"
+                        style={{ background: "#E1F5EE", color: "#085041" }}>
+                        <CheckCircle2 size={8} strokeWidth={2}/> MyInvois Verified
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-[28px] font-black tracking-tight text-gray-900">INVOICE</div>
-                  <div className="text-[11px] text-gray-500 mt-0.5 font-mono">{invoice.invoice_number}</div>
-                  {invoice.is_einvoice_verified && (
-                    <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-semibold"
-                      style={{ background: "#E1F5EE", color: "#085041" }}>
-                      <CheckCircle2 size={8} strokeWidth={2}/> MyInvois Verified
+
+                <div className="grid grid-cols-2 gap-8 mb-6 pb-6" style={{ borderBottom: "1px solid #E5E7EB" }}>
+                  <div>
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">From</div>
+                    <div className="text-[11px] font-bold text-gray-800">{invoice.vendor_name_raw}</div>
+                    {invoice.vendor_tin && <div className="text-[10px] text-gray-500 mt-0.5">TIN: {invoice.vendor_tin}</div>}
+                    {invoice.vendor_reg_no && <div className="text-[10px] text-gray-500">Reg: {invoice.vendor_reg_no}</div>}
+                    {invoice.vendor_address && <div className="text-[10px] text-gray-500 mt-1 leading-relaxed">{invoice.vendor_address}</div>}
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Bill To</div>
+                    <div className="text-[11px] font-bold text-gray-800">{invoice.bill_to_name}</div>
+                    {invoice.bill_to_tin && <div className="text-[10px] text-gray-500 mt-0.5">TIN: {invoice.bill_to_tin}</div>}
+                    {invoice.bill_to_address && <div className="text-[10px] text-gray-500 mt-1 leading-relaxed">{invoice.bill_to_address}</div>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-6 mb-8 pb-6" style={{ borderBottom: "1px solid #E5E7EB" }}>
+                  <div>
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Invoice Date</div>
+                    <div className="text-[11px] font-medium text-gray-800">{fmtDate(invoice.invoice_date)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Due Date</div>
+                    <div className="text-[11px] font-medium text-gray-800">{fmtDate(invoice.due_date)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Payment Terms</div>
+                    <div className="text-[11px] font-medium text-gray-800">{invoice.payment_terms ?? "—"}</div>
+                  </div>
+                  {invoice.po_reference && (
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">PO Reference</div>
+                      <div className="text-[11px] font-medium text-gray-800">{invoice.po_reference}</div>
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* Bill To */}
-              <div className="grid grid-cols-2 gap-8 mb-6 pb-6" style={{ borderBottom: "1px solid #E5E7EB" }}>
-                <div>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">From</div>
-                  <div className="text-[11px] font-bold text-gray-800">{invoice.vendor_name_raw}</div>
-                  {invoice.vendor_tin && <div className="text-[10px] text-gray-500 mt-0.5">TIN: {invoice.vendor_tin}</div>}
-                  {invoice.vendor_reg_no && <div className="text-[10px] text-gray-500">Reg: {invoice.vendor_reg_no}</div>}
-                  {invoice.vendor_address && <div className="text-[10px] text-gray-500 mt-1 leading-relaxed">{invoice.vendor_address}</div>}
-                </div>
-                <div>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Bill To</div>
-                  <div className="text-[11px] font-bold text-gray-800">{invoice.bill_to_name}</div>
-                  {invoice.bill_to_tin && <div className="text-[10px] text-gray-500 mt-0.5">TIN: {invoice.bill_to_tin}</div>}
-                  {invoice.bill_to_address && <div className="text-[10px] text-gray-500 mt-1 leading-relaxed">{invoice.bill_to_address}</div>}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-6 mb-8 pb-6" style={{ borderBottom: "1px solid #E5E7EB" }}>
-                <div>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Invoice Date</div>
-                  <div className="text-[11px] font-medium text-gray-800">{fmtDate(invoice.invoice_date)}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Due Date</div>
-                  <div className="text-[11px] font-medium text-gray-800">{fmtDate(invoice.due_date)}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Payment Terms</div>
-                  <div className="text-[11px] font-medium text-gray-800">{invoice.payment_terms ?? "—"}</div>
-                </div>
-                {invoice.po_reference && (
+                  {invoice.vendor_tin && (
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">TIN</div>
+                      <div className="text-[11px] font-medium text-gray-800">{invoice.vendor_tin}</div>
+                    </div>
+                  )}
                   <div>
-                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">PO Reference</div>
-                    <div className="text-[11px] font-medium text-gray-800">{invoice.po_reference}</div>
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Currency</div>
+                    <div className="text-[11px] font-medium text-gray-800">{invoice.currency}</div>
                   </div>
-                )}
-                {invoice.vendor_tin && (
-                  <div>
-                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">TIN</div>
-                    <div className="text-[11px] font-medium text-gray-800">{invoice.vendor_tin}</div>
-                  </div>
-                )}
-                <div>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Currency</div>
-                  <div className="text-[11px] font-medium text-gray-800">{invoice.currency}</div>
                 </div>
-              </div>
 
-              <table className="w-full mb-6">
-                <thead>
-                  <tr style={{ borderBottom: "1px solid #E5E7EB" }}>
-                    <th className="text-left py-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Description</th>
-                    <th className="text-right py-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Qty</th>
-                    <th className="text-right py-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Unit Price</th>
-                    <th className="text-right py-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoice.line_items.map((li, i) => (
-                    <tr key={i} style={{ borderBottom: "0.5px solid #F3F4F6" }}>
-                      <td className="py-2.5 text-[10px] text-gray-700 pr-4 leading-relaxed">{li.description}</td>
-                      <td className="py-2.5 text-[10px] text-gray-600 text-right tabular-nums whitespace-nowrap">
-                        {li.qty !== null ? li.qty : "—"}{li.uom ? ` ${li.uom}` : ""}
-                      </td>
-                      <td className="py-2.5 text-[10px] text-gray-600 text-right tabular-nums whitespace-nowrap">
-                        {li.unit_price !== null ? fmt(li.unit_price) : "—"}
-                      </td>
-                      <td className="py-2.5 text-[10px] font-semibold text-gray-800 text-right tabular-nums whitespace-nowrap">
-                        {fmt(li.amount)}
-                      </td>
+                <table className="w-full mb-6">
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid #E5E7EB" }}>
+                      <th className="text-left py-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Description</th>
+                      <th className="text-right py-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Qty</th>
+                      <th className="text-right py-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Unit Price</th>
+                      <th className="text-right py-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Amount</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {invoice.line_items.map((li, i) => (
+                      <tr key={i} style={{ borderBottom: "0.5px solid #F3F4F6" }}>
+                        <td className="py-2.5 text-[10px] text-gray-700 pr-4 leading-relaxed">{li.description}</td>
+                        <td className="py-2.5 text-[10px] text-gray-600 text-right tabular-nums whitespace-nowrap">
+                          {li.qty !== null ? li.qty : "—"}{li.uom ? ` ${li.uom}` : ""}
+                        </td>
+                        <td className="py-2.5 text-[10px] text-gray-600 text-right tabular-nums whitespace-nowrap">
+                          {li.unit_price !== null ? fmt(li.unit_price) : "—"}
+                        </td>
+                        <td className="py-2.5 text-[10px] font-semibold text-gray-800 text-right tabular-nums whitespace-nowrap">
+                          {fmt(li.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
-              <div className="flex justify-end">
-                <div className="w-52">
-                  <div className="flex justify-between py-1.5 text-[10px]">
-                    <span className="text-gray-500">Subtotal</span>
-                    <span className="text-gray-800 tabular-nums font-medium">{fmt(invoice.subtotal)}</span>
-                  </div>
-                  {invoice.tax_amount != null && (
+                <div className="flex justify-end">
+                  <div className="w-52">
                     <div className="flex justify-between py-1.5 text-[10px]">
-                      <span className="text-gray-500">{invoice.tax_type ?? "Tax"}</span>
-                      <span className="text-gray-800 tabular-nums font-medium">{fmt(invoice.tax_amount)}</span>
+                      <span className="text-gray-500">Subtotal</span>
+                      <span className="text-gray-800 tabular-nums font-medium">{fmt(invoice.subtotal)}</span>
                     </div>
-                  )}
-                  <div className="flex justify-between py-2 text-[13px] font-bold mt-1"
-                    style={{ borderTop: "2px solid #111" }}>
-                    <span className="text-gray-900">Total ({invoice.currency})</span>
-                    <span className="text-gray-900 tabular-nums">{fmt(invoice.total_myr)}</span>
+                    {invoice.tax_amount != null && (
+                      <div className="flex justify-between py-1.5 text-[10px]">
+                        <span className="text-gray-500">{invoice.tax_type ?? "Tax"}</span>
+                        <span className="text-gray-800 tabular-nums font-medium">{fmt(invoice.tax_amount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between py-2 text-[13px] font-bold mt-1"
+                      style={{ borderTop: "2px solid #111" }}>
+                      <span className="text-gray-900">Total ({invoice.currency})</span>
+                      <span className="text-gray-900 tabular-nums">{fmt(invoice.total_myr)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
         )}
       </div>
     </div>
+  )
+}
+
+// ─── Section: Payment type banner ─────────────────────────────────────────────
+
+function PaymentTypeBanner({ invoice }: { invoice: InvoiceDetail }) {
+  const pt = invoice.payment_type
+  if (!pt || pt === "standard") return null
+
+  const contract = invoice.quotation_ref ? getMockContractByRef(invoice.quotation_ref) : null
+  const totalMilestones = contract?.milestones.length ?? 2
+
+  if (pt === "final") {
+    const m1 = contract?.milestones.find(m => m.sequence === 1)
+    const priorRaw = m1 ? getMockInvoiceDetail(m1.invoice_id) : null
+    const priorNum = priorRaw?.invoice_number ?? null
+    const pv0 = priorRaw?.payment_vouchers?.[0]
+    const shortRef = invoice.quotation_ref
+      ? invoice.quotation_ref.split("-").slice(0, 3).join("-") + "…"
+      : null
+
+    return (
+      <div className="rounded-lg p-3.5" style={{ background: "#EEEDFE", border: "0.5px solid #AFA9EC" }}>
+        <div className="flex items-start gap-2.5">
+          <Link2 size={14} style={{ color: "#534AB7", marginTop: 1, flexShrink: 0 }} strokeWidth={2}/>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-semibold mb-1" style={{ color: "#3C3489" }}>
+              Final payment — milestone series
+            </div>
+            <div className="text-[11px] leading-relaxed mb-1" style={{ color: "#534AB7" }}>
+              Milestone {invoice.milestone_sequence ?? "—"} of {totalMilestones} · {invoice.milestone_description ?? "—"} · RM {fmt(invoice.total_myr)}
+            </div>
+            {priorNum && (
+              <div className="text-[11px] mb-1" style={{ color: "#534AB7" }}>
+                Prior payment: {priorNum} · RM {fmt(m1?.amount ?? 0)} · Paid {pv0 ? fmtDate(pv0.payment_date) : "—"}
+                <span className="ml-1.5 underline cursor-pointer" style={{ color: "#3C3489" }}>View →</span>
+              </div>
+            )}
+            {contract && shortRef && (
+              <div className="text-[10px]" style={{ color: "#7B75C1" }}>
+                Total contract value: RM {fmt(contract.total_value)} · Contract: {shortRef}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // progress
+  if (pt === "progress") {
+    return (
+      <div className="rounded-lg p-3.5" style={{ background: T.blueLight, border: `0.5px solid ${T.blueBorder}` }}>
+        <div className="flex items-start gap-2.5">
+          <ListChecks size={14} style={{ color: T.blue, marginTop: 1, flexShrink: 0 }} strokeWidth={2}/>
+          <div>
+            <div className="text-[12px] font-semibold mb-1" style={{ color: T.blueText }}>
+              Progress payment — milestone {invoice.milestone_sequence ?? 1} of {totalMilestones}
+            </div>
+            <div className="text-[11px]" style={{ color: T.blue }}>
+              {invoice.milestone_description ?? "—"} · RM {fmt(invoice.total_myr)}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // advance
+  return (
+    <div className="rounded-lg p-3.5" style={{ background: T.blueLight, border: `0.5px solid ${T.blueBorder}` }}>
+      <div className="flex items-start gap-2.5">
+        <Info size={14} style={{ color: T.blue, marginTop: 1, flexShrink: 0 }} strokeWidth={2}/>
+        <div>
+          <div className="text-[12px] font-semibold mb-1" style={{ color: T.blueText }}>
+            Advance / Deposit Payment
+          </div>
+          <div className="text-[11px] whitespace-pre-line" style={{ color: T.blue }}>
+            {"Posted to Balance Sheet GL 1300 — not P&L.\nConfirm recovery schedule with vendor."}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Section: Compliance trail ────────────────────────────────────────────────
+
+const CATEGORY_LABELS: Record<string, string> = {
+  document_completeness: "Document Completeness",
+  vendor_integrity:      "Vendor Integrity",
+  financial_accuracy:    "Financial Accuracy",
+  tax_compliance:        "Tax Compliance",
+  project_costing:       "Project & Costing",
+}
+const CATEGORY_ORDER = [
+  "document_completeness", "vendor_integrity",
+  "financial_accuracy", "tax_compliance", "project_costing",
+]
+
+function ComplianceSection({ invoiceId }: { invoiceId: string }) {
+  const checks = getMockCompliance(invoiceId)
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
+  if (checks.length === 0) return null
+
+  const grouped: Record<string, ComplianceCheck[]> = {}
+  CATEGORY_ORDER.forEach(cat => {
+    const items = checks.filter(c => c.category === cat)
+    if (items.length > 0) grouped[cat] = items
+  })
+
+  const toggle = (key: string) => setExpanded(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
+
+  return (
+    <section>
+      <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>
+        Compliance Checks
+      </div>
+      <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
+        {Object.entries(grouped).map(([cat, catChecks], catIdx) => (
+          <div key={cat}>
+            <div className="px-4 py-1.5" style={{ background: "#F9FAFB", borderBottom: "0.5px solid #F3F4F6" }}>
+              <span className="text-[8px] font-semibold uppercase tracking-wider" style={{ color: "#9CA3AF" }}>
+                {CATEGORY_LABELS[cat]}
+              </span>
+            </div>
+            {catChecks.map((check, idx) => {
+              const isLast = idx === catChecks.length - 1 && catIdx === Object.keys(grouped).length - 1
+              const key = `${cat}-${idx}`
+              const isOpen = expanded.has(key)
+              const hasDetail = !!(check.description || check.skill_citation)
+
+              return (
+                <div key={key}
+                  className={hasDetail ? "cursor-pointer" : ""}
+                  style={{ borderBottom: isLast ? undefined : "0.5px solid #F3F4F6" }}
+                  onClick={() => hasDetail && toggle(key)}>
+                  <div className="flex items-center justify-between gap-2 px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      {check.result === "pass"           && <Check size={12} strokeWidth={2.5} style={{ color: T.teal, flexShrink: 0 }}/>}
+                      {check.result === "warning"        && <AlertTriangle size={12} strokeWidth={2} style={{ color: T.amber, flexShrink: 0 }}/>}
+                      {check.result === "fail"           && <X size={12} strokeWidth={2.5} style={{ color: T.red, flexShrink: 0 }}/>}
+                      {check.result === "not_applicable" && <Minus size={12} strokeWidth={2} style={{ color: "#888780", flexShrink: 0 }}/>}
+                      <span className="text-[11px] text-gray-700">{check.title}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {check.result === "warning" && (
+                        <Badge variant="urgency-7d" className="h-4 text-[9px]">Warning</Badge>
+                      )}
+                      {check.result === "fail" && (
+                        <Badge variant="status-rejected" className="h-4 text-[9px]">Failed</Badge>
+                      )}
+                      {check.result === "not_applicable" && (
+                        <Badge variant="outline" className="h-4 text-[9px] text-muted-foreground">N/A</Badge>
+                      )}
+                      {hasDetail && (
+                        isOpen
+                          ? <ChevronUp size={10} style={{ color: "#9CA3AF" }}/>
+                          : <ChevronDown size={10} style={{ color: "#9CA3AF" }}/>
+                      )}
+                    </div>
+                  </div>
+                  {isOpen && hasDetail && (
+                    <div className="px-4 pb-2.5 pl-10">
+                      {check.description && (
+                        <p className="text-[10.5px] text-gray-500 leading-relaxed mb-1">{check.description}</p>
+                      )}
+                      {check.skill_citation && (
+                        <code className="text-[9px] font-mono block" style={{ color: "#9CA3AF" }}>{check.skill_citation}</code>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ─── Section: Contract & milestones ──────────────────────────────────────────
+
+const M_STATUS: Record<string, { dot: string; label: string; variant: React.ComponentProps<typeof Badge>["variant"] }> = {
+  paid:     { dot: T.teal,    label: "Paid",     variant: "status-paid"     },
+  invoiced: { dot: T.purple,  label: "Invoiced", variant: "status-approved" },
+  pending:  { dot: "#D1D5DB", label: "Pending",  variant: "urgency-future"  },
+}
+
+function ContractMilestonesSection({ invoice }: { invoice: InvoiceDetail }) {
+  const contract = invoice.quotation_ref ? getMockContractByRef(invoice.quotation_ref) : null
+  if (!contract) return null
+
+  return (
+    <section>
+      <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>
+        Contract & Milestones
+      </div>
+      <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
+        {/* Contract header */}
+        <div className="px-4 py-3" style={{ borderBottom: "0.5px solid #F3F4F6" }}>
+          <code className="text-[9px] font-mono block mb-1.5 truncate" style={{ color: T.purple }}>
+            {contract.contract_ref}
+          </code>
+          <div className="flex items-center justify-between text-[11px] mb-0.5">
+            <span className="text-gray-500">Total contract value</span>
+            <span className="font-semibold font-mono text-gray-900">RM {fmt(contract.total_value)}</span>
+          </div>
+          <div className="text-[10px]" style={{ color: T.dimText }}>
+            Signed by {contract.our_signed_by} · {fmtDate(contract.our_signed_at)}
+          </div>
+        </div>
+
+        {/* Milestones */}
+        {contract.milestones.map((m, idx) => {
+          const sc = M_STATUS[m.status] ?? M_STATUS.pending
+          const isThis = m.invoice_id === invoice.id
+          const mInv = getMockInvoiceDetail(m.invoice_id)
+          const pv0 = mInv?.payment_vouchers?.[0]
+          const isLast = idx === contract.milestones.length - 1
+
+          return (
+            <div key={m.id} className="flex gap-3 px-4 py-3"
+              style={{
+                borderBottom: isLast ? undefined : "0.5px solid #F3F4F6",
+                background: isThis ? "rgba(93,94,244,0.03)" : undefined,
+              }}>
+              <div className="flex flex-col items-center pt-1">
+                <div className="size-2.5 rounded-full shrink-0" style={{ background: sc.dot }}/>
+                {!isLast && <div className="w-px flex-1 min-h-[18px] mt-1" style={{ background: "#E5E7EB" }}/>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2 mb-0.5">
+                  <span className="text-[11px] font-medium text-gray-700 flex-1 leading-snug">{m.description}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] font-mono font-semibold text-gray-800">RM {fmt(m.amount)}</span>
+                    <Badge variant={sc.variant} className="h-4 text-[9px]">{sc.label}</Badge>
+                  </div>
+                </div>
+                <div className="text-[9.5px]" style={{ color: "#9CA3AF" }}>
+                  {mInv
+                    ? <>Invoice: {mInv.invoice_number}{isThis ? " (this invoice)" : ""}{pv0 ? ` · ${pv0.pv_number} · ${fmtDate(pv0.payment_date)}` : " · Pending payment"}</>
+                    : "—"
+                  }
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// ─── Section: Payment vouchers ────────────────────────────────────────────────
+
+function PaymentVouchersSection({ invoice }: { invoice: InvoiceDetail }) {
+  const pvs = invoice.payment_vouchers ?? []
+  const amountPaid = invoice.amount_paid ?? 0
+  const amountOut  = invoice.amount_outstanding ?? invoice.total_myr
+  const isFullPaid = amountOut === 0
+
+  return (
+    <section>
+      <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>
+        Payment Vouchers
+      </div>
+      <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
+        {/* Balance summary */}
+        <div className="px-4 py-3" style={{ borderBottom: pvs.length > 0 ? "0.5px solid #F3F4F6" : undefined }}>
+          {([
+            { label: "Invoice total", value: invoice.total_myr, bold: false, color: "#374151" },
+            { label: "Amount paid",   value: amountPaid,        bold: false, color: amountPaid > 0 ? T.teal : "#374151" },
+            { label: "Outstanding",   value: amountOut,         bold: true,  color: amountOut > 0 ? T.amber : T.teal },
+          ] as const).map((row, i) => (
+            <div key={i} className="flex items-center justify-between py-0.5 text-[11px]">
+              <span className="text-gray-500">{row.label}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono tabular-nums" style={{ color: row.color, fontWeight: row.bold ? 700 : 400 }}>
+                  RM {fmt(row.value)}
+                </span>
+                {i === 2 && isFullPaid && (
+                  <span className="flex items-center gap-0.5 text-[9px] font-semibold" style={{ color: T.teal }}>
+                    <CheckCircle2 size={9} strokeWidth={2}/> Fully paid
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+          {!isFullPaid && (
+            <div className="flex justify-end mt-2">
+              <Button size="sm" className="h-6 px-2.5 text-[10px] bg-success text-white hover:bg-success/90 gap-1">
+                <CreditCard size={10} strokeWidth={2}/> Create PV
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* PV rows */}
+        {pvs.map((pv, idx) => (
+          <div key={pv.pv_number} className="px-4 py-3"
+            style={{ borderBottom: idx < pvs.length - 1 ? "0.5px solid #F3F4F6" : undefined }}>
+            <div className="flex items-center justify-between gap-2 mb-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold font-mono text-gray-800">{pv.pv_number}</span>
+                <span className="text-[10px]" style={{ color: T.dimText }}>{fmtDate(pv.payment_date)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[11px] font-mono font-semibold text-gray-800">RM {fmt(pv.amount)}</span>
+                <span className="text-[10px] text-gray-500">
+                  {pv.payment_method === "bank_transfer" ? "Bank Transfer" : pv.payment_method}
+                </span>
+                <Badge variant="status-paid" className="h-4 text-[9px]">
+                  {pv.status === "paid" ? "Paid" : pv.status}
+                </Badge>
+              </div>
+            </div>
+            {(pv.bank_name || pv.payment_ref) && (
+              <div className="text-[9.5px]" style={{ color: "#9CA3AF" }}>
+                {[pv.bank_name, pv.payment_ref].filter(Boolean).join(" · ")}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {pvs.length === 0 && (
+          <div className="px-4 py-3 text-[11px]" style={{ color: T.dimText }}>No payment vouchers yet.</div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// ─── Section: AI Analysis (structured findings) ───────────────────────────────
+
+const FINDING_DOT: Record<FindingLevel, string> = {
+  blue:  T.blue,
+  amber: T.amber,
+  green: T.teal,
+}
+
+function AIAnalysisSection({ invoice }: { invoice: InvoiceDetail }) {
+  const findings = MOCK_AI_FINDINGS[invoice.id]
+
+  if (findings) {
+    return (
+      <section>
+        <div className="rounded-xl p-4" style={{ background: "rgba(93,94,244,0.05)", border: "0.5px solid rgba(93,94,244,0.15)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="size-5 rounded-md flex items-center justify-center shrink-0"
+              style={{ background: T.purpleLight }}>
+              <Sparkles size={11} style={{ color: T.purple }} strokeWidth={2}/>
+            </div>
+            <div className="text-[11px] font-semibold" style={{ color: T.purpleText }}>AI Analysis</div>
+          </div>
+          <div className="space-y-3">
+            {findings.map((f, i) => (
+              <div key={i} className="flex gap-2.5">
+                <div className="mt-1.5 size-1.5 rounded-full shrink-0" style={{ background: FINDING_DOT[f.level] }}/>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-semibold text-gray-800 mb-0.5">{f.title}</div>
+                  <div className="text-[11px] text-gray-600 leading-relaxed">{f.description}</div>
+                  {f.citation && (
+                    <code className="text-[9px] font-mono mt-0.5 block" style={{ color: "#9CA3AF" }}>{f.citation}</code>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  // Generic fallback
+  return (
+    <section>
+      <div className="rounded-xl p-4" style={{ background: "rgba(93,94,244,0.05)", border: "0.5px solid rgba(93,94,244,0.15)" }}>
+        <div className="flex items-start gap-2.5">
+          <div className="size-5 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+            style={{ background: T.purpleLight }}>
+            <Sparkles size={11} style={{ color: T.purple }} strokeWidth={2}/>
+          </div>
+          <div className="flex-1">
+            <div className="text-[11px] font-semibold mb-1.5" style={{ color: T.purpleText }}>AI Analysis</div>
+            <p className="text-[11px] text-gray-600 leading-relaxed">{invoice.ai_insight}</p>
+            <code className="text-[9px] font-mono mt-2 block" style={{ color: "#9CA3AF" }}>{invoice.ai_source}</code>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -397,14 +950,12 @@ function PDFViewer({ invoice, signedUrl }: { invoice: InvoiceDetail; signedUrl?:
 
 function splitDescription(description: string): { title: string; details: string | null } {
   const trimmed = description.trim()
-  // Split on first newline, " - ", " – ", or " — "
   const newlineIdx = trimmed.indexOf("\n")
   const dashIdx = trimmed.search(/ [-–—] /)
   let splitAt = -1
   if (newlineIdx !== -1) splitAt = newlineIdx
   if (dashIdx !== -1 && (splitAt === -1 || dashIdx < splitAt)) splitAt = dashIdx
   if (splitAt === -1 || splitAt > 80) {
-    // No delimiter found or title is very long — use first 80 chars or whole thing
     return { title: trimmed.slice(0, 80), details: trimmed.length > 80 ? trimmed.slice(80).trim() : null }
   }
   const title = trimmed.slice(0, splitAt).trim()
@@ -423,17 +974,14 @@ function EditableGL({ code, desc, confidence, onSave }: {
   if (editing) {
     return (
       <div className="flex items-center gap-1.5">
-        <input value={draftCode} onChange={e => setDraftCode(e.target.value)}
-          className="w-14 text-[11px] px-1.5 py-0.5 rounded border focus:outline-none font-mono"
-          style={{ border: `1px solid ${T.purple}`, color: "#374151", background: "#fff" }}/>
-        <input value={draftDesc} onChange={e => setDraftDesc(e.target.value)}
-          className="flex-1 text-[11px] px-1.5 py-0.5 rounded border focus:outline-none"
-          style={{ border: `1px solid ${T.purple}`, color: "#374151", background: "#fff" }}/>
-        <button onClick={() => { onSave(draftCode, draftDesc); setEditing(false) }}
-          className="text-[10px] font-semibold px-2 py-0.5 rounded cursor-pointer"
-          style={{ background: T.purple, color: "#fff" }}>Save</button>
-        <button onClick={() => setEditing(false)}
-          className="text-[10px] font-medium px-2 py-0.5 rounded cursor-pointer border text-gray-500">✕</button>
+        <Input value={draftCode} onChange={e => setDraftCode(e.target.value)}
+          className="w-14 h-6 text-[11px] px-1.5 font-mono bg-white text-gray-700"/>
+        <Input value={draftDesc} onChange={e => setDraftDesc(e.target.value)}
+          className="flex-1 h-6 text-[11px] px-1.5 bg-white text-gray-700"/>
+        <Button size="sm" className="h-6 px-2 text-[10px]"
+          onClick={() => { onSave(draftCode, draftDesc); setEditing(false) }}>Save</Button>
+        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]"
+          onClick={() => setEditing(false)}>✕</Button>
       </div>
     )
   }
@@ -453,18 +1001,50 @@ function EditableGL({ code, desc, confidence, onSave }: {
   )
 }
 
-function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
+export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
   const [lineItems, setLineItems] = React.useState(invoice.line_items)
   const cs = invoice.confidence_scores
 
+  // Project data (mock mode only)
+  const project = (isMockMode() && invoice.project_id)
+    ? getMockProject(invoice.project_id)
+    : null
+  const budgetPct = project ? Math.round((project.committed_amount / project.budget_amount) * 100) : null
+  const budgetRemaining = project ? project.budget_amount - project.committed_amount : null
+
   const updateGL = (idx: number, code: string, desc: string) => {
     setLineItems(prev => prev.map((li, i) => i === idx ? { ...li, gl_code: code, gl_desc: desc } : li))
-    const seq = lineItems[idx] ? idx + 1 : idx + 1
-    updateLineItemGL(invoice.id, seq, code, desc).catch(() => {/* non-fatal — UI already updated */})
+    if (!isMockMode()) {
+      updateLineItemGL(invoice.id, idx + 1, code, desc).catch(() => {})
+    }
   }
+
+  // Item master enrichment: show for line items where gl_confidence < 0.85 (not yet confirmed)
+  const enrichItems = lineItems
+    .filter(li => (li.gl_confidence ?? li.confidence) < 0.85)
+    .slice(0, 2)
+
+  // Vendor enrichment: show when TIN or reg missing
+  const showVendorEnrichment = !invoice.vendor_tin || !invoice.vendor_reg_no
 
   return (
     <div className="space-y-5 pb-4">
+
+      {/* Section 1: Payment type banner */}
+      {invoice.payment_type && invoice.payment_type !== "standard" && (
+        <PaymentTypeBanner invoice={invoice}/>
+      )}
+
+      {/* Section 2: Compliance trail */}
+      <ComplianceSection invoiceId={invoice.id}/>
+
+      {/* Section 3: Contract & milestones */}
+      {invoice.quotation_ref && <ContractMilestonesSection invoice={invoice}/>}
+
+      {/* Section 4: Payment vouchers */}
+      <PaymentVouchersSection invoice={invoice}/>
+
+      {/* Vendor */}
       <section>
         <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>Vendor</div>
         <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
@@ -483,9 +1063,23 @@ function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
               </span>
             </div>
           ))}
+          {/* Section 6: Vendor enrichment prompt */}
+          {showVendorEnrichment && (
+            <div className="mx-4 my-2 px-3 py-2.5 rounded-lg flex items-start justify-between gap-2"
+              style={{ background: "#F0FDF4", border: "0.5px solid #86EFAC" }}>
+              <div className="text-[11px] leading-relaxed" style={{ color: "#166534" }}>
+                <span className="font-semibold">+ Update vendor record</span> — MyInvois registration missing
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-[#166534] font-semibold underline">Update</Button>
+                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-gray-400">Skip</Button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
+      {/* Bill To */}
       <section>
         <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>Bill To</div>
         <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
@@ -505,6 +1099,7 @@ function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
         </div>
       </section>
 
+      {/* Invoice fields */}
       <section>
         <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>Invoice</div>
         <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
@@ -514,7 +1109,7 @@ function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
             { label: "Due Date", value: fmtDate(invoice.due_date), conf: cs.due_date    },
             { label: "Terms",    value: invoice.payment_terms,   conf: null             },
             { label: "PO Ref",   value: invoice.po_reference,    conf: null             },
-            { label: "Source",   value: invoice.source === "email_gmail" ? "Gmail" : "Manual Upload", conf: null },
+            { label: "Source",   value: invoice.source === "email_gmail" ? "Gmail" : invoice.source === "email" ? "Email" : "Manual Upload", conf: null },
           ].map((f, i) => (
             <div key={i} className="flex items-start px-4 py-2.5 text-[11px]"
               style={{ borderBottom: i < 5 ? "0.5px solid #F3F4F6" : undefined }}>
@@ -528,6 +1123,7 @@ function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
         </div>
       </section>
 
+      {/* Amounts */}
       <section>
         <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>Amounts</div>
         <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
@@ -539,7 +1135,8 @@ function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
             <div key={i} className="flex items-start px-4 py-2.5 text-[11px]"
               style={{ borderBottom: i < 2 ? "0.5px solid #F3F4F6" : undefined }}>
               <span className="w-20 shrink-0 font-medium" style={{ color: f.bold ? "#111" : "#9CA3AF" }}>{f.label}</span>
-              <span className="flex items-center tabular-nums font-mono" style={{ color: f.bold ? "#111" : "#374151", fontWeight: f.bold ? 700 : 400 }}>
+              <span className="flex items-center tabular-nums font-mono"
+                style={{ color: f.bold ? "#111" : "#374151", fontWeight: f.bold ? 700 : 400 }}>
                 {f.value}
                 {f.conf != null && f.conf < 0.80 && <ConfidenceBadge score={f.conf}/>}
               </span>
@@ -548,11 +1145,11 @@ function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
         </div>
       </section>
 
+      {/* GL Coding */}
       <section>
         <div className="flex items-center justify-between mb-2">
           <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: T.dimText }}>GL Coding</div>
-          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded"
-            style={{ background: T.purpleLight, color: T.purpleText }}>Hover to edit</span>
+          <Badge variant="status-approved" className="h-4 text-[9px]">Hover to edit</Badge>
         </div>
         <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
           {lineItems.map((li, i) => {
@@ -563,7 +1160,7 @@ function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div className="text-[11px] font-semibold text-gray-800 leading-tight flex-1">{title}</div>
                   <div className="text-[11px] font-mono font-semibold text-gray-800 shrink-0 tabular-nums">
-                    {li.amount != null ? `${fmt(li.amount)}` : "—"}
+                    {li.amount != null ? fmt(li.amount) : "—"}
                   </div>
                 </div>
                 {details && (
@@ -575,126 +1172,313 @@ function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
             )
           })}
         </div>
-      </section>
 
-      <section>
-        <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>Project & Cost Centre</div>
-        <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
-          {[
-            { label: "Project", value: invoice.project_code },
-            { label: "CC",      value: invoice.cost_centre  },
-          ].map((f, i) => (
-            <div key={i} className="flex items-center px-4 py-2.5 text-[11px]"
-              style={{ borderBottom: i < 1 ? "0.5px solid #F3F4F6" : undefined }}>
-              <span className="w-20 text-gray-400 shrink-0 font-medium">{f.label}</span>
-              <span className="text-gray-800 font-semibold font-mono">
-                {f.value ?? <span className="font-normal text-gray-300">—</span>}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <div className="rounded-xl p-4"
-          style={{ background: "rgba(93,94,244,0.05)", border: "0.5px solid rgba(93,94,244,0.15)" }}>
-          <div className="flex items-start gap-2.5">
-            <div className="size-5 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-              style={{ background: T.purpleLight }}>
-              <Sparkles size={11} style={{ color: T.purple }} strokeWidth={2}/>
-            </div>
-            <div className="flex-1">
-              <div className="text-[11px] font-semibold mb-1.5" style={{ color: T.purpleText }}>AI Analysis</div>
-              <p className="text-[11px] text-gray-600 leading-relaxed">{invoice.ai_insight}</p>
-              <code className="text-[9px] font-mono mt-2 block" style={{ color: "#9CA3AF" }}>
-                {invoice.ai_source}
-              </code>
-            </div>
+        {/* Section 7: Item master enrichment */}
+        {enrichItems.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            {enrichItems.map((li, idx) => {
+              const { title } = splitDescription(li.description)
+              return (
+                <div key={idx} className="px-3 py-2.5 rounded-lg flex items-start justify-between gap-2"
+                  style={{ background: T.purpleLight, border: `0.5px solid rgba(93,94,244,0.2)` }}>
+                  <div className="text-[11px] leading-relaxed" style={{ color: T.purpleText }}>
+                    <span className="font-semibold">+ Add to item master:</span>{" "}
+                    {title.length > 40 ? title.slice(0, 40) + "…" : title}
+                    <br/>
+                    <span className="text-[9.5px]" style={{ color: "#7B75C1" }}>
+                      GL {li.gl_code ?? "—"} · {invoice.vendor_name_raw} · RM {fmt(li.amount)}/{li.uom ?? "lot"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-primary font-semibold">Add</Button>
+                    <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground">Skip</Button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
+        )}
+      </section>
+
+      {/* Section 5: Project & cost centre (enhanced) */}
+      <section>
+        <div className="text-[9px] font-semibold uppercase tracking-wider mb-2" style={{ color: T.dimText }}>
+          Project & Cost Centre
+        </div>
+        <div className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
+          {project ? (
+            <div className="px-4 py-3">
+              <div className="flex items-start justify-between gap-2 mb-1.5">
+                <div>
+                  <div className="text-[11px] font-semibold text-gray-800">
+                    {project.name}
+                    {invoice.work_order_ref && (
+                      <span className="ml-1.5 text-[10px] font-mono font-normal" style={{ color: T.dimText }}>
+                        ({invoice.work_order_ref})
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] font-mono mt-0.5" style={{ color: T.dimText }}>
+                    {project.project_code}
+                  </div>
+                </div>
+              </div>
+              {budgetPct !== null && budgetRemaining !== null && (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between text-[10px] mb-1">
+                    <span className="text-gray-500">Budget remaining</span>
+                    <span className="font-mono font-semibold" style={{ color: budgetPct >= 80 ? T.amber : T.teal }}>
+                      RM {fmt(budgetRemaining, 0)} of RM {fmt(project.budget_amount, 0)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#E5E7EB" }}>
+                    <div className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(budgetPct, 100)}%`,
+                        background: budgetPct >= 80 ? T.amber : T.teal,
+                      }}/>
+                  </div>
+                  <div className="text-[9px] mt-0.5 text-right" style={{ color: budgetPct >= 80 ? T.amberText : T.dimText }}>
+                    {budgetPct}% committed
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {[
+                { label: "Project", value: invoice.project_code },
+                { label: "CC",      value: invoice.cost_centre  },
+              ].map((f, i) => (
+                <div key={i} className="flex items-center px-4 py-2.5 text-[11px]"
+                  style={{ borderBottom: i < 1 ? "0.5px solid #F3F4F6" : undefined }}>
+                  <span className="w-20 text-gray-400 shrink-0 font-medium">{f.label}</span>
+                  <span className="text-gray-800 font-semibold font-mono">
+                    {f.value ?? <span className="font-normal text-gray-300">—</span>}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </section>
+
+      {/* Section 8: AI Analysis */}
+      <AIAnalysisSection invoice={invoice}/>
     </div>
   )
 }
 
-// ─── Email Thread tab ─────────────────────────────────────────────────────────
+// ─── Email Thread tab (with intelligent filtering) ────────────────────────────
 
-function EmailThreadTab({ invoice }: { invoice: InvoiceDetail }) {
+const TIER_BADGE: Record<EmailTier, { label: string; bg: string; color: string } | null> = {
+  1: null,
+  2: { label: "Context", bg: "#EFF6FF", color: "#1D4ED8" },
+  3: { label: "Operational", bg: "#F3F4F6", color: "#6B7280" },
+}
+
+export function EmailThreadTab({ invoice }: { invoice: InvoiceDetail }) {
+  const [showAll, setShowAll] = React.useState(false)
   const [replyOpen, setReplyOpen] = React.useState(false)
   const [replyText, setReplyText] = React.useState("")
+  // Finance (tier 1) expanded by default; Context (tier 2) and Operational (tier 3) collapsed
+  const [expandedIds, setExpandedIds] = React.useState<Set<string>>(new Set(["e-012", "e-006"]))
 
-  const emails = [{
-    from: "accounts@techsolutionsmy.com",
-    to: "ap@abcretails.com.my",
-    subject: `Invoice ${invoice.invoice_number} from ${invoice.vendor_name_raw}`,
-    body: `Dear ABC Retails Finance Team,\n\nPlease find attached invoice ${invoice.invoice_number} for services rendered in May 2024.\n\nTotal amount: ${invoice.currency} ${fmt(invoice.total_myr)}\nDue date: ${fmtDate(invoice.due_date)}\nPayment terms: ${invoice.payment_terms}\n\nKindly arrange payment accordingly. Please contact us if you need any clarification.\n\nBest regards,\nAccounts Department\n${invoice.vendor_name_raw}`,
-    date: "1 Jun 2024, 8:04 AM",
-    hasAttachment: true,
-  }]
+  const thread = MOCK_EMAIL_THREADS[invoice.id]
+
+  const toggleExpand = (id: string) => setExpandedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  if (!thread) {
+    // Generic single-email fallback for invoices without a thread
+    const genericEmails = invoice.email_from ? [{
+      id: "generic",
+      from_name: invoice.email_from.split("@")[0],
+      from_email: invoice.email_from,
+      to_label: "Finance",
+      date: fmtDate(invoice.created_at),
+      subject: invoice.email_subject ?? `Invoice ${invoice.invoice_number}`,
+      body: invoice.email_body_html
+        ? invoice.email_body_html.replace(/<[^>]+>/g, "").trim()
+        : "Invoice received via email.",
+      tier: 1 as EmailTier,
+      tier_reason: "Invoice email",
+      attachments: [`${invoice.invoice_number}.pdf`],
+    }] : []
+
+    return (
+      <div className="space-y-3 pb-4">
+        {genericEmails.map(email => (
+          <div key={email.id} className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
+            <div className="px-4 py-3" style={{ background: "#FAFAFA" }}>
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="size-7 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: T.purpleLight }}>
+                    <span className="text-[10px] font-bold" style={{ color: T.purple }}>
+                      {email.from_name[0].toUpperCase()}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-semibold text-gray-800">{email.from_email}</div>
+                    <div className="text-[9px] text-gray-400">to {email.to_label}</div>
+                  </div>
+                </div>
+                <span className="text-[9px] text-gray-400 shrink-0">{email.date}</span>
+              </div>
+              <div className="text-[11px] font-medium text-gray-700 mt-1">{email.subject}</div>
+              {email.attachments && email.attachments.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-2">
+                  <Paperclip size={10} style={{ color: T.dimText }} strokeWidth={2}/>
+                  {email.attachments.map(a => (
+                    <span key={a} className="text-[10px] font-medium" style={{ color: T.purple }}>{a}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="px-4 py-3">
+              <pre className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap font-sans">{email.body}</pre>
+            </div>
+          </div>
+        ))}
+        <Button variant="outline" className="w-full h-9 text-[11px] text-primary border-border"
+          onClick={() => setReplyOpen(r => !r)}>
+          <Mail size={12} strokeWidth={2} data-icon="inline-start"/> Reply to vendor
+        </Button>
+      </div>
+    )
+  }
+
+  const financeRelevant = thread.filter(e => e.tier === 1 || e.tier === 2)
+  const displayed = showAll ? thread : financeRelevant
 
   return (
     <div className="space-y-3 pb-4">
-      {emails.map((email, i) => (
-        <div key={i} className="rounded-xl overflow-hidden" style={{ border: "0.5px solid #E5E7EB" }}>
-          <div className="px-4 py-3" style={{ borderBottom: "0.5px solid #F3F4F6", background: "#FAFAFA" }}>
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2">
-                <div className="size-7 rounded-full flex items-center justify-center shrink-0"
-                  style={{ background: T.purpleLight }}>
-                  <span className="text-[10px] font-bold" style={{ color: T.purple }}>
-                    {email.from[0].toUpperCase()}
-                  </span>
+      {/* Filter toggle */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setShowAll(false)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-colors"
+          style={{
+            background: !showAll ? T.purpleLight : "transparent",
+            color: !showAll ? T.purpleText : T.dimText,
+            border: `0.5px solid ${!showAll ? "#AFA9EC" : "#E5E7EB"}`,
+          }}>
+          Finance-relevant {financeRelevant.length}
+        </button>
+        <button
+          onClick={() => setShowAll(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-colors"
+          style={{
+            background: showAll ? "#F3F4F6" : "transparent",
+            color: showAll ? "#374151" : T.dimText,
+            border: `0.5px solid ${showAll ? "#D1D5DB" : "#E5E7EB"}`,
+          }}>
+          All emails {thread.length}
+          <ChevronDown size={10} strokeWidth={2}/>
+        </button>
+      </div>
+
+      {/* Email cards */}
+      {displayed.map(email => {
+        const badge = TIER_BADGE[email.tier]
+        // Tier 1 (Finance): always expanded, not collapsible
+        // Tier 2 (Context) & Tier 3 (Operational): collapsible, collapsed by default
+        const isTier1 = email.tier === 1
+        const isTier2 = email.tier === 2
+        const isTier3 = email.tier === 3
+        const isCollapsible = isTier2 || isTier3
+        const isExpanded = isTier1 || expandedIds.has(email.id)
+
+        return (
+          <div key={email.id} className="rounded-xl overflow-hidden"
+            style={{ border: "0.5px solid #E5E7EB", opacity: isTier3 ? 0.8 : 1 }}>
+            {/* Email header — always visible */}
+            <div
+              className={isCollapsible ? "cursor-pointer" : ""}
+              onClick={() => isCollapsible && toggleExpand(email.id)}
+              style={{ borderBottom: isExpanded ? "0.5px solid #F3F4F6" : undefined, background: "#FAFAFA" }}>
+              <div className="flex items-start justify-between gap-2 px-4 py-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="size-7 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: email.tier === 1 ? T.purpleLight : "#F3F4F6" }}>
+                    <span className="text-[10px] font-bold"
+                      style={{ color: email.tier === 1 ? T.purple : "#6B7280" }}>
+                      {email.from_name[0].toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-gray-800">{email.from_name}</div>
+                    <div className="text-[9px] text-gray-400">to {email.to_label} · {email.date}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-[11px] font-semibold text-gray-800">{email.from}</div>
-                  <div className="text-[9px] text-gray-400">to {email.to}</div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {badge && (
+                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded"
+                      style={{ background: badge.bg, color: badge.color }}>
+                      {badge.label}
+                    </span>
+                  )}
+                  {email.tier === 1 && (
+                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded"
+                      style={{ background: T.purpleLight, color: T.purpleText }}>Finance</span>
+                  )}
+                  {isCollapsible && (
+                    isExpanded
+                      ? <ChevronUp size={10} style={{ color: T.dimText }}/>
+                      : <ChevronDown size={10} style={{ color: T.dimText }}/>
+                  )}
                 </div>
               </div>
-              <span className="text-[9px] text-gray-400 shrink-0">{email.date}</span>
+              <div className="px-4 pb-2.5 -mt-1">
+                <div className="text-[11px] font-medium text-gray-700">{email.subject}</div>
+                {email.attachments && email.attachments.length > 0 && (
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <Paperclip size={10} style={{ color: T.dimText }} strokeWidth={2}/>
+                    {email.attachments.map(a => (
+                      <span key={a} className="text-[10px] font-medium" style={{ color: T.purple }}>{a}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="text-[11px] font-medium text-gray-700">{email.subject}</div>
-            {email.hasAttachment && (
-              <div className="flex items-center gap-1.5 mt-2">
-                <Paperclip size={10} style={{ color: T.dimText }} strokeWidth={2}/>
-                <span className="text-[10px] font-medium" style={{ color: T.purple }}>
-                  {invoice.invoice_number}.pdf
-                </span>
+
+            {/* Email body — expanded */}
+            {isExpanded && (
+              <div className="px-4 py-3">
+                <pre className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap font-sans">{email.body}</pre>
               </div>
             )}
           </div>
-          <div className="px-4 py-3">
-            <pre className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap font-sans">{email.body}</pre>
-          </div>
-        </div>
-      ))}
+        )
+      })}
 
+      {/* Reply */}
       {replyOpen ? (
-        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${T.purple}` }}>
-          <div className="px-4 py-2.5 flex items-center gap-2" style={{ borderBottom: "0.5px solid #E5E7EB", background: "#FAFAFA" }}>
+        <div className="rounded-xl overflow-hidden border border-primary">
+          <div className="px-4 py-2.5 flex items-center gap-2 border-b border-border bg-[#FAFAFA]">
             <span className="text-[10px] font-medium text-gray-600">To:</span>
-            <span className="text-[10px] text-gray-800">accounts@techsolutionsmy.com</span>
+            <span className="text-[10px] text-gray-800">{invoice.email_from ?? "vendor"}</span>
           </div>
-          <textarea rows={4} placeholder="Type your reply…" value={replyText}
+          <Textarea rows={4} placeholder="Type your reply…" value={replyText}
             onChange={e => setReplyText(e.target.value)}
-            className="w-full px-4 py-3 text-[11px] text-gray-700 resize-none focus:outline-none"
-            style={{ background: "#fff" }}/>
-          <div className="px-4 py-2.5 flex items-center justify-between"
-            style={{ borderTop: "0.5px solid #E5E7EB", background: "#FAFAFA" }}>
-            <button onClick={() => setReplyOpen(false)} className="text-[11px] text-gray-500 cursor-pointer">Cancel</button>
-            <button className="flex items-center gap-1.5 h-7 px-3 rounded-lg text-[11px] font-semibold text-white cursor-pointer"
-              style={{ background: T.purple }}>
-              <Send size={10} strokeWidth={2}/> Send Reply
-            </button>
+            className="w-full px-4 py-3 text-[11px] text-gray-700 resize-none rounded-none border-0 focus-visible:ring-0 bg-white"/>
+          <div className="px-4 py-2.5 flex items-center justify-between border-t border-border bg-[#FAFAFA]">
+            <Button variant="ghost" size="sm" className="text-[11px] text-gray-500"
+              onClick={() => setReplyOpen(false)}>Cancel</Button>
+            <Button size="sm" className="h-7 px-3 text-[11px] gap-1.5">
+              <Send size={10} strokeWidth={2} data-icon="inline-start"/> Send Reply
+            </Button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setReplyOpen(true)}
-          className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-medium cursor-pointer"
-          style={{ border: "0.5px solid #E5E7EB", color: T.purple, background: "#fff" }}
-          onMouseEnter={e => (e.currentTarget.style.background = T.purpleLight)}
-          onMouseLeave={e => (e.currentTarget.style.background = "#fff")}>
-          <Mail size={12} strokeWidth={2}/> Reply to vendor
-        </button>
+        <Button variant="outline" className="w-full h-9 text-[11px] text-primary border-border"
+          onClick={() => setReplyOpen(true)}>
+          <Mail size={12} strokeWidth={2} data-icon="inline-start"/> Reply to vendor
+        </Button>
       )}
     </div>
   )
@@ -719,7 +1503,7 @@ const DEMO_COMMENTS = [
 
 export const DEMO_COMMENTS_COUNT = DEMO_COMMENTS.length
 
-function CommentsTab() {
+export function CommentsTab() {
   const [comment, setComment] = React.useState("")
 
   return (
@@ -762,16 +1546,13 @@ function CommentsTab() {
           <div className="size-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-white"
             style={{ background: "#475569" }}>T</div>
           <div className="flex-1 relative">
-            <textarea rows={2} placeholder="Add a comment…" value={comment}
+            <Textarea rows={2} placeholder="Add a comment…" value={comment}
               onChange={e => setComment(e.target.value)}
-              className="w-full text-[11px] text-gray-700 px-3 py-2 rounded-xl resize-none focus:outline-none"
-              style={{ border: "1px solid #E5E7EB", background: "#fff" }}
-              onFocus={e => (e.currentTarget.style.border = `1px solid ${T.purple}`)}
-              onBlur={e => (e.currentTarget.style.border = "1px solid #E5E7EB")}/>
-            <button className="absolute bottom-2 right-2 size-6 rounded-lg flex items-center justify-center cursor-pointer"
-              style={{ background: comment ? T.purple : "#E5E7EB" }}>
-              <Send size={10} color={comment ? "#fff" : "#9CA3AF"} strokeWidth={2}/>
-            </button>
+              className="w-full text-[11px] text-gray-700 px-3 py-2 rounded-xl resize-none bg-white pr-9"/>
+            <Button size="icon" variant={comment ? "default" : "ghost"}
+              className="absolute bottom-2 right-2 size-6 rounded-lg">
+              <Send size={10} strokeWidth={2}/>
+            </Button>
           </div>
         </div>
       </div>
@@ -781,7 +1562,7 @@ function CommentsTab() {
 
 // ─── Map API response → InvoiceDetail ────────────────────────────────────────
 
-function mapApiResponse(raw: InvoiceDetailResponse): InvoiceDetail {
+export function mapApiResponse(raw: InvoiceDetailResponse): InvoiceDetail {
   return {
     id: raw.id,
     vendor_name_raw: raw.vendor_name_raw ?? "Unknown Vendor",
@@ -807,13 +1588,14 @@ function mapApiResponse(raw: InvoiceDetailResponse): InvoiceDetail {
     duplicate_risk: raw.duplicate_risk,
     source: raw.source,
     project_code: raw.project_reference ?? null,
+    project_id: raw.project_id ?? null,
     cost_centre: null,
     po_reference: raw.po_reference ?? null,
     bill_to_name: raw.bill_to_name ?? "—",
     bill_to_address: raw.bill_to_address ?? null,
     bill_to_tin: raw.bill_to_tin ?? null,
     confidence_scores: raw.confidence_flags ?? {},
-    line_items: (raw.line_items ?? []).map((l) => ({
+    line_items: (raw.line_items ?? []).map(l => ({
       description: l.description,
       qty: l.qty ?? null,
       uom: l.uom ?? null,
@@ -821,13 +1603,35 @@ function mapApiResponse(raw: InvoiceDetailResponse): InvoiceDetail {
       amount: l.amount,
       gl_code: l.gl_code ?? null,
       gl_desc: l.gl_desc ?? null,
-      confidence: 1,
+      confidence: l.gl_confidence ?? 1,
+      gl_confidence: l.gl_confidence ?? null,
+      sst_claimable: l.sst_claimable ?? null,
     })),
     ai_insight: raw.email_body_html
       ? "Invoice received via email. Review extracted fields below."
       : "Invoice processed. Review extracted fields and GL codes below.",
     ai_source: "jomie-ocr-engine:v1",
     created_at: raw.created_at,
+    // Extended fields
+    payment_type: raw.payment_type ?? null,
+    work_order_ref: raw.work_order_ref ?? null,
+    milestone_sequence: raw.milestone_sequence ?? null,
+    milestone_description: raw.milestone_description ?? null,
+    milestone_percentage: raw.milestone_percentage ?? null,
+    amount_paid: raw.amount_paid ?? null,
+    amount_outstanding: raw.amount_outstanding ?? null,
+    po_substitute_type: raw.po_substitute_type ?? null,
+    do_number: raw.do_number ?? null,
+    do_received: raw.do_received ?? null,
+    do_signed_returned: raw.do_signed_returned ?? null,
+    payment_vouchers: raw.payment_vouchers ?? [],
+    payment_series_id: raw.payment_series_id ?? null,
+    payment_series_sequence: raw.payment_series_sequence ?? null,
+    total_contract_value: raw.total_contract_value ?? null,
+    quotation_ref: raw.quotation_ref ?? null,
+    email_from: raw.email_from ?? null,
+    email_subject: raw.email_subject ?? null,
+    email_body_html: raw.email_body_html ?? null,
   }
 }
 
@@ -840,15 +1644,22 @@ export function InvoiceDetailClient({ id }: { id: string }) {
   const [invoice, setInvoice]     = React.useState<InvoiceDetail | null>(null)
   const [signedUrl, setSignedUrl] = React.useState<string | null>(null)
   const [loading, setLoading]     = React.useState(true)
-  const [apiError, setApiError]   = React.useState<string | null>(null)
   const [activeTab, setActiveTab] = React.useState<Tab>("fields")
 
   React.useEffect(() => {
     let cancelled = false
     setLoading(true)
-    setApiError(null)
 
-    // Try real API first; fall back to demo data if API unavailable
+    if (isMockMode()) {
+      const raw = getMockInvoiceDetail(id)
+      if (!cancelled) {
+        setInvoice(raw ? mapApiResponse(raw) : DEMO_DETAILS[id] ?? DEFAULT_DETAIL)
+        setSignedUrl(null)
+        setLoading(false)
+      }
+      return () => { cancelled = true }
+    }
+
     getInvoice(id)
       .then(raw => {
         if (!cancelled) {
@@ -858,9 +1669,7 @@ export function InvoiceDetailClient({ id }: { id: string }) {
       })
       .catch(() => {
         if (!cancelled) {
-          // Graceful fallback to demo data while backend is being set up
-          const demo = DEMO_DETAILS[id] ?? DEFAULT_DETAIL
-          setInvoice(demo)
+          setInvoice(DEMO_DETAILS[id] ?? DEFAULT_DETAIL)
           setSignedUrl(null)
         }
       })
@@ -887,11 +1696,11 @@ export function InvoiceDetailClient({ id }: { id: string }) {
     return (
       <div className="flex items-center justify-center" style={{ height: "calc(100vh - 20px)" }}>
         <div className="text-center">
-          <div className="text-[13px] font-medium mb-1" style={{ color: T.red }}>Invoice not found</div>
-          <button onClick={() => router.push("/ap/invoices")}
-            className="text-[11px] cursor-pointer underline" style={{ color: T.dimText }}>
+          <div className="text-[13px] font-medium mb-1 text-destructive">Invoice not found</div>
+          <Button variant="ghost" size="sm" className="text-[11px] text-muted-foreground underline"
+            onClick={() => router.push("/ap/invoices")}>
             Back to inbox
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -901,9 +1710,9 @@ export function InvoiceDetailClient({ id }: { id: string }) {
   const status  = STATUS_CONFIG[invoice.status]
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: "fields",   label: "Fields",      icon: <FileText size={12} strokeWidth={2}/> },
-    { key: "email",    label: "Email Thread", icon: <Mail size={12} strokeWidth={2}/> },
-    { key: "comments", label: "Comments",     icon: <MessageSquare size={12} strokeWidth={2}/> },
+    { key: "fields",   label: "Fields",       icon: <FileText size={12} strokeWidth={2}/> },
+    { key: "email",    label: "Email Thread",  icon: <Mail size={12} strokeWidth={2}/> },
+    { key: "comments", label: "Comments",      icon: <MessageSquare size={12} strokeWidth={2}/> },
   ]
 
   return (
@@ -913,18 +1722,16 @@ export function InvoiceDetailClient({ id }: { id: string }) {
       <div className="shrink-0 px-5 py-3 flex items-center justify-between"
         style={{ borderBottom: `1px solid ${T.border}` }}>
         <div className="flex items-center gap-3">
-          <button onClick={() => router.back()}
-            className="flex items-center gap-1 text-[11px] cursor-pointer hover:opacity-70 transition-opacity"
-            style={{ color: "rgba(255,255,255,0.45)" }}>
-            <ArrowLeft size={13} strokeWidth={2}/> Back
-          </button>
+          <Button variant="ghost" size="sm" className="gap-1 text-[11px] text-white/45 hover:text-white/70 h-7 px-2"
+            onClick={() => router.back()}>
+            <ArrowLeft size={13} strokeWidth={2} data-icon="inline-start"/> Back
+          </Button>
           <div className="w-px h-4" style={{ background: "rgba(103,100,136,0.5)" }}/>
           <nav className="flex items-center gap-1">
             <span className="text-[12px] font-light" style={{ color: "rgba(255,255,255,0.45)" }}>AP</span>
             <ChevronRight size={10} color="rgba(255,255,255,0.3)" strokeWidth={2}/>
-            <button onClick={() => router.push("/ap/invoices")}
-              className="text-[12px] font-light cursor-pointer hover:text-white transition-colors"
-              style={{ color: "rgba(255,255,255,0.45)" }}>Invoice Inbox</button>
+            <Button variant="ghost" size="sm" className="h-auto p-0 text-[12px] font-light text-white/45 hover:text-white"
+              onClick={() => router.push("/ap/invoices")}>Invoice Inbox</Button>
             <ChevronRight size={10} color="rgba(255,255,255,0.3)" strokeWidth={2}/>
             <span className="text-[12px] font-medium text-white font-mono">{invoice.invoice_number}</span>
           </nav>
@@ -932,20 +1739,18 @@ export function InvoiceDetailClient({ id }: { id: string }) {
 
         {invoice.status === "pending_review" && (
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 h-8 px-3.5 rounded-lg text-[12px] font-medium cursor-pointer border"
-              style={{ color: T.red, borderColor: T.red + "44", background: T.redLight }}>
-              <ThumbsDown size={12} strokeWidth={2}/> Reject
-            </button>
-            <button className="flex items-center gap-1.5 h-8 px-3.5 rounded-lg text-[12px] font-medium cursor-pointer border"
-              style={{ color: "#374151", borderColor: "#D1D5DB", background: "#fff" }}>
-              <MessageSquare size={12} strokeWidth={2}/> Query
-            </button>
-            <button
-              onClick={() => router.push(`/ap/invoices/${id}/approval`)}
-              className="flex items-center gap-1.5 h-8 px-3.5 rounded-lg text-[12px] font-semibold text-white cursor-pointer"
-              style={{ background: T.teal }}>
-              <ThumbsUp size={12} strokeWidth={2}/> Approve
-            </button>
+            <Button variant="outline" size="sm"
+              className="h-8 px-3.5 text-[12px] text-destructive border-destructive/40 bg-destructive/10 hover:bg-destructive/20 gap-1.5">
+              <ThumbsDown size={12} strokeWidth={2} data-icon="inline-start"/> Reject
+            </Button>
+            <Button variant="outline" size="sm" className="h-8 px-3.5 text-[12px] gap-1.5">
+              <MessageSquare size={12} strokeWidth={2} data-icon="inline-start"/> Query
+            </Button>
+            <Button size="sm"
+              className="h-8 px-3.5 text-[12px] gap-1.5 bg-success text-white hover:bg-success/90"
+              onClick={() => router.push(`/ap/invoices/${id}/approval`)}>
+              <ThumbsUp size={12} strokeWidth={2} data-icon="inline-start"/> Approve
+            </Button>
           </div>
         )}
       </div>
@@ -970,8 +1775,9 @@ export function InvoiceDetailClient({ id }: { id: string }) {
                 <div className="text-[14px] font-bold text-gray-900 leading-snug">{invoice.vendor_name_raw}</div>
                 <div className="text-[10px] font-mono text-gray-400 mt-0.5">{invoice.invoice_number}</div>
               </div>
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ml-2"
-                style={{ background: status.bg, color: status.color }}>{status.label}</span>
+              <Badge variant={STATUS_BADGE_VARIANT[invoice.status]} className="shrink-0 ml-2">
+                {status.label}
+              </Badge>
             </div>
 
             <div className="flex items-end justify-between mt-2.5">
@@ -986,7 +1792,7 @@ export function InvoiceDetailClient({ id }: { id: string }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 mt-3">
+            <div className="flex items-center gap-3 mt-3 flex-wrap">
               <div className="flex items-center gap-1 text-[10px]"
                 style={{ color: invoice.is_einvoice_verified ? T.teal : "#9CA3AF" }}>
                 <CheckCircle2 size={10} strokeWidth={2}/> e-Invoice
@@ -1010,24 +1816,23 @@ export function InvoiceDetailClient({ id }: { id: string }) {
           </div>
 
           {/* Tabs */}
-          <div className="shrink-0 flex px-5 pt-3 gap-0.5" style={{ borderBottom: "0.5px solid #E5E7EB" }}>
-            {tabs.map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium rounded-t-lg cursor-pointer transition-colors",
-                  activeTab === tab.key ? "text-gray-900 bg-white border-t border-x" : "text-gray-500 hover:text-gray-700"
-                )}
-                style={activeTab === tab.key ? { borderColor: "#E5E7EB", marginBottom: -1 } : undefined}>
-                {tab.icon}
-                {tab.label}
-                {tab.key === "comments" && (
-                  <span className="text-[9px] tabular-nums px-1 rounded"
-                    style={{ background: T.purpleLight, color: T.purple }}>
-                    {DEMO_COMMENTS_COUNT}
-                  </span>
-                )}
-              </button>
-            ))}
+          <div className="shrink-0 px-5 pt-3 border-b border-[#E5E7EB]">
+            <Tabs value={activeTab} onValueChange={v => setActiveTab(v as Tab)}>
+              <TabsList variant="line" className="h-auto gap-0 bg-transparent p-0 border-0 rounded-none">
+                {tabs.map(tab => (
+                  <TabsTrigger key={tab.key} value={tab.key}
+                    className="flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium rounded-t-lg rounded-b-none border border-transparent text-gray-500 hover:text-gray-700 data-active:text-gray-900 data-active:bg-white data-active:border-[#E5E7EB] data-active:border-b-white data-active:-mb-px data-active:shadow-none after:hidden">
+                    {tab.icon}
+                    {tab.label}
+                    {tab.key === "comments" && (
+                      <Badge variant="status-approved" className="h-4 text-[9px] tabular-nums px-1">
+                        {DEMO_COMMENTS_COUNT}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
           </div>
 
           {/* Tab content */}
