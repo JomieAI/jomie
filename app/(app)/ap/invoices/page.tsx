@@ -632,7 +632,7 @@ export default function APInvoicesPage() {
     overflow: "hidden",
     display: rightWidth === 0 ? "none" : "flex",
     flexDirection: "column",
-    flex: rightWidth ? `0 0 ${rightWidth}px` : "0 0 420px",
+    flex: rightWidth ? `0 0 ${rightWidth}px` : "0 0 600px",
     minWidth: 0,
   }
 
