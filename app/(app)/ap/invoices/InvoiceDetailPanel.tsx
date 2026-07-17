@@ -50,20 +50,16 @@ export function InvoiceDetailPanel({ invoiceId }: Props) {
   return (
     <div className="flex flex-col h-full min-h-0">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
-        <TabsList className="shrink-0 h-9 rounded-none bg-transparent px-0 gap-0"
-          style={{ borderBottom: "1px solid #E4E4E7" }}>
-          {[
-            { value: "fields",   icon: <FileText size={11} strokeWidth={2}/>,    label: "Fields"   },
-            { value: "email",    icon: <Mail size={11} strokeWidth={2}/>,         label: "Email"    },
-            { value: "comments", icon: <MessageSquare size={11} strokeWidth={2}/>, label: "Comments" },
-          ].map(t => (
-            <TabsTrigger key={t.value} value={t.value}
-              className="h-full rounded-none px-3 text-[12px] gap-1.5 border-b-2 border-transparent data-[state=active]:border-b-2 data-[state=active]:shadow-none bg-transparent"
-              style={{ marginBottom: -1 }}
-            >
-              {t.icon} {t.label}
-            </TabsTrigger>
-          ))}
+        <TabsList className="shrink-0 h-9 bg-[#F2F4F7]">
+          <TabsTrigger value="fields" className="text-[12px] gap-1">
+            <FileText size={11} strokeWidth={2}/> Fields
+          </TabsTrigger>
+          <TabsTrigger value="email" className="text-[12px] gap-1">
+            <Mail size={11} strokeWidth={2}/> Email
+          </TabsTrigger>
+          <TabsTrigger value="comments" className="text-[12px] gap-1">
+            <MessageSquare size={11} strokeWidth={2}/> Comments
+          </TabsTrigger>
         </TabsList>
 
         <div className="flex-1 overflow-y-auto jomie-scrollbar pt-4">
