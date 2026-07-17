@@ -833,7 +833,7 @@ export default function APInvoicesPage() {
           {selected ? (
             <div className="flex flex-col h-full min-h-0">
               {/* Panel header */}
-              <div className="shrink-0 flex items-center justify-between px-5 pt-5 pb-3 border-b border-[#EAECF0]">
+              <div className="shrink-0 flex items-center justify-between px-4 pt-4 pb-3 border-b border-[#EAECF0]">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="size-5 rounded-md flex items-center justify-center shrink-0 bg-primary/10">
                     <Sparkles size={11} className="text-primary" strokeWidth={2}/>
@@ -858,18 +858,20 @@ export default function APInvoicesPage() {
               </div>
 
               {/* Amount + status strip */}
-              <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[#EAECF0]">
-                <div className="text-[22px] font-bold tabular-nums leading-none text-foreground">
-                  {(selected.total_myr ?? 0).toLocaleString("en-MY", { minimumFractionDigits: 2 })}
-                  <span className="text-[11px] font-medium text-muted-foreground/40 ml-1.5">MYR</span>
+              <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-[#EAECF0]">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[28px] font-bold tabular-nums leading-none" style={{ color: "#09090B" }}>
+                    {(selected.total_myr ?? 0).toLocaleString("en-MY", { minimumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "#F4F4F5", color: "#71717A" }}>MYR</span>
                 </div>
-                <Badge variant={STATUS_BADGE_VARIANT[selected.status]}>
+                <Badge variant={STATUS_BADGE_VARIANT[selected.status]} className="rounded-full px-3 text-[11px]">
                   {STATUS_LABEL[selected.status]}
                 </Badge>
               </div>
 
               {/* Scrollable content */}
-              <div className="flex-1 min-h-0 overflow-y-auto jomie-scrollbar px-5 py-4">
+              <div className="flex-1 min-h-0 overflow-y-auto jomie-scrollbar px-4 py-4">
                 {panelMode === "details" ? (
                   <InvoiceDetailPanel invoiceId={selected.id}/>
                 ) : (

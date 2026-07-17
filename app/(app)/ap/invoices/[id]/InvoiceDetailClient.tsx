@@ -666,8 +666,10 @@ function ComplianceSection({ invoiceId }: { invoiceId: string }) {
 
   return (
     <section>
-      <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: T.dimText }}>
-        Compliance Checks
+      <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
+        <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>
+          Compliance Checks
+        </span>
       </div>
       <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 4px 0 rgba(0,0,0,0.07)" }}>
         {Object.entries(grouped).map(([cat, catChecks], catIdx) => (
@@ -688,7 +690,7 @@ function ComplianceSection({ invoiceId }: { invoiceId: string }) {
                   className={hasDetail ? "cursor-pointer" : ""}
                   style={{ borderBottom: isLast ? undefined : "1px solid #F3F4F6" }}
                   onClick={() => hasDetail && toggle(key)}>
-                  <div className="flex items-center justify-between gap-2 px-4 py-3">
+                  <div className="flex items-center justify-between gap-2 px-4" style={{ minHeight: 36 }}>
                     <div className="flex items-center gap-2.5">
                       {check.result === "pass"           && <Check size={13} strokeWidth={2.5} style={{ color: T.teal, flexShrink: 0 }}/>}
                       {check.result === "warning"        && <AlertTriangle size={13} strokeWidth={2} style={{ color: T.amber, flexShrink: 0 }}/>}
@@ -707,16 +709,14 @@ function ComplianceSection({ invoiceId }: { invoiceId: string }) {
                         <Badge variant="outline" className="h-5 text-[10px] text-muted-foreground">N/A</Badge>
                       )}
                       {hasDetail && (
-                        isOpen
-                          ? <ChevronUp size={12} style={{ color: "#9CA3AF" }}/>
-                          : <ChevronDown size={12} style={{ color: "#9CA3AF" }}/>
+                        <ChevronDown size={12} style={{ color: "#9CA3AF", transform: isOpen ? "rotate(180deg)" : undefined, transition: "transform 0.15s" }}/>
                       )}
                     </div>
                   </div>
                   {isOpen && hasDetail && (
                     <div className="px-4 pb-3 pl-11">
                       {check.description && (
-                        <p className="text-[11px] text-gray-500 leading-relaxed mb-1">{check.description}</p>
+                        <p className="text-[11px] leading-relaxed mb-1" style={{ color: "#71717A" }}>{check.description}</p>
                       )}
                       {check.skill_citation && (
                         <code className="text-[10px] font-mono block" style={{ color: "#9CA3AF" }}>{check.skill_citation}</code>
@@ -735,10 +735,10 @@ function ComplianceSection({ invoiceId }: { invoiceId: string }) {
 
 // ─── Section: Contract & milestones ──────────────────────────────────────────
 
-const M_STATUS: Record<string, { dot: string; label: string; variant: React.ComponentProps<typeof Badge>["variant"] }> = {
+const M_STATUS: Record<string, { dot: string; label: string; variant: React.ComponentProps<typeof Badge>["variant"]; hollow?: boolean }> = {
   paid:     { dot: T.teal,    label: "Paid",     variant: "status-paid"     },
   invoiced: { dot: T.purple,  label: "Invoiced", variant: "status-approved" },
-  pending:  { dot: "#D1D5DB", label: "Pending",  variant: "urgency-future"  },
+  pending:  { dot: "#D1D5DB", label: "Pending",  variant: "urgency-future", hollow: true },
 }
 
 function ContractMilestonesSection({ invoice }: { invoice: InvoiceDetail }) {
@@ -747,8 +747,10 @@ function ContractMilestonesSection({ invoice }: { invoice: InvoiceDetail }) {
 
   return (
     <section>
-      <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: T.dimText }}>
-        Contract & Milestones
+      <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
+        <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>
+          Contract & Milestones
+        </span>
       </div>
       <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
         {/* Contract header */}
@@ -774,14 +776,21 @@ function ContractMilestonesSection({ invoice }: { invoice: InvoiceDetail }) {
           const isLast = idx === contract.milestones.length - 1
 
           return (
-            <div key={m.id} className="flex gap-3 px-4 py-3"
+            <div key={m.id} className="flex gap-3 px-4"
               style={{
+                minHeight: 40,
                 borderBottom: isLast ? undefined : "0.5px solid #F3F4F6",
                 background: isThis ? "rgba(93,94,244,0.03)" : undefined,
+                paddingTop: 10,
+                paddingBottom: 10,
               }}>
-              <div className="flex flex-col items-center pt-1">
-                <div className="size-2.5 rounded-full shrink-0" style={{ background: sc.dot }}/>
-                {!isLast && <div className="w-px flex-1 min-h-[18px] mt-1" style={{ background: "#E5E7EB" }}/>}
+              <div className="flex flex-col items-center" style={{ paddingTop: 2 }}>
+                <div className="size-2 rounded-full shrink-0"
+                  style={{
+                    background: sc.hollow ? "transparent" : sc.dot,
+                    border: sc.hollow ? `2px solid ${sc.dot}` : undefined,
+                  }}/>
+                {!isLast && <div className="w-px flex-1 min-h-[16px] mt-1" style={{ background: "#E4E4E7" }}/>}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2 mb-0.5">
@@ -816,8 +825,10 @@ function PaymentVouchersSection({ invoice }: { invoice: InvoiceDetail }) {
 
   return (
     <section>
-      <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: T.dimText }}>
-        Payment Vouchers
+      <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
+        <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>
+          Payment Vouchers
+        </span>
       </div>
       <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
         {/* Balance summary */}
@@ -827,8 +838,8 @@ function PaymentVouchersSection({ invoice }: { invoice: InvoiceDetail }) {
             { label: "Amount paid",   value: amountPaid,        bold: false, color: amountPaid > 0 ? T.teal : "#374151" },
             { label: "Outstanding",   value: amountOut,         bold: true,  color: amountOut > 0 ? T.amber : T.teal },
           ] as const).map((row, i) => (
-            <div key={i} className="flex items-center justify-between py-1 text-[12px]">
-              <span className="text-gray-500">{row.label}</span>
+            <div key={i} className="flex items-center justify-between py-1.5 text-[12px]">
+              <span style={{ color: "#71717A" }}>{row.label}</span>
               <div className="flex items-center gap-2">
                 <span className="font-mono tabular-nums" style={{ color: row.color, fontWeight: row.bold ? 700 : 400 }}>
                   RM {fmt(row.value)}
@@ -842,9 +853,9 @@ function PaymentVouchersSection({ invoice }: { invoice: InvoiceDetail }) {
             </div>
           ))}
           {!isFullPaid && (
-            <div className="flex justify-end mt-2">
-              <Button size="sm" className="h-6 px-2.5 text-[10px] bg-success text-white hover:bg-success/90 gap-1">
-                <CreditCard size={10} strokeWidth={2}/> Create PV
+            <div className="mt-3">
+              <Button size="sm" className="w-full h-8 text-[11px] gap-1.5" style={{ background: T.purple, color: "#fff" }}>
+                <CreditCard size={11} strokeWidth={2}/> Create Payment Voucher
               </Button>
             </div>
           )}
@@ -1028,7 +1039,7 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
   const showVendorEnrichment = !invoice.vendor_tin || !invoice.vendor_reg_no
 
   return (
-    <div className="space-y-6 pb-6">
+    <div className="space-y-5 pb-6">
 
       {/* Section 1: Payment type banner */}
       {invoice.payment_type && invoice.payment_type !== "standard" && (
@@ -1046,7 +1057,9 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Vendor */}
       <section>
-        <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: T.dimText }}>Vendor</div>
+        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
+          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Vendor</span>
+        </div>
         <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
           {[
             { label: "Name",    value: invoice.vendor_name_raw, conf: cs.vendor_name },
@@ -1054,11 +1067,11 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
             { label: "Reg No",  value: invoice.vendor_reg_no,   conf: null           },
             { label: "Country", value: invoice.vendor_country === "MY" ? "Malaysia" : invoice.vendor_country, conf: null },
           ].map((f, i) => (
-            <div key={i} className="flex items-start px-4 py-3 text-[12px]"
+            <div key={i} className="flex flex-col px-4 pt-3 pb-3"
               style={{ borderBottom: i < 3 ? "1px solid #F3F4F6" : undefined }}>
-              <span className="w-24 text-gray-400 shrink-0 font-medium">{f.label}</span>
-              <span className="text-gray-800 font-medium flex items-center">
-                {f.value ?? <span className="text-gray-300">—</span>}
+              <span className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#71717A" }}>{f.label}</span>
+              <span className="text-[13px] flex items-center" style={{ color: "#09090B" }}>
+                {f.value ?? <span style={{ color: "#D4D4D8" }}>—</span>}
                 {f.conf != null && f.conf < 0.80 && <ConfidenceBadge score={f.conf}/>}
               </span>
             </div>
@@ -1081,18 +1094,20 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Bill To */}
       <section>
-        <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: T.dimText }}>Bill To</div>
+        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
+          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Bill To</span>
+        </div>
         <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
           {[
             { label: "Name",    value: invoice.bill_to_name    },
             { label: "TIN",     value: invoice.bill_to_tin     },
             { label: "Address", value: invoice.bill_to_address },
           ].map((f, i) => (
-            <div key={i} className="flex items-start px-4 py-3 text-[12px]"
+            <div key={i} className="flex flex-col px-4 pt-3 pb-3"
               style={{ borderBottom: i < 2 ? "1px solid #F3F4F6" : undefined }}>
-              <span className="w-24 text-gray-400 shrink-0 font-medium">{f.label}</span>
-              <span className="text-gray-800 font-medium leading-relaxed">
-                {f.value ?? <span className="text-gray-300">—</span>}
+              <span className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#71717A" }}>{f.label}</span>
+              <span className="text-[13px] leading-relaxed" style={{ color: "#09090B" }}>
+                {f.value ?? <span style={{ color: "#D4D4D8" }}>—</span>}
               </span>
             </div>
           ))}
@@ -1101,7 +1116,9 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Invoice fields */}
       <section>
-        <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: T.dimText }}>Invoice</div>
+        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
+          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Invoice</span>
+        </div>
         <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
           {[
             { label: "Number",   value: invoice.invoice_number,  conf: cs.invoice_number },
@@ -1111,11 +1128,11 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
             { label: "PO Ref",   value: invoice.po_reference,    conf: null             },
             { label: "Source",   value: invoice.source === "email_gmail" ? "Gmail" : invoice.source === "email" ? "Email" : "Manual Upload", conf: null },
           ].map((f, i) => (
-            <div key={i} className="flex items-start px-4 py-3 text-[12px]"
+            <div key={i} className="flex flex-col px-4 pt-3 pb-3"
               style={{ borderBottom: i < 5 ? "1px solid #F3F4F6" : undefined }}>
-              <span className="w-24 text-gray-400 shrink-0 font-medium">{f.label}</span>
-              <span className="text-gray-800 font-medium flex items-center">
-                {f.value ?? <span className="text-gray-300">—</span>}
+              <span className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#71717A" }}>{f.label}</span>
+              <span className="text-[13px] flex items-center" style={{ color: "#09090B" }}>
+                {f.value ?? <span style={{ color: "#D4D4D8" }}>—</span>}
                 {f.conf != null && f.conf < 0.80 && <ConfidenceBadge score={f.conf}/>}
               </span>
             </div>
@@ -1125,18 +1142,20 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Amounts */}
       <section>
-        <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: T.dimText }}>Amounts</div>
+        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
+          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Amounts</span>
+        </div>
         <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
           {[
             { label: "Subtotal", value: `${invoice.currency} ${fmt(invoice.subtotal)}`, conf: null, bold: false },
             { label: invoice.tax_type ?? "Tax", value: invoice.tax_amount != null ? `${invoice.currency} ${fmt(invoice.tax_amount)}` : "—", conf: null, bold: false },
             { label: "Total",    value: `${invoice.currency} ${fmt(invoice.total_myr)}`, conf: cs.total, bold: true },
           ].map((f, i) => (
-            <div key={i} className="flex items-start px-4 py-3 text-[12px]"
+            <div key={i} className="flex flex-col px-4 pt-3 pb-3"
               style={{ borderBottom: i < 2 ? "1px solid #F3F4F6" : undefined }}>
-              <span className="w-24 shrink-0 font-medium" style={{ color: f.bold ? "#111" : "#9CA3AF" }}>{f.label}</span>
-              <span className="flex items-center tabular-nums font-mono"
-                style={{ color: f.bold ? "#111" : "#374151", fontWeight: f.bold ? 700 : 400 }}>
+              <span className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#71717A" }}>{f.label}</span>
+              <span className="flex items-center tabular-nums font-mono text-[13px]"
+                style={{ color: "#09090B", fontWeight: f.bold ? 700 : 400 }}>
                 {f.value}
                 {f.conf != null && f.conf < 0.80 && <ConfidenceBadge score={f.conf}/>}
               </span>
@@ -1148,7 +1167,9 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
       {/* GL Coding */}
       <section>
         <div className="flex items-center justify-between mb-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: T.dimText }}>GL Coding</div>
+          <div className="pb-2" style={{ borderBottom: "1px solid #E4E4E7" }}>
+            <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>GL Coding</span>
+          </div>
           <Badge variant="status-approved" className="h-4 text-[9px]">Hover to edit</Badge>
         </div>
         <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
@@ -1202,8 +1223,8 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Section 5: Project & cost centre (enhanced) */}
       <section>
-        <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: T.dimText }}>
-          Project & Cost Centre
+        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
+          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Project & Cost Centre</span>
         </div>
         <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
           {project ? (
