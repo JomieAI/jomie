@@ -1057,21 +1057,20 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Vendor */}
       <section>
-        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
-          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Vendor</span>
+        <div className="pb-2 mb-3 border-b border-border">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Vendor</span>
         </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
+        <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden">
           {[
             { label: "Name",    value: invoice.vendor_name_raw, conf: cs.vendor_name },
             { label: "TIN",     value: invoice.vendor_tin,      conf: cs.vendor_tin  },
             { label: "Reg No",  value: invoice.vendor_reg_no,   conf: null           },
             { label: "Country", value: invoice.vendor_country === "MY" ? "Malaysia" : invoice.vendor_country, conf: null },
           ].map((f, i) => (
-            <div key={i} className="flex flex-col px-4 pt-3 pb-3"
-              style={{ borderBottom: i < 3 ? "1px solid #F3F4F6" : undefined }}>
-              <span className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#71717A" }}>{f.label}</span>
-              <span className="text-[13px] flex items-center" style={{ color: "#09090B" }}>
-                {f.value ?? <span style={{ color: "#D4D4D8" }}>—</span>}
+            <div key={i} className={cn("flex items-center justify-between px-4 py-3", i < 3 && "border-b border-border/40")}>
+              <span className="text-[11px] text-muted-foreground shrink-0 w-24">{f.label}</span>
+              <span className="text-[13px] font-medium text-foreground text-right flex items-center gap-1">
+                {f.value ?? <span className="text-muted-foreground/30">—</span>}
                 {f.conf != null && f.conf < 0.80 && <ConfidenceBadge score={f.conf}/>}
               </span>
             </div>
@@ -1094,20 +1093,19 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Bill To */}
       <section>
-        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
-          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Bill To</span>
+        <div className="pb-2 mb-3 border-b border-border">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Bill To</span>
         </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
+        <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden">
           {[
             { label: "Name",    value: invoice.bill_to_name    },
             { label: "TIN",     value: invoice.bill_to_tin     },
             { label: "Address", value: invoice.bill_to_address },
           ].map((f, i) => (
-            <div key={i} className="flex flex-col px-4 pt-3 pb-3"
-              style={{ borderBottom: i < 2 ? "1px solid #F3F4F6" : undefined }}>
-              <span className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#71717A" }}>{f.label}</span>
-              <span className="text-[13px] leading-relaxed" style={{ color: "#09090B" }}>
-                {f.value ?? <span style={{ color: "#D4D4D8" }}>—</span>}
+            <div key={i} className={cn("flex items-center justify-between px-4 py-3", i < 2 && "border-b border-border/40")}>
+              <span className="text-[11px] text-muted-foreground shrink-0 w-24">{f.label}</span>
+              <span className="text-[13px] font-medium text-foreground text-right flex items-center gap-1">
+                {f.value ?? <span className="text-muted-foreground/30">—</span>}
               </span>
             </div>
           ))}
@@ -1116,10 +1114,10 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Invoice fields */}
       <section>
-        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
-          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Invoice</span>
+        <div className="pb-2 mb-3 border-b border-border">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Invoice</span>
         </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
+        <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden">
           {[
             { label: "Number",   value: invoice.invoice_number,  conf: cs.invoice_number },
             { label: "Date",     value: fmtDate(invoice.invoice_date), conf: cs.invoice_date },
@@ -1128,11 +1126,10 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
             { label: "PO Ref",   value: invoice.po_reference,    conf: null             },
             { label: "Source",   value: invoice.source === "email_gmail" ? "Gmail" : invoice.source === "email" ? "Email" : "Manual Upload", conf: null },
           ].map((f, i) => (
-            <div key={i} className="flex flex-col px-4 pt-3 pb-3"
-              style={{ borderBottom: i < 5 ? "1px solid #F3F4F6" : undefined }}>
-              <span className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#71717A" }}>{f.label}</span>
-              <span className="text-[13px] flex items-center" style={{ color: "#09090B" }}>
-                {f.value ?? <span style={{ color: "#D4D4D8" }}>—</span>}
+            <div key={i} className={cn("flex items-center justify-between px-4 py-3", i < 5 && "border-b border-border/40")}>
+              <span className="text-[11px] text-muted-foreground shrink-0 w-24">{f.label}</span>
+              <span className="text-[13px] font-medium text-foreground text-right flex items-center gap-1">
+                {f.value ?? <span className="text-muted-foreground/30">—</span>}
                 {f.conf != null && f.conf < 0.80 && <ConfidenceBadge score={f.conf}/>}
               </span>
             </div>
@@ -1142,20 +1139,18 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Amounts */}
       <section>
-        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
-          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Amounts</span>
+        <div className="pb-2 mb-3 border-b border-border">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Amounts</span>
         </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
+        <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden">
           {[
             { label: "Subtotal", value: `${invoice.currency} ${fmt(invoice.subtotal)}`, conf: null, bold: false },
             { label: invoice.tax_type ?? "Tax", value: invoice.tax_amount != null ? `${invoice.currency} ${fmt(invoice.tax_amount)}` : "—", conf: null, bold: false },
             { label: "Total",    value: `${invoice.currency} ${fmt(invoice.total_myr)}`, conf: cs.total, bold: true },
           ].map((f, i) => (
-            <div key={i} className="flex flex-col px-4 pt-3 pb-3"
-              style={{ borderBottom: i < 2 ? "1px solid #F3F4F6" : undefined }}>
-              <span className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#71717A" }}>{f.label}</span>
-              <span className="flex items-center tabular-nums font-mono text-[13px]"
-                style={{ color: "#09090B", fontWeight: f.bold ? 700 : 400 }}>
+            <div key={i} className={cn("flex items-center justify-between px-4 py-3", i < 2 && "border-b border-border/40")}>
+              <span className="text-[11px] text-muted-foreground shrink-0 w-24">{f.label}</span>
+              <span className={cn("text-[13px] font-medium text-foreground text-right flex items-center gap-1 font-mono tabular-nums", f.bold && "font-bold")}>
                 {f.value}
                 {f.conf != null && f.conf < 0.80 && <ConfidenceBadge score={f.conf}/>}
               </span>
@@ -1167,17 +1162,16 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
       {/* GL Coding */}
       <section>
         <div className="flex items-center justify-between mb-2">
-          <div className="pb-2" style={{ borderBottom: "1px solid #E4E4E7" }}>
-            <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>GL Coding</span>
+          <div className="pb-2 border-b border-border">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">GL Coding</span>
           </div>
           <Badge variant="status-approved" className="h-4 text-[9px]">Hover to edit</Badge>
         </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
+        <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden">
           {lineItems.map((li, i) => {
             const { title, details } = splitDescription(li.description)
             return (
-              <div key={i} className="px-4 py-3"
-                style={{ borderBottom: i < lineItems.length - 1 ? "0.5px solid #F3F4F6" : undefined }}>
+              <div key={i} className={cn("px-4 py-3", i < lineItems.length - 1 && "border-b border-border/40")}>
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div className="text-[12px] font-semibold text-gray-800 leading-tight flex-1">{title}</div>
                   <div className="text-[12px] font-mono font-semibold text-gray-800 shrink-0 tabular-nums">
@@ -1211,7 +1205,7 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-primary font-semibold">Add</Button>
+                    <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-brand font-semibold">Add</Button>
                     <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground">Skip</Button>
                   </div>
                 </div>
@@ -1223,10 +1217,10 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
 
       {/* Section 5: Project & cost centre (enhanced) */}
       <section>
-        <div className="pb-2 mb-3" style={{ borderBottom: "1px solid #E4E4E7" }}>
-          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "#71717A" }}>Project & Cost Centre</span>
+        <div className="pb-2 mb-3 border-b border-border">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project & Cost Centre</span>
         </div>
-        <div className="rounded-xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid #EAECF0", boxShadow: "0 1px 3px 0 rgba(0,0,0,0.06)" }}>
+        <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden">
           {project ? (
             <div className="px-4 py-3">
               <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -1252,7 +1246,7 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
                       RM {fmt(budgetRemaining, 0)} of RM {fmt(project.budget_amount, 0)}
                     </span>
                   </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#E5E7EB" }}>
+                  <div className="h-1.5 rounded-full overflow-hidden bg-muted">
                     <div className="h-full rounded-full transition-all"
                       style={{
                         width: `${Math.min(budgetPct, 100)}%`,
@@ -1271,8 +1265,7 @@ export function FieldsTab({ invoice }: { invoice: InvoiceDetail }) {
                 { label: "Project", value: invoice.project_code },
                 { label: "CC",      value: invoice.cost_centre  },
               ].map((f, i) => (
-                <div key={i} className="flex items-center px-4 py-2.5 text-[11px]"
-                  style={{ borderBottom: i < 1 ? "0.5px solid #F3F4F6" : undefined }}>
+                <div key={i} className={cn("flex items-center px-4 py-2.5 text-[11px]", i < 1 && "border-b border-border/40")}>
                   <span className="w-20 text-gray-400 shrink-0 font-medium">{f.label}</span>
                   <span className="text-gray-800 font-semibold font-mono">
                     {f.value ?? <span className="font-normal text-gray-300">—</span>}
@@ -1365,7 +1358,7 @@ export function EmailThreadTab({ invoice }: { invoice: InvoiceDetail }) {
             </div>
           </div>
         ))}
-        <Button variant="outline" className="w-full h-9 text-[11px] text-primary border-border"
+        <Button variant="outline" className="w-full h-9 text-[11px] text-brand border-border"
           onClick={() => setReplyOpen(r => !r)}>
           <Mail size={12} strokeWidth={2} data-icon="inline-start"/> Reply to vendor
         </Button>
@@ -1496,7 +1489,7 @@ export function EmailThreadTab({ invoice }: { invoice: InvoiceDetail }) {
           </div>
         </div>
       ) : (
-        <Button variant="outline" className="w-full h-9 text-[11px] text-primary border-border"
+        <Button variant="outline" className="w-full h-9 text-[11px] text-brand border-border"
           onClick={() => setReplyOpen(true)}>
           <Mail size={12} strokeWidth={2} data-icon="inline-start"/> Reply to vendor
         </Button>

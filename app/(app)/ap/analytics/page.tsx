@@ -18,16 +18,16 @@ import { Separator } from "@/components/ui/separator"
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 
 const C = {
-  purple: "#5D5EF4",
+  purple: "hsl(var(--brand))",
   amber:  "#D97706",
   red:    "#EF4444",
   blue:   "#3B82F6",
   green:  "#10B981",
   teal:   "#1D9E75",
-  muted:  "#6B7280",
-  border: "#E5E7EB",
-  bg:     "#FFFFFF",
-  surfaceMuted: "#F9FAFB",
+  muted:  "hsl(var(--muted-foreground))",
+  border: "hsl(var(--border))",
+  bg:     "hsl(var(--card))",
+  surfaceMuted: "hsl(var(--muted))",
 }
 
 const fmt  = (n: number) => n.toLocaleString("en-MY")
@@ -123,10 +123,7 @@ function SectionHead({ title, sub, right }: { title: string; sub?: string; right
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={`rounded-xl bg-white ${className}`}
-      style={{ border: `1px solid ${C.border}` }}
-    >
+    <div className={`rounded-xl bg-card border border-border ${className}`}>
       {children}
     </div>
   )
@@ -136,25 +133,19 @@ function Panel({ children, className = "" }: { children: React.ReactNode; classN
 
 function AIBar() {
   return (
-    <div
-      className="rounded-xl px-4 py-3 flex items-start gap-3"
-      style={{ background: "#FAFAFA", border: `1px solid ${C.border}` }}
-    >
-      <div
-        className="size-5 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-        style={{ background: C.purple }}
-      >
-        <Sparkles size={10} strokeWidth={2.5} color="#fff" />
+    <div className="rounded-xl px-4 py-3 flex items-start gap-3 bg-brand/5 border border-brand/12">
+      <div className="size-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 bg-brand">
+        <Sparkles size={10} strokeWidth={2.5} className="text-primary-foreground" />
       </div>
       <p className="text-[12px] leading-relaxed text-muted-foreground flex-1">
-        <span className="font-semibold" style={{ color: C.purple }}>Action needed:</span>{" "}
+        <span className="font-semibold text-brand">Action needed:</span>{" "}
         RM 142,800 overdue — Tech Solutions requires immediate payment.
         Control health at <span className="font-medium text-foreground">{AVG_HEALTH}/100</span> — e-invoice compliance and overdue rate are the main drags.{" "}
-        <span className="font-semibold" style={{ color: C.purple }}>Recommend</span> approving Tier 2 and running a batch payment for all invoices due this week.
+        <span className="font-semibold text-brand">Recommend</span> approving Tier 2 and running a batch payment for all invoices due this week.
       </p>
-      <button className="text-[10px] text-muted-foreground font-mono shrink-0 self-center border rounded px-1.5 py-0.5 hover:bg-muted/50 transition-colors" style={{ borderColor: C.border }}>
+      <kbd className="text-[10px] text-muted-foreground font-mono shrink-0 self-center border border-border rounded px-1.5 py-0.5 hover:bg-muted/50 transition-colors">
         ⌘K
-      </button>
+      </kbd>
     </div>
   )
 }
@@ -171,7 +162,7 @@ function KpiStrip() {
 
   return (
     <Panel>
-      <div className="grid grid-cols-4 divide-x" style={{ borderColor: C.border }}>
+      <div className="grid grid-cols-4 divide-x divide-border">
         {kpis.map((k, i) => (
           <div key={i} className="px-5 py-4">
             <p className="text-[11px] text-muted-foreground mb-2 font-medium">{k.label}</p>
@@ -561,7 +552,7 @@ function ControlSection() {
 
 export default function AnalyticsPage() {
   return (
-    <div className="h-full overflow-y-auto" style={{ background: "#F9FAFB" }}>
+    <div className="h-full overflow-y-auto bg-background">
       <div className="max-w-[1400px] flex flex-col gap-5 p-6 pb-12">
 
         {/* Header */}

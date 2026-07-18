@@ -42,7 +42,7 @@ export function InvoiceDetailPanel({ invoiceId }: Props) {
   if (loading || !invoice) {
     return (
       <div className="flex items-center justify-center h-32">
-        <Sparkles size={18} className="text-primary/30 animate-pulse" strokeWidth={2}/>
+        <Sparkles size={18} className="text-brand/30 animate-pulse" strokeWidth={2}/>
       </div>
     )
   }
@@ -50,7 +50,7 @@ export function InvoiceDetailPanel({ invoiceId }: Props) {
   return (
     <div className="flex flex-col h-full min-h-0">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
-        <TabsList className="shrink-0 h-9 bg-[#F2F4F7]">
+        <TabsList className="shrink-0 h-9 bg-muted">
           <TabsTrigger value="fields" className="text-[12px] gap-1">
             <FileText size={11} strokeWidth={2}/> Fields
           </TabsTrigger>

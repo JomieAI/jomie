@@ -18,12 +18,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 
 const T = {
-  // AI bar
-  aiBarBg:      "#EEEDFE",
-  aiBarBorder:  "#AFA9EC",
-  aiBarIcon:    "#534AB7",
-  aiBarText:    "#3C3489",
-  aiBarHint:    "#AFA9EC",
+  // AI bar — primary tint surface
+  aiBarBg:      "hsl(var(--accent))",
+  aiBarBorder:  "hsl(var(--brand) / 0.3)",
+  aiBarIcon:    "hsl(var(--brand))",
+  aiBarText:    "hsl(var(--brand))",
+  aiBarHint:    "hsl(var(--brand) / 0.5)",
   // Severity border accents
   borderCritical: "#E24B4A",
   borderWarning:  "#BA7517",
@@ -41,15 +41,15 @@ const T = {
   redLight:     "#FCEBEB",
   redText:      "#791F1F",
   // Purple (Jomie brand)
-  purple:       "#5D5EF4",
-  purpleLight:  "#EEEDFE",
-  purpleText:   "#3C3489",
+  purple:       "hsl(var(--brand))",
+  purpleLight:  "hsl(var(--accent))",
+  purpleText:   "hsl(var(--brand))",
   // Selected row
   selectedBg:   "#F0FAF6",
   selectedBorder: "#1D9E75",
   // Dark shell
-  border:       "#676488",
-  dimText:      "#98A2B3",
+  border:       "hsl(var(--border))",
+  dimText:      "hsl(var(--muted-foreground))",
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -270,14 +270,14 @@ function JourneyDotsMini({ pr }: { pr: PR }) {
           <React.Fragment key={i}>
             {i > 0 && (
               <div className="h-px w-2 shrink-0"
-                style={{ background: done ? T.teal : "#E5E7EB" }} />
+                style={{ background: done ? T.teal : "hsl(var(--border))" }} />
             )}
             <div className={cn("rounded-full shrink-0 transition-all", active && "animate-pulse")}
               style={{
                 width:  active ? 8 : 6,
                 height: active ? 8 : 6,
-                background: done ? T.teal : active ? T.purple : "#E5E7EB",
-                border: waiting ? "1.5px solid #D1D5DB" : "none",
+                background: done ? T.teal : active ? T.purple : "hsl(var(--muted))",
+                border: waiting ? "1.5px solid hsl(var(--border))" : "none",
               }} />
           </React.Fragment>
         )
@@ -321,7 +321,7 @@ function JourneyStrip({ pr, compact = false }: { pr: PR; compact?: boolean }) {
           <React.Fragment key={phase.key}>
             {i > 0 && (
               <div className="flex-1 h-px min-w-[6px]"
-                style={{ background: done ? T.teal : "#E5E7EB" }} />
+                style={{ background: done ? T.teal : "hsl(var(--border))" }} />
             )}
             <Tooltip>
               <TooltipTrigger>
@@ -331,15 +331,15 @@ function JourneyStrip({ pr, compact = false }: { pr: PR; compact?: boolean }) {
                       active && "animate-pulse",
                       compact ? "size-4" : "size-5")}
                     style={{
-                      background: done ? T.teal : active ? T.purple : "white",
-                      border: pending ? "1.5px solid #D1D5DB" : "none",
+                      background: done ? T.teal : active ? T.purple : "hsl(var(--card))",
+                      border: pending ? "1.5px solid hsl(var(--border))" : "none",
                     }}>
                     {done && <Check size={compact ? 8 : 10} color="white" strokeWidth={3} />}
                     {active && <div className={cn("rounded-full bg-white", compact ? "size-1.5" : "size-2")} />}
                   </div>
                   <span className={cn("font-semibold whitespace-nowrap",
                     compact ? "text-[8px]" : "text-[9px]",
-                    done ? "text-teal-600" : active ? "text-[#3C3489]" : "text-gray-400"
+                    done ? "text-teal-600" : active ? "text-brand" : "text-muted-foreground/50"
                   )} style={{ color: done ? T.teal : active ? T.purple : undefined }}>
                     {phase.label}
                   </span>
@@ -358,7 +358,7 @@ function JourneyStrip({ pr, compact = false }: { pr: PR; compact?: boolean }) {
 
 function InsightCard({ insight }: { insight: AIInsight }) {
   const cfg = {
-    info: { bg: "rgba(93,94,244,0.05)", border: "rgba(93,94,244,0.12)", dot: T.purple,  title: "#4338CA" },
+    info: { bg: "hsl(var(--brand)/0.05)", border: "hsl(var(--brand)/0.12)", dot: T.purple,  title: T.purple },
     warn: { bg: T.amberLight + "88",    border: T.amber + "55",          dot: T.amber,   title: T.amber   },
     ok:   { bg: T.tealLight + "88",     border: T.teal  + "55",          dot: T.teal,    title: T.teal    },
   }[insight.type]
@@ -400,10 +400,10 @@ function SourcingSection({ vendors }: { vendors: VendorOption[] }) {
           Approved vendors
         </div>
         {approved.map((v, i) => (
-          <div key={i} className="flex items-center gap-2 px-2.5 py-2 hover:bg-[#E1F5EE] transition-colors"
+          <div key={i} className="flex items-center gap-2 px-2.5 py-2 hover:bg-success/5 transition-colors"
             style={{ borderTop: i > 0 ? `0.5px solid ${T.teal}22` : undefined }}>
             <span className="text-[10px] font-bold w-4 shrink-0"
-              style={{ color: v.isRecommended ? T.purple : "#888780" }}>
+              style={{ color: v.isRecommended ? T.purple : "hsl(var(--muted-foreground))" }}>
               {v.isRecommended ? "★" : v.rank}
             </span>
             <span className="flex-1 text-[11px] font-medium text-gray-800 truncate">{v.name}</span>
@@ -427,7 +427,7 @@ function SourcingSection({ vendors }: { vendors: VendorOption[] }) {
             <span className="text-[9px]" style={{ color: T.amberText }}>Requires vendor onboarding before PO</span>
           </div>
           {marketplace.map((v, i) => (
-            <div key={i} className="flex items-center gap-2 px-2.5 py-2 hover:bg-[#FAEEDA] transition-colors"
+            <div key={i} className="flex items-center gap-2 px-2.5 py-2 hover:bg-warning/5 transition-colors"
               style={{ borderTop: i > 0 ? `0.5px solid ${T.amber}22` : undefined }}>
               <span className="text-[10px] font-bold w-4 shrink-0 text-gray-400">{["①","②","③"][i]}</span>
               <span className="flex-1 text-[11px] font-medium text-gray-700 truncate">{v.name}</span>
@@ -466,7 +466,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
 
       {/* Header */}
       <div className="flex items-center justify-between pb-3 mb-3 shrink-0"
-        style={{ borderBottom: "1px solid #E5E7EB" }}>
+        style={{ borderBottom: "1px solid hsl(var(--border))" }}>
         <div className="flex items-center gap-2">
           <div className="size-5 rounded-md flex items-center justify-center"
             style={{ background: T.purpleLight }}>
@@ -524,11 +524,11 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
                 style={{
                   background: pr.status==="approved" ? T.tealLight
-                    : pr.status==="pending" ? "#FEF3C7"
-                    : pr.status==="review" ? T.purpleLight : "#F3F4F6",
+                    : pr.status==="pending" ? "hsl(var(--warning)/0.1)"
+                    : pr.status==="review" ? T.purpleLight : "hsl(var(--muted))",
                   color: pr.status==="approved" ? T.tealText
-                    : pr.status==="pending" ? "#92400E"
-                    : pr.status==="review" ? T.purpleText : "#6B7280",
+                    : pr.status==="pending" ? T.amber
+                    : pr.status==="review" ? T.purpleText : "hsl(var(--muted-foreground))",
                 }}>
                 ● {pr.status.charAt(0).toUpperCase()+pr.status.slice(1)}
               </span>
@@ -621,7 +621,7 @@ function CopilotPanel({ pr }: { pr: PR | null }) {
 
       {/* Context-aware footer */}
       {pr && footerType && (
-        <div className="pt-3 mt-3 shrink-0" style={{ borderTop: "1px solid #E5E7EB" }}>
+        <div className="pt-3 mt-3 shrink-0" style={{ borderTop: "1px solid hsl(var(--border))" }}>
           {footerType === "approver" && (
             <>
               <div className="flex items-center justify-between mb-2">
@@ -762,7 +762,7 @@ export default function PurchaseRequestsPage() {
   }, [])
 
   const rightPanelStyle: React.CSSProperties = {
-    background:     "#F7F7FE",
+    background:     "hsl(var(--card))",
     borderRadius:   10,
     overflow:       "hidden",
     display:        rightWidth === 0 ? "none" : "flex",
@@ -829,9 +829,9 @@ export default function PurchaseRequestsPage() {
               border: "0.5px solid rgba(93,94,244,0.3)",
               borderRadius: 8,
             }}>
-            <Sparkles size={15} style={{ color: "#9EACFE", flexShrink: 0 }} strokeWidth={2}/>
+            <Sparkles size={15} style={{ color: "hsl(var(--brand)/0.7)", flexShrink: 0 }} strokeWidth={2}/>
             <span className="flex-1 text-[12px] leading-snug"
-              style={{ color: "#C4C9FF", fontFamily: "Inter, sans-serif" }}>
+              style={{ color: "hsl(var(--brand)/0.85)", fontFamily: "Inter, sans-serif" }}>
               3 PRs pending your approval — PR-0087 (Raw Materials) is over budget.
               Quotation required for PR-0089 (IT Equipment). 1 new vendor onboarding pending.
             </span>
@@ -862,14 +862,14 @@ export default function PurchaseRequestsPage() {
                 <button key={f.key} onClick={() => setFilter(f.key)}
                   className="flex items-center gap-1 h-8 px-3 rounded-lg text-[12px] transition-colors cursor-pointer"
                   style={{
-                    background:  filter === f.key ? "#1C184E" : "transparent",
-                    color:       filter === f.key ? "#FFFFFF" : T.dimText,
+                    background:  filter === f.key ? "hsl(var(--brand))" : "transparent",
+                    color:       filter === f.key ? "hsl(var(--primary-foreground))" : T.dimText,
                     fontWeight:  filter === f.key ? 600 : 500,
                     fontFamily:  "Inter, sans-serif",
                   }}>
                   {f.label}
                   <span className="text-[10px] tabular-nums"
-                    style={{ color: filter === f.key ? "rgba(255,255,255,0.4)" : T.border }}>
+                    style={{ color: filter === f.key ? "hsl(var(--primary-foreground)/0.5)" : T.border }}>
                     {f.count}
                   </span>
                 </button>
@@ -889,7 +889,7 @@ export default function PurchaseRequestsPage() {
                     "text-[10px] font-semibold uppercase tracking-wider",
                     i === 2 && "text-right",
                     i === 3 && "text-center",
-                  )} style={{ color: "#667085", fontFamily: "Inter, sans-serif" }}>{h}</div>
+                  )} style={{ color: "hsl(var(--muted-foreground))", fontFamily: "Inter, sans-serif" }}>{h}</div>
                 ))}
               </div>
             </div>
@@ -1085,7 +1085,7 @@ export default function PurchaseRequestsPage() {
                 {/* Metric cards */}
                 <div className="grid grid-cols-2 gap-2">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="p-3 rounded-xl" style={{ background:"#EEEEF8" }}>
+                    <div key={i} className="p-3 rounded-xl" style={{ background:"hsl(var(--accent))" }}>
                       <Skeleton className="h-3 w-16 bg-gray-200 mb-2" />
                       <Skeleton className="h-5 w-24 bg-gray-300" />
                     </div>
@@ -1093,7 +1093,7 @@ export default function PurchaseRequestsPage() {
                 </div>
                 {/* Sub-PR cards */}
                 {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} className="rounded-xl p-4 flex flex-col gap-2" style={{ background:"#EEEEF8" }}>
+                  <div key={i} className="rounded-xl p-4 flex flex-col gap-2" style={{ background:"hsl(var(--accent))" }}>
                     <div className="flex justify-between">
                       <Skeleton className="h-3.5 w-40 bg-gray-200" />
                       <Skeleton className="h-3.5 w-16 bg-gray-200" />

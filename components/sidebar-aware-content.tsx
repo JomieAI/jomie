@@ -7,15 +7,16 @@ export function SidebarAwareContent({ children }: { children: React.ReactNode })
 
   return (
     <div
-      className="bg-white flex flex-col"
+      className="flex flex-col"
       style={{
+        backgroundColor: '#F2F3F3',
         marginLeft: l2Open ? 280 : 56,
         height: "100vh",
         overflow: "hidden",
         transition: "margin-left 0.22s cubic-bezier(0.4,0,0.2,1)",
       }}
     >
-      <div className="flex-1 bg-white overflow-hidden p-8">
+      <div className="flex-1 overflow-hidden p-8" style={{ backgroundColor: '#F2F3F3' }}>
         {children}
       </div>
     </div>

@@ -94,10 +94,10 @@ function isFirstPayment(inv: Invoice): boolean {
 function rowBorderColor(inv: Invoice): string {
   if (inv.urgency_bucket === "overdue" || inv.status === "overdue") return "var(--color-destructive)"
   if (inv.status === "pending_review") {
-    if (isFirstPayment(inv)) return "#185FA5"
+    if (isFirstPayment(inv)) return "var(--color-brand)"
     return "var(--color-warning)"
   }
-  if (inv.status === "approved")       return "#534AB7"
+  if (inv.status === "approved")       return "var(--color-brand)"
   if (inv.status === "partially_paid") return "rgba(29,158,117,0.5)"
   if (inv.status === "paid")           return "transparent"
   if (inv.status === "rejected")       return "var(--color-destructive)"
@@ -150,8 +150,8 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-2 pb-3 mb-3 shrink-0 border-b border-border/40">
-          <div className="size-5 rounded-md flex items-center justify-center bg-primary/10">
-            <Sparkles size={11} className="text-primary" strokeWidth={2}/>
+          <div className="size-5 rounded-md flex items-center justify-center bg-brand/10">
+            <Sparkles size={11} className="text-brand" strokeWidth={2}/>
           </div>
           <span className="text-[12px] font-semibold text-foreground">Jomie AP</span>
           <div className="flex items-center gap-1">
@@ -160,8 +160,8 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
-          <div className="size-10 rounded-xl flex items-center justify-center bg-primary/10">
-            <Sparkles size={18} className="text-primary" strokeWidth={2}/>
+          <div className="size-10 rounded-xl flex items-center justify-center bg-brand/10">
+            <Sparkles size={18} className="text-brand" strokeWidth={2}/>
           </div>
           <div className="text-center">
             <div className="text-[13px] font-semibold text-muted-foreground mb-1">Select an invoice</div>
@@ -181,15 +181,15 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
       {/* Header */}
       <div className="flex items-center justify-between pb-3 mb-4 shrink-0 border-b border-border/40">
         <div className="flex items-center gap-2">
-          <div className="size-5 rounded-md flex items-center justify-center bg-primary/10">
-            <Sparkles size={11} className="text-primary" strokeWidth={2}/>
+          <div className="size-5 rounded-md flex items-center justify-center bg-brand/10">
+            <Sparkles size={11} className="text-brand" strokeWidth={2}/>
           </div>
           <span className="text-[12px] font-semibold text-foreground">Jomie AP</span>
         </div>
         <Button
           variant="ghost"
           size="xs"
-          className="text-primary hover:text-primary gap-0.5"
+          className="text-brand hover:text-brand gap-0.5"
           onClick={() => router.push(`/ap/invoices/${invoice.id}`)}>
           View detail<ChevronRight size={10} strokeWidth={2}/>
         </Button>
@@ -198,7 +198,7 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
       <div className="flex-1 overflow-y-auto space-y-3">
 
         {/* Primary white card — hero + breakdown */}
-        <div className="rounded-xl bg-card border border-[#EAECF0] overflow-hidden p-4">
+        <div className="rounded-xl bg-card border border-border overflow-hidden p-4">
           {/* Hero */}
           <div className="pb-3">
             <div className="text-[12px] text-muted-foreground leading-snug mb-0.5">{invoice.vendor_name_raw}</div>
@@ -271,11 +271,11 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
                 </div>
               )}
               {invoice.discount_available && invoice.discount_savings_myr && (
-                <div className="rounded-lg px-3 py-2.5 flex items-center gap-2 bg-primary/6 border border-primary/15">
-                  <Star size={12} className="text-primary shrink-0" strokeWidth={2}/>
+                <div className="rounded-lg px-3 py-2.5 flex items-center gap-2 bg-brand/6 border border-brand/15">
+                  <Star size={12} className="text-brand shrink-0" strokeWidth={2}/>
                   <div>
-                    <div className="text-[11px] font-semibold text-primary/90">Early Payment Discount</div>
-                    <div className="text-[10px] text-primary/70">Save RM {invoice.discount_savings_myr.toLocaleString()} if paid early</div>
+                    <div className="text-[11px] font-semibold text-brand/90">Early Payment Discount</div>
+                    <div className="text-[10px] text-brand/70">Save RM {invoice.discount_savings_myr.toLocaleString()} if paid early</div>
                   </div>
                 </div>
               )}
@@ -286,7 +286,7 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
         {/* AI Analysis — footer tier, below the primary card */}
         <div className="px-1">
           <div className="flex items-center gap-1.5 mb-2">
-            <Sparkles size={10} className="text-primary/60 shrink-0" strokeWidth={2}/>
+            <Sparkles size={10} className="text-brand/60 shrink-0" strokeWidth={2}/>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">AI Analysis</span>
           </div>
           {RIGHT_PANEL_FINDINGS[invoice.id] ? (
@@ -393,8 +393,8 @@ function riskSignal(inv: Invoice): React.ReactNode {
 }
 
 const CATEGORY_ICON: Record<string, React.ReactNode> = {
-  it_services:           <Wrench size={16} strokeWidth={1.6} className="text-primary" />,
-  professional_services: <Briefcase size={16} strokeWidth={1.6} className="text-primary" />,
+  it_services:           <Wrench size={16} strokeWidth={1.6} className="text-brand" />,
+  professional_services: <Briefcase size={16} strokeWidth={1.6} className="text-brand" />,
   supplies:              <Truck size={16} strokeWidth={1.6} className="text-muted-foreground" />,
   utilities:             <Zap size={16} strokeWidth={1.6} className="text-warning" />,
   travel:                <Truck size={16} strokeWidth={1.6} className="text-muted-foreground" />,
@@ -403,7 +403,7 @@ const CATEGORY_ICON: Record<string, React.ReactNode> = {
   subscription:          <RefreshCw size={16} strokeWidth={1.6} className="text-muted-foreground" />,
   rent:                  <Building2 size={16} strokeWidth={1.6} className="text-muted-foreground" />,
   insurance:             <HeartPulse size={16} strokeWidth={1.6} className="text-muted-foreground" />,
-  foreign:               <Globe size={16} strokeWidth={1.6} className="text-primary" />,
+  foreign:               <Globe size={16} strokeWidth={1.6} className="text-brand" />,
 }
 
 function categoryIcon(inv: Invoice): React.ReactNode {
@@ -411,7 +411,7 @@ function categoryIcon(inv: Invoice): React.ReactNode {
   const icon = CATEGORY_ICON[cat] ?? <Receipt size={16} strokeWidth={1.6} className="text-muted-foreground" />
   const isPrimary = cat === "it_services" || cat === "professional_services" || cat === "foreign"
   return (
-    <div className={cn("size-9 rounded-lg flex items-center justify-center shrink-0", isPrimary ? "bg-primary/10" : "bg-muted")}>
+    <div className={cn("size-9 rounded-lg flex items-center justify-center shrink-0", isPrimary ? "bg-brand/10" : "bg-muted")}>
       {icon}
     </div>
   )
@@ -435,7 +435,7 @@ function InvoiceRow({
   return (
     <div
       onClick={() => onSelect(inv)}
-      className={cn("grid items-center gap-4 mx-4 px-2 py-3 rounded-lg cursor-pointer transition-all duration-150 hover:bg-muted/30 border-b border-border/15", (isSel || menuOpen) && "bg-muted/50")}
+      className={cn("grid items-center gap-4 mx-3 px-3 py-3.5 rounded-lg cursor-pointer transition-colors duration-100 border-b border-border/15 hover:bg-muted/40", (isSel || menuOpen) ? "bg-accent/60" : "")}
       style={{ gridTemplateColumns: ROW_GRID }}
     >
       <div className="flex items-center gap-3 min-w-0">
@@ -453,7 +453,7 @@ function InvoiceRow({
                 {" Dup"}
               </span>
             )}
-            {inv.discount_available && <Star size={9} className="text-primary/60 shrink-0" strokeWidth={2} />}
+            {inv.discount_available && <Star size={9} className="text-brand/60 shrink-0" strokeWidth={2} />}
           </div>
         </div>
       </div>
@@ -505,7 +505,7 @@ function InvoiceListCard({
   filters: Array<{ key: string; label: string; count: number }>
 }) {
   return (
-    <Card className="flex flex-col gap-0 overflow-hidden py-0 w-full ring-[#EAECF0]">
+    <Card className="flex flex-col gap-0 overflow-hidden py-0 w-full shadow-sm">
       {/* Search + filter tabs */}
       <div className="flex items-center gap-2 px-4 py-4 border-b border-border/20">
         <div className="relative">
@@ -514,11 +514,11 @@ function InvoiceListCard({
             placeholder="Search vendor, invoice no…"
             value={search}
             onChange={e => onSearchChange(e.target.value)}
-            className="h-8 pl-7 w-52 text-[12px] border-[#EAECF0] placeholder:text-[#98A2B3]"
+            className="h-8 pl-7 w-52 text-[12px] border-border placeholder:text-muted-foreground/60"
           />
         </div>
         <Tabs value={filter} onValueChange={v => onFilterChange(v ?? "pending_review")}>
-          <TabsList className="h-9 bg-[#F2F4F7]">
+          <TabsList className="h-9 bg-muted">
             {filters.map(f => (
               <TabsTrigger key={f.key} value={f.key} className="text-[12px] gap-1.5">
                 {f.label}
@@ -529,7 +529,7 @@ function InvoiceListCard({
         </Tabs>
       </div>
       {/* Column headers */}
-      <div className="grid items-center gap-4 mx-4 px-2 py-2.5 border-b border-border/20" style={{ gridTemplateColumns: ROW_GRID }}>
+      <div className="grid items-center gap-4 px-4 py-2.5 border-b border-border/20" style={{ gridTemplateColumns: ROW_GRID }}>
         {(["VENDOR / INVOICE", "DUE", "RISK", "AMOUNT", ""] as const).map((h, i) => (
           <div key={i} className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60" style={{ textAlign: "left" }}>{h}</div>
         ))}
@@ -563,7 +563,7 @@ function InvoiceListCard({
             ))}
           </div>
         ) : (
-          <div className="pb-4">
+          <div className="pb-3">
             {filtered.map(inv => (
               <InvoiceRow key={inv.id} inv={inv} selected={selected} onSelect={onSelect} />
             ))}
@@ -709,9 +709,6 @@ export default function APInvoicesPage() {
   ].filter(Boolean).join(" ") || "All invoices are within payment terms."
 
   const rightPanelStyle: React.CSSProperties = {
-    background: "#F7F7FE",
-    borderRadius: 20,
-    border: "1px solid #EAECF0",
     overflow: "hidden",
     display: rightWidth === 0 ? "none" : "flex",
     flexDirection: "column",
@@ -721,116 +718,106 @@ export default function APInvoicesPage() {
 
   return (
     <TooltipProvider>
-      <div ref={wrapperRef} className="flex min-h-0 gap-3" style={{ height: "100%" }}>
+      <div ref={wrapperRef} className="flex min-h-0 gap-4" style={{ height: "100%" }}>
 
         {/* ── Main content ── */}
-        <div className="flex flex-col min-h-0 flex-1 min-w-[440px]" style={{ background: "#F7F7FE", borderRadius: 20, border: "1px solid #EAECF0", padding: 32, gap: 14 }}>
+        <div className="flex flex-col min-h-0 flex-1 min-w-[440px]" style={{ gap: 12 }}>
 
-          {/* Page header */}
-          <div className="shrink-0 pb-4 border-b border-border">
-
-            {/* Breadcrumb */}
-            <div className="flex items-center justify-between gap-1 mb-2.5">
-              <div className="flex items-center gap-1">
-                <span className="text-[12px] font-light text-muted-foreground">AP</span>
-                <ChevronRight size={10} className="text-muted-foreground/50" strokeWidth={2}/>
-                <span className="text-[12px] font-light text-foreground">Invoice Inbox</span>
+          {/* Page header — floats on grey bg, no card */}
+          <div className="shrink-0 flex items-center justify-between px-1">
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <span className="text-[11px] text-muted-foreground/70">AP</span>
+                <ChevronRight size={9} className="text-muted-foreground/40" strokeWidth={2}/>
+                <span className="text-[11px] text-muted-foreground/70">Invoice Inbox</span>
               </div>
+              <h1 className="text-[20px] font-semibold text-foreground leading-7">Invoice Inbox</h1>
             </div>
-
-            {/* Title + actions */}
-            <div className="flex items-center justify-between">
-              <h1 className="text-[18px] font-semibold text-foreground leading-7">Invoice Inbox</h1>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm">
-                  <Download size={13} strokeWidth={2} data-icon="inline-start"/> Export
-                </Button>
-                <Button size="sm">
-                  <Upload size={13} strokeWidth={2} data-icon="inline-start"/> Upload Invoice
-                </Button>
-              </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm">
+                <Download size={13} strokeWidth={2} data-icon="inline-start"/> Export
+              </Button>
+              <Button size="sm">
+                <Upload size={13} strokeWidth={2} data-icon="inline-start"/> Upload Invoice
+              </Button>
             </div>
           </div>
 
-          {/* AI assistant bar */}
-          <div className="shrink-0 flex items-center gap-2.5 px-3.5 py-2 rounded-lg bg-primary/5 border border-primary/12">
-            <Sparkles size={12} className="text-primary/60 shrink-0" strokeWidth={2}/>
-            <span className="flex-1 text-[11px] leading-snug text-primary/55">
+          {/* AI assistant bar — own card with shadow */}
+          <div className="shrink-0 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-card border border-border shadow-sm">
+            <div className="size-5 rounded-md flex items-center justify-center shrink-0 bg-brand/10">
+              <Sparkles size={11} className="text-brand" strokeWidth={2}/>
+            </div>
+            <span className="flex-1 text-[12px] leading-snug text-foreground/70">
               {isLoading ? "Analysing your invoice inbox…" : aiBarText}
             </span>
             {toLearnCount > 0 && (
-              <span className="shrink-0 flex items-center gap-1 text-[10px] font-medium text-primary/50 bg-primary/8 px-2 py-0.5 rounded-full">
+              <span className="shrink-0 flex items-center gap-1 text-[10px] font-medium text-brand bg-brand/8 px-2 py-0.5 rounded-full border border-brand/15">
                 <Sparkles size={9} strokeWidth={2}/>{toLearnCount} GL to learn
               </span>
             )}
-            <kbd className="shrink-0 text-[10px] font-mono select-none px-1.5 py-0.5 rounded bg-primary/8 text-primary/45">⌘K</kbd>
+            <kbd className="shrink-0 text-[10px] font-mono select-none px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border">⌘K</kbd>
           </div>
 
-          {/* KPI strip — 3-col grid: Pending Review (1fr) | Overdue (160px) | Partial (160px) */}
-          <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 200px 200px" }}>
+          {/* KPI strip — 3 cards */}
+          <div className="grid gap-3 shrink-0" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
 
-            {/* Pending Review — fluid */}
-            <Card size="sm" className="gap-0 py-0 bg-card ring-[#EAECF0]">
-              <CardContent className="py-4 px-4 flex flex-col gap-0">
-                <span className="text-[12px] font-semibold uppercase tracking-[0.08em] mb-3" style={{ color: "#344054" }}>Pending Review</span>
-                <div className="text-[32px] font-bold tabular-nums leading-none tracking-tight text-warning mb-3">
-                  {pendingCount}
-                  <span className="text-[14px] font-medium text-muted-foreground/50 ml-2">invoice{pendingCount !== 1 ? "s" : ""}</span>
-                </div>
-                <div className="w-full h-[3px] rounded-full bg-muted mb-2.5 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-warning transition-all duration-500"
-                    style={{ width: invoices.length > 0 ? `${Math.min(100, (pendingCount / invoices.length) * 100)}%` : "0%" }}
-                  />
-                </div>
-                <span className="text-[12px] font-medium text-muted-foreground/50 truncate">requires your action</span>
-                <span className="text-[12px] font-semibold text-muted-foreground/70 mt-0.5">
+            {/* Pending Review */}
+            <div className="bg-card rounded-xl border border-border px-5 pt-5 pb-4 flex flex-col">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Pending Review</span>
+              <div className="flex items-baseline gap-1.5 mt-2">
+                <span className="text-[36px] font-bold tabular-nums leading-none tracking-tight text-warning">{pendingCount}</span>
+                <span className="text-[11px] text-muted-foreground/50 mb-0.5">invoice{pendingCount !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="w-full h-[2px] rounded-full bg-muted mt-3 mb-3 overflow-hidden">
+                <div className="h-full rounded-full bg-warning transition-all duration-500"
+                  style={{ width: invoices.length > 0 ? `${Math.min(100, (pendingCount / invoices.length) * 100)}%` : "0%" }}/>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground/50">requires action</span>
+                <span className="text-[12px] font-semibold text-foreground tabular-nums">
                   RM {pendingTotal.toLocaleString("en-MY", { minimumFractionDigits: 2 })}
                 </span>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
-            {/* Overdue — fixed 160px, footer stacked */}
-            <Card size="sm" className="gap-0 py-0 bg-card ring-[#EAECF0]">
-              <CardContent className="py-4 px-4 flex flex-col gap-0">
-                <span className="text-[12px] font-semibold uppercase tracking-[0.08em] mb-3" style={{ color: "#344054" }}>Overdue</span>
-                <div className="text-[32px] font-bold tabular-nums leading-none tracking-tight text-destructive mb-3">
-                  {overdueCount}
-                  <span className="text-[14px] font-medium text-muted-foreground/50 ml-2">invoice{overdueCount !== 1 ? "s" : ""}</span>
-                </div>
-                <div className="w-full h-[3px] rounded-full bg-muted mb-2.5 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-destructive transition-all duration-500"
-                    style={{ width: invoices.length > 0 ? `${Math.min(100, (overdueCount / invoices.length) * 100)}%` : "0%" }}
-                  />
-                </div>
-                <span className="text-[11px] font-medium text-muted-foreground/50">past due</span>
-                <span className="text-[11px] font-semibold text-muted-foreground/70 tabular-nums mt-0.5 truncate">
+            {/* Overdue */}
+            <div className="bg-card rounded-xl border border-border px-5 pt-5 pb-4 flex flex-col">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Overdue</span>
+              <div className="flex items-baseline gap-1.5 mt-2">
+                <span className="text-[36px] font-bold tabular-nums leading-none tracking-tight text-destructive">{overdueCount}</span>
+                <span className="text-[11px] text-muted-foreground/50 mb-0.5">invoice{overdueCount !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="w-full h-[2px] rounded-full bg-muted mt-3 mb-3 overflow-hidden">
+                <div className="h-full rounded-full bg-destructive transition-all duration-500"
+                  style={{ width: invoices.length > 0 ? `${Math.min(100, (overdueCount / invoices.length) * 100)}%` : "0%" }}/>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground/50">past due</span>
+                <span className="text-[12px] font-semibold text-foreground tabular-nums">
                   {overdueTotal > 0 ? `RM ${overdueTotal.toLocaleString("en-MY", { minimumFractionDigits: 2 })}` : "—"}
                 </span>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
-            {/* Partial — fixed 160px, footer stacked */}
-            <Card size="sm" className="gap-0 py-0 bg-card ring-[#EAECF0]">
-              <CardContent className="py-4 px-4 flex flex-col gap-0">
-                <span className="text-[12px] font-semibold uppercase tracking-[0.08em] mb-3" style={{ color: "#344054" }}>Partial</span>
-                <div className="text-[32px] font-bold tabular-nums leading-none tracking-tight text-warning mb-3">
-                  {partialCount}
-                  <span className="text-[14px] font-medium text-muted-foreground/50 ml-2">invoice{partialCount !== 1 ? "s" : ""}</span>
-                </div>
-                <div className="w-full h-[3px] rounded-full bg-muted mb-2.5 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-warning transition-all duration-500"
-                    style={{ width: invoices.length > 0 ? `${Math.min(100, (partialCount / invoices.length) * 100)}%` : "0%" }}
-                  />
-                </div>
-                <span className="text-[11px] font-medium text-muted-foreground/50">balance</span>
-                <span className="text-[11px] font-semibold text-muted-foreground/70 tabular-nums mt-0.5 truncate">
+            {/* Partial */}
+            <div className="bg-card rounded-xl border border-border px-5 pt-5 pb-4 flex flex-col">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Partial</span>
+              <div className="flex items-baseline gap-1.5 mt-2">
+                <span className="text-[36px] font-bold tabular-nums leading-none tracking-tight text-warning">{partialCount}</span>
+                <span className="text-[11px] text-muted-foreground/50 mb-0.5">invoice{partialCount !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="w-full h-[2px] rounded-full bg-muted mt-3 mb-3 overflow-hidden">
+                <div className="h-full rounded-full bg-warning transition-all duration-500"
+                  style={{ width: invoices.length > 0 ? `${Math.min(100, (partialCount / invoices.length) * 100)}%` : "0%" }}/>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground/50">balance</span>
+                <span className="text-[12px] font-semibold text-foreground tabular-nums">
                   {partialTotal > 0 ? `RM ${partialTotal.toLocaleString("en-MY", { minimumFractionDigits: 2 })}` : "—"}
                 </span>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
           </div>
 
@@ -872,7 +859,7 @@ export default function APInvoicesPage() {
               className={cn(
                 "relative z-10 flex items-center justify-center size-7 rounded-lg transition-all cursor-pointer",
                 panelMode === "details" && rightOpen
-                  ? "bg-primary/10 text-primary"
+                  ? "bg-brand/10 text-brand"
                   : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted"
               )}>
               <FileText size={13} strokeWidth={2}/>
@@ -888,7 +875,7 @@ export default function APInvoicesPage() {
               className={cn(
                 "relative z-10 flex items-center justify-center size-7 rounded-lg transition-all cursor-pointer",
                 panelMode === "pdf" && rightOpen
-                  ? "bg-primary/10 text-primary"
+                  ? "bg-brand/10 text-brand"
                   : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted"
               )}>
               <FileImage size={13} strokeWidth={2}/>
@@ -910,16 +897,16 @@ export default function APInvoicesPage() {
         </div>
 
         {/* ── Right panel ── */}
-        <div style={rightPanelStyle} className="relative">
+        <div style={rightPanelStyle} className="relative bg-card border border-border shadow-sm rounded-xl">
           {/* Drag strip on panel's left border — pixel-perfect */}
           <div className="absolute inset-y-0 left-0 w-1.5 cursor-col-resize z-10" onMouseDown={onDragMouseDown}/>
           {selected ? (
             <div className="flex flex-col h-full min-h-0">
               {/* Panel header */}
-              <div className="shrink-0 flex items-center justify-between px-4 pt-4 pb-3 border-b border-[#EAECF0]">
+              <div className="shrink-0 flex items-center justify-between px-4 pt-4 pb-3 border-b border-border">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="size-5 rounded-md flex items-center justify-center shrink-0 bg-primary/10">
-                    <Sparkles size={11} className="text-primary" strokeWidth={2}/>
+                  <div className="size-5 rounded-md flex items-center justify-center shrink-0 bg-brand/10">
+                    <Sparkles size={11} className="text-brand" strokeWidth={2}/>
                   </div>
                   <div className="min-w-0">
                     <div className="text-[12px] font-semibold text-foreground truncate leading-none">
@@ -941,12 +928,12 @@ export default function APInvoicesPage() {
               </div>
 
               {/* Amount + status strip */}
-              <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-[#EAECF0]">
+              <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-[28px] font-bold tabular-nums leading-none" style={{ color: "#09090B" }}>
+                  <span className="text-[28px] font-bold tabular-nums leading-none text-foreground">
                     {(selected.total_myr ?? 0).toLocaleString("en-MY", { minimumFractionDigits: 2 })}
                   </span>
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: "#F4F4F5", color: "#71717A" }}>MYR</span>
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">MYR</span>
                 </div>
                 <Badge variant={STATUS_BADGE_VARIANT[selected.status]} className="rounded-full px-3 text-[11px]">
                   {STATUS_LABEL[selected.status]}
@@ -962,7 +949,7 @@ export default function APInvoicesPage() {
                   <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
                     <div className="size-14 rounded-2xl flex items-center justify-center"
                       style={{ background: "rgba(93,94,244,0.08)", border: "1px solid rgba(93,94,244,0.12)" }}>
-                      <FileImage size={24} className="text-primary/50" strokeWidth={1.5}/>
+                      <FileImage size={24} className="text-brand/50" strokeWidth={1.5}/>
                     </div>
                     <div>
                       <div className="text-[13px] font-semibold text-foreground mb-1">PDF Viewer</div>
@@ -985,8 +972,8 @@ export default function APInvoicesPage() {
             /* Empty state */
             <div className="flex flex-col h-full px-8 py-8">
               <div className="flex items-center gap-2 pb-3 mb-3 shrink-0 border-b border-border/40">
-                <div className="size-5 rounded-md flex items-center justify-center bg-primary/10">
-                  <Sparkles size={11} className="text-primary" strokeWidth={2}/>
+                <div className="size-5 rounded-md flex items-center justify-center bg-brand/10">
+                  <Sparkles size={11} className="text-brand" strokeWidth={2}/>
                 </div>
                 <span className="text-[12px] font-semibold text-foreground">Jomie AP</span>
                 <div className="flex items-center gap-1">
@@ -995,8 +982,8 @@ export default function APInvoicesPage() {
                 </div>
               </div>
               <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
-                <div className="size-10 rounded-xl flex items-center justify-center bg-primary/10">
-                  <Sparkles size={18} className="text-primary" strokeWidth={2}/>
+                <div className="size-10 rounded-xl flex items-center justify-center bg-brand/10">
+                  <Sparkles size={18} className="text-brand" strokeWidth={2}/>
                 </div>
                 <div className="text-center">
                   <div className="text-[13px] font-semibold text-muted-foreground mb-1">Select an invoice</div>

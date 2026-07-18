@@ -19,19 +19,6 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
-        // ── Invoice status ──
-        "status-pending":  "bg-[#FFFAEB] text-[#B54708] border-[#FEDF89]",
-        "status-approved": "bg-[#ECFDF3] text-[#027A48] border-[#ABEFC6]",
-        "status-rejected": "bg-[#FEF3F2] text-[#B42318] border-[#FECDCA]",
-        "status-overdue":  "bg-[#FEF3F2] text-[#B42318] border-[#FECDCA]",
-        "status-paid":     "bg-[#ECFDF3] text-[#027A48] border-[#ABEFC6]",
-        "status-partial":  "bg-[#EFF8FF] text-[#175CD3] border-[#B2DDFF]",
-        // ── Urgency ──
-        "urgency-overdue": "bg-[#FEF3F2] text-[#B42318] border-[#FECDCA]",
-        "urgency-3d":      "bg-[#FFF6ED] text-[#C4320A] border-[#F9DBAF]",
-        "urgency-7d":      "bg-[#FFFAEB] text-[#B54708] border-[#FEDF89]",
-        "urgency-30d":     "bg-[#EFF8FF] text-[#175CD3] border-[#B2DDFF]",
-        "urgency-future":  "bg-[#F8F9FC] text-[#363F72] border-[#D5D9EB]",
       },
     },
     defaultVariants: {

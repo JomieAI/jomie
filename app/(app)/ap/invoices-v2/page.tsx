@@ -149,8 +149,8 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-2 pb-3 mb-3 shrink-0 border-b border-border/40">
-          <div className="size-5 rounded-md flex items-center justify-center bg-primary/10">
-            <Sparkles size={11} className="text-primary" strokeWidth={2}/>
+          <div className="size-5 rounded-md flex items-center justify-center bg-brand/10">
+            <Sparkles size={11} className="text-brand" strokeWidth={2}/>
           </div>
           <span className="text-[12px] font-semibold text-foreground">Jomie AP</span>
           <div className="flex items-center gap-1">
@@ -159,8 +159,8 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
-          <div className="size-10 rounded-xl flex items-center justify-center bg-primary/10">
-            <Sparkles size={18} className="text-primary" strokeWidth={2}/>
+          <div className="size-10 rounded-xl flex items-center justify-center bg-brand/10">
+            <Sparkles size={18} className="text-brand" strokeWidth={2}/>
           </div>
           <div className="text-center">
             <div className="text-[13px] font-semibold text-muted-foreground mb-1">Select an invoice</div>
@@ -179,15 +179,15 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between pb-3 mb-3 shrink-0 border-b border-border/40">
         <div className="flex items-center gap-2">
-          <div className="size-5 rounded-md flex items-center justify-center bg-primary/10">
-            <Sparkles size={11} className="text-primary" strokeWidth={2}/>
+          <div className="size-5 rounded-md flex items-center justify-center bg-brand/10">
+            <Sparkles size={11} className="text-brand" strokeWidth={2}/>
           </div>
           <span className="text-[12px] font-semibold text-foreground">Jomie AP</span>
         </div>
         <Button
           variant="ghost"
           size="xs"
-          className="text-primary hover:text-primary gap-0.5"
+          className="text-brand hover:text-brand gap-0.5"
           onClick={() => router.push(`/ap/invoices/${invoice.id}`)}>
           View detail<ChevronRight size={10} strokeWidth={2}/>
         </Button>
@@ -228,11 +228,11 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
             </div>
           )}
           {invoice.discount_available && invoice.discount_savings_myr && (
-            <div className="rounded-lg px-3 py-2.5 mb-3 flex items-center gap-2 bg-primary/6 border border-primary/20">
-              <Star size={12} className="text-primary shrink-0" strokeWidth={2}/>
+            <div className="rounded-lg px-3 py-2.5 mb-3 flex items-center gap-2 bg-brand/6 border border-brand/20">
+              <Star size={12} className="text-brand shrink-0" strokeWidth={2}/>
               <div>
-                <div className="text-[11px] font-semibold text-primary/90">Early Payment Discount</div>
-                <div className="text-[10px] text-primary/70">Save RM {invoice.discount_savings_myr.toLocaleString()} if paid early</div>
+                <div className="text-[11px] font-semibold text-brand/90">Early Payment Discount</div>
+                <div className="text-[10px] text-brand/70">Save RM {invoice.discount_savings_myr.toLocaleString()} if paid early</div>
               </div>
             </div>
           )}
@@ -269,10 +269,10 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
             </div>
           </div>
         </div>
-        <div className="rounded-lg p-3 bg-primary/5 border border-primary/12">
+        <div className="rounded-lg p-3 bg-brand/5 border border-brand/12">
           <div className="flex items-center gap-1.5 mb-2.5">
-            <Sparkles size={11} className="text-primary shrink-0" strokeWidth={2}/>
-            <span className="text-[11px] font-semibold text-primary/90">AI Analysis</span>
+            <Sparkles size={11} className="text-brand shrink-0" strokeWidth={2}/>
+            <span className="text-[11px] font-semibold text-brand/90">AI Analysis</span>
           </div>
           {RIGHT_PANEL_FINDINGS[invoice.id] ? (
             <div className="space-y-2">
@@ -443,19 +443,19 @@ export default function APInvoicesV2Page() {
                     className="text-[10px] font-mono px-2 py-0.5 rounded text-white/40 hover:text-white/70 transition-colors">
                     V1 Brand
                   </a>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/20 text-primary font-semibold">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-brand/20 text-brand font-semibold">
                     V2 Maia
                   </span>
                 </div>
               </div>
 
               {/* AI assistant bar — ambient weight */}
-              <div className="flex items-center gap-2.5 px-3.5 py-2 mb-3 rounded-lg bg-primary/5 border border-primary/12">
-                <Sparkles size={12} className="text-primary/60 shrink-0" strokeWidth={2}/>
-                <span className="flex-1 text-[11px] leading-snug text-primary/55">
+              <div className="flex items-center gap-2.5 px-3.5 py-2 mb-3 rounded-lg bg-brand/5 border border-brand/12">
+                <Sparkles size={12} className="text-brand/60 shrink-0" strokeWidth={2}/>
+                <span className="flex-1 text-[11px] leading-snug text-brand/55">
                   {isLoading ? "Analysing your invoice inbox…" : aiBarText}
                 </span>
-                <kbd className="shrink-0 text-[10px] font-mono select-none px-1.5 py-0.5 rounded bg-primary/8 text-primary/45">⌘K</kbd>
+                <kbd className="shrink-0 text-[10px] font-mono select-none px-1.5 py-0.5 rounded bg-brand/8 text-brand/45">⌘K</kbd>
               </div>
 
               {/* Title + actions */}
@@ -477,17 +477,17 @@ export default function APInvoicesV2Page() {
               {[
                 { label: "Pending Review", value: invoices.filter(i => i.status === "pending_review").length, unit: "invoices",    hi: false, color: "text-warning" },
                 { label: "Overdue",        value: overdueCount,   unit: "invoices",    hi: false, color: "text-destructive" },
-                { label: "Pending (MYR)",  value: `${(pendingTotal / 1000).toFixed(0)}k`, unit: "outstanding", hi: false, color: "text-primary" },
+                { label: "Pending (MYR)",  value: `${(pendingTotal / 1000).toFixed(0)}k`, unit: "outstanding", hi: false, color: "text-brand" },
                 { label: "Discount Avail", value: discountCount,  unit: "early pay",   hi: false, color: "text-success" },
-                { label: "To Learn",       value: toLearnCount,   unit: "GL items",    hi: true,  color: "text-primary" },
+                { label: "To Learn",       value: toLearnCount,   unit: "GL items",    hi: true,  color: "text-brand" },
               ].map((kpi, i) => (
                 <Card key={i} size="sm" className={cn(
                   "gap-0 py-0",
-                  kpi.hi && "ring-primary/40 bg-primary/8"
+                  kpi.hi && "ring-brand/40 bg-brand/8"
                 )}>
                   <CardContent className="py-3">
                     <div className="text-[8px] font-semibold uppercase tracking-widest mb-1.5 flex items-center gap-1 text-muted-foreground/35">
-                      {kpi.hi && <Sparkles size={8} className="text-primary/60" strokeWidth={2}/>}
+                      {kpi.hi && <Sparkles size={8} className="text-brand/60" strokeWidth={2}/>}
                       {kpi.label}
                     </div>
                     <div className={cn("text-[32px] font-bold tabular-nums leading-none", kpi.color)}>{kpi.value}</div>
@@ -505,7 +505,7 @@ export default function APInvoicesV2Page() {
                   placeholder="Search vendor, invoice no…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="h-8 pl-7 w-52 text-[12px] bg-white/5 border-white/15 text-white placeholder:text-white/25 focus-visible:border-primary/50"
+                  className="h-8 pl-7 w-52 text-[12px] bg-white/5 border-white/15 text-white placeholder:text-white/25 focus-visible:border-brand/50"
                 />
               </div>
               <Tabs value={filter} onValueChange={v => setFilter(v ?? "pending_review")}>
@@ -574,7 +574,7 @@ export default function APInvoicesV2Page() {
                       onClick={() => setSelected(inv)}
                       className={cn(
                         "grid items-center py-2 border-b border-border/20 cursor-pointer transition-all duration-150 px-5 hover:bg-muted/25",
-                        isSel && "bg-primary/8"
+                        isSel && "bg-brand/8"
                       )}
                       style={{ gridTemplateColumns: GRID, borderLeft: `2px solid ${borderColor}` }}>
 
@@ -582,10 +582,10 @@ export default function APInvoicesV2Page() {
                       <div className="flex items-center gap-2 min-w-0 pr-2">
                         <div className={cn(
                           "size-6 rounded-md flex items-center justify-center shrink-0",
-                          inv.origin === "foreign" ? "bg-primary/15" : "bg-success/12"
+                          inv.origin === "foreign" ? "bg-brand/15" : "bg-success/12"
                         )}>
                           {inv.origin === "foreign"
-                            ? <Globe size={12} className="text-primary" strokeWidth={1.6}/>
+                            ? <Globe size={12} className="text-brand" strokeWidth={1.6}/>
                             : <Building2 size={12} className="text-success" strokeWidth={1.6}/>}
                         </div>
                         <div className="min-w-0">
@@ -605,7 +605,7 @@ export default function APInvoicesV2Page() {
                                 <AlertTriangle size={8} strokeWidth={2}/> Dup
                               </span>
                             ) : null}
-                            {inv.discount_available && <Star size={9} className="text-primary/70 shrink-0" strokeWidth={2}/>}
+                            {inv.discount_available && <Star size={9} className="text-brand/70 shrink-0" strokeWidth={2}/>}
                             {inv.is_einvoice_verified && <CheckCircle2 size={9} className="text-success/70 shrink-0" strokeWidth={2}/>}
                           </div>
                         </div>
@@ -652,7 +652,7 @@ export default function APInvoicesV2Page() {
                         <Button variant="ghost" size="icon-xs"
                           onClick={e => { e.stopPropagation(); router.push(`/ap/invoices/${inv.id}`) }}>
                           <ChevronRight size={12} strokeWidth={2}
-                            className={isSel ? "text-primary" : "text-white/25"}/>
+                            className={isSel ? "text-brand" : "text-white/25"}/>
                         </Button>
                       </div>
                     </div>
