@@ -1,59 +1,60 @@
 "use client"
 
 import * as React from "react"
-import { cn } from "@/lib/utils"
 import {
-  Sparkles, ChevronRight, TrendingUp, TrendingDown, AlertTriangle,
-  ShieldCheck, ShieldAlert, Clock, CheckCircle2, XCircle,
-  BarChart3, ArrowUpRight, ArrowDownRight, Minus,
+  ChevronRight, Sparkles, TrendingUp, TrendingDown,
+  AlertTriangle, CheckCircle2, XCircle, Clock, ArrowUpRight, ArrowDownRight,
 } from "lucide-react"
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, ReferenceLine,
+  RadialBarChart, RadialBar, PolarGrid, PolarRadiusAxis, Label,
+} from "recharts"
+import {
+  ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent,
+} from "@/components/ui/chart"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
 
-// ─── Design tokens ─────────────────────────────────────────────────────────────
+// ─── Tokens ───────────────────────────────────────────────────────────────────
 
-const T = {
-  purple:      "#5D5EF4",
-  purpleLight: "#EEEDFE",
-  purpleText:  "#3C3489",
-  teal:        "#1D9E75",
-  tealLight:   "#E1F5EE",
-  tealText:    "#085041",
-  amber:       "#BA7517",
-  amberLight:  "#FAEEDA",
-  amberText:   "#633806",
-  red:         "#E24B4A",
-  redLight:    "#FCEBEB",
-  redText:     "#791F1F",
-  border:      "#676488",
-  dimText:     "#98A2B3",
+const C = {
+  purple: "#5D5EF4",
+  amber:  "#D97706",
+  red:    "#EF4444",
+  blue:   "#3B82F6",
+  green:  "#10B981",
+  teal:   "#1D9E75",
+  muted:  "#6B7280",
+  border: "#E5E7EB",
+  bg:     "#FFFFFF",
+  surfaceMuted: "#F9FAFB",
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const fmt  = (n: number, dec = 0) => n.toLocaleString("en-MY", { minimumFractionDigits: dec })
+const fmt  = (n: number) => n.toLocaleString("en-MY")
 const fmtK = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(0)}k` : fmt(n)
 
-// ─── Demo data ────────────────────────────────────────────────────────────────
+// ─── Data ─────────────────────────────────────────────────────────────────────
 
 const AGING = [
-  { label: "Current",  days: "0–30d",  amount: 219920, color: T.teal   },
-  { label: "30 Days",  days: "31–60d", amount: 38500,  color: T.amber  },
-  { label: "60 Days",  days: "61–90d", amount: 22000,  color: "#F97316" },
-  { label: "90+ Days", days: ">90d",   amount: 142800, color: T.red    },
+  { bucket: "Current",  days: "0–30d",  amount: 219920, color: C.teal   },
+  { bucket: "30 Days",  days: "31–60d", amount: 38500,  color: C.amber  },
+  { bucket: "60 Days",  days: "61–90d", amount: 22000,  color: "#F97316" },
+  { bucket: "90+ Days", days: ">90d",   amount: 142800, color: C.red    },
 ]
 const AGING_TOTAL = AGING.reduce((s, a) => s + a.amount, 0)
 
 const TOP_VENDORS = [
-  { name: "Tech Solutions MY Sdn Bhd", amount: 142800, invoices: 3, status: "overdue"  },
-  { name: "SKY Renovation Sdn Bhd",    amount: 38500,  invoices: 1, status: "due_3d"   },
-  { name: "Petronas Dagangan Sdn Bhd", amount: 22000,  invoices: 2, status: "due_3d"   },
-  { name: "AWS Singapore Pte Ltd",     amount: 12340,  invoices: 2, status: "due_7d"   },
-  { name: "Tenaga Nasional Berhad",    amount: 4280,   invoices: 1, status: "due_30d"  },
+  { name: "Tech Solutions MY",  shortName: "Tech Sol.", amount: 142800, invoices: 3, status: "overdue" },
+  { name: "SKY Renovation",     shortName: "SKY Reno.", amount: 38500,  invoices: 1, status: "due_3d"  },
+  { name: "Petronas Dagangan",  shortName: "Petronas",  amount: 22000,  invoices: 2, status: "due_3d"  },
+  { name: "AWS Singapore",      shortName: "AWS SG",    amount: 12340,  invoices: 2, status: "due_7d"  },
+  { name: "Tenaga Nasional",    shortName: "TNB",       amount: 4280,   invoices: 1, status: "due_30d" },
 ]
-const VENDOR_MAX = TOP_VENDORS[0].amount
+const VENDOR_TOTAL = TOP_VENDORS.reduce((s, v) => s + v.amount, 0)
 
 const PROJECTS = [
-  { code: "PROJ-2024-01", name: "ERP System Implementation Phase 2", budget: 300000, committed: 142800, paid: 85000,  cc: "IT-OPS" },
-  { code: "PROJ-2024-03", name: "HQ Office Renovation FY2024",       budget: 80000,  committed: 35000,  paid: 0,      cc: "ADMIN"  },
+  { code: "PROJ-2024-01", name: "ERP System Implementation Phase 2", budget: 300000, committed: 142800, paid: 85000, cc: "IT-OPS" },
+  { code: "PROJ-2024-03", name: "HQ Office Renovation FY2024",       budget: 80000,  committed: 35000,  paid: 0,     cc: "ADMIN"  },
 ]
 
 const CASH_FLOW = [
@@ -68,315 +69,430 @@ const CASH_FLOW = [
   { label: "15 Jul", amount: 22000,  overdue: false },
   { label: "01 Aug", amount: 8400,   overdue: false },
 ]
-const CF_MAX = Math.max(...CASH_FLOW.map(c => c.amount))
+const CASH_AVG = Math.round(
+  CASH_FLOW.filter(c => c.amount > 0).reduce((s, c) => s + c.amount, 0) /
+  CASH_FLOW.filter(c => c.amount > 0).length
+)
 
 const CONTROLS = [
-  { label: "e-Invoice compliance",         score: 60, status: "warning",  detail: "3 of 5 local invoices missing MyInvois verification" },
-  { label: "3-way PO matching",            score: 85, status: "good",     detail: "4 of 5 invoices matched to approved PO" },
-  { label: "SOD enforcement",              score: 100, status: "good",    detail: "Segregation of duties enforced on all approvals" },
-  { label: "CAPEX approval threshold",     score: 70, status: "warning",  detail: "1 CAPEX item pending CFO sign-off (RM 14k)" },
-  { label: "Duplicate invoice detection",  score: 95, status: "good",     detail: "1 flagged, confirmed not duplicate after review" },
-  { label: "Overdue payment rate",         score: 40, status: "critical", detail: "RM 142,800 overdue — Tech Solutions invoice past due" },
+  { label: "e-Invoice compliance",        score: 60,  status: "warning",  detail: "3 of 5 local invoices missing MyInvois verification" },
+  { label: "3-way PO matching",           score: 85,  status: "good",     detail: "4 of 5 invoices matched to approved PO" },
+  { label: "SOD enforcement",             score: 100, status: "good",     detail: "Segregation of duties enforced on all approvals" },
+  { label: "CAPEX approval threshold",    score: 70,  status: "warning",  detail: "1 CAPEX item pending CFO sign-off (RM 14k)" },
+  { label: "Duplicate invoice detection", score: 95,  status: "good",     detail: "1 flagged, confirmed not duplicate after review" },
+  { label: "Overdue payment rate",        score: 40,  status: "critical", detail: "RM 142,800 overdue — Tech Solutions past due" },
 ]
 const AVG_HEALTH = Math.round(CONTROLS.reduce((s, c) => s + c.score, 0) / CONTROLS.length)
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Chart configs ─────────────────────────────────────────────────────────────
 
-function KpiCard({ label, value, unit, sub, trend, color }: {
-  label: string; value: string | number; unit?: string; sub?: string
-  trend?: "up" | "down" | "flat"; color: string
-}) {
-  const TrendIcon = trend === "up" ? ArrowUpRight : trend === "down" ? ArrowDownRight : Minus
-  const trendColor = trend === "up" ? T.teal : trend === "down" ? T.red : T.dimText
+const vendorCfg   = { amount: { label: "Outstanding (MYR)" } } satisfies ChartConfig
+const cashCfg     = { amount: { label: "Payment (MYR)"     } } satisfies ChartConfig
+const dpoCfg      = { dpo:    { label: "DPO", color: C.amber } } satisfies ChartConfig
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const vendorColor = (s: string) =>
+  s === "overdue" ? C.red : s === "due_3d" ? C.amber : s === "due_7d" ? "#F97316" : C.muted
+const vendorLabel = (s: string) =>
+  s === "overdue" ? "Overdue" : s === "due_3d" ? "Due ≤3d" : s === "due_7d" ? "Due ≤7d" : "Due ≤30d"
+const controlColor = (s: string) =>
+  s === "good" ? C.teal : s === "warning" ? C.amber : C.red
+const controlIcon = (s: string) =>
+  s === "good"
+    ? <CheckCircle2 size={14} strokeWidth={1.8} style={{ color: C.teal  }} />
+    : s === "warning"
+    ? <AlertTriangle size={14} strokeWidth={1.8} style={{ color: C.amber }} />
+    : <XCircle size={14} strokeWidth={1.8} style={{ color: C.red }} />
+
+// ─── Section header ────────────────────────────────────────────────────────────
+
+function SectionHead({ title, sub, right }: { title: string; sub?: string; right?: React.ReactNode }) {
   return (
-    <div className="rounded-xl px-4 py-3.5"
-      style={{ background: "rgba(255,255,255,0.05)", border: "0.5px solid rgba(103,100,136,0.3)" }}>
-      <div className="text-[9px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: T.dimText }}>{label}</div>
-      <div className="flex items-end gap-1.5 mb-0.5">
-        <span className="text-[24px] font-bold tabular-nums leading-none" style={{ color }}>{value}</span>
-        {unit && <span className="text-[11px] font-medium mb-0.5" style={{ color: T.dimText }}>{unit}</span>}
+    <div className="flex items-start justify-between mb-4">
+      <div>
+        <h2 className="text-[13px] font-semibold text-foreground tracking-tight">{title}</h2>
+        {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
       </div>
-      {(sub || trend) && (
-        <div className="flex items-center gap-1 mt-1">
-          {trend && <TrendIcon size={11} style={{ color: trendColor }} strokeWidth={2}/>}
-          {sub && <span className="text-[10px]" style={{ color: T.dimText }}>{sub}</span>}
-        </div>
-      )}
+      {right}
     </div>
   )
 }
 
-function SectionHeader({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="mb-3">
-      <div className="text-[13px] font-bold text-white">{title}</div>
-      {sub && <div className="text-[10px] mt-0.5" style={{ color: T.dimText }}>{sub}</div>}
-    </div>
-  )
-}
+// ─── Divider card ──────────────────────────────────────────────────────────────
 
-function Panel({ children, className }: { children: React.ReactNode; className?: string }) {
+function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("rounded-xl p-4", className)}
-      style={{ background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(103,100,136,0.28)" }}>
+    <div
+      className={`rounded-xl bg-white ${className}`}
+      style={{ border: `1px solid ${C.border}` }}
+    >
       {children}
     </div>
   )
 }
 
-// ─── Aging buckets ────────────────────────────────────────────────────────────
+// ─── AI Bar ────────────────────────────────────────────────────────────────────
 
-function AgingChart() {
+function AIBar() {
+  return (
+    <div
+      className="rounded-xl px-4 py-3 flex items-start gap-3"
+      style={{ background: "#FAFAFA", border: `1px solid ${C.border}` }}
+    >
+      <div
+        className="size-5 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+        style={{ background: C.purple }}
+      >
+        <Sparkles size={10} strokeWidth={2.5} color="#fff" />
+      </div>
+      <p className="text-[12px] leading-relaxed text-muted-foreground flex-1">
+        <span className="font-semibold" style={{ color: C.purple }}>Action needed:</span>{" "}
+        RM 142,800 overdue — Tech Solutions requires immediate payment.
+        Control health at <span className="font-medium text-foreground">{AVG_HEALTH}/100</span> — e-invoice compliance and overdue rate are the main drags.{" "}
+        <span className="font-semibold" style={{ color: C.purple }}>Recommend</span> approving Tier 2 and running a batch payment for all invoices due this week.
+      </p>
+      <button className="text-[10px] text-muted-foreground font-mono shrink-0 self-center border rounded px-1.5 py-0.5 hover:bg-muted/50 transition-colors" style={{ borderColor: C.border }}>
+        ⌘K
+      </button>
+    </div>
+  )
+}
+
+// ─── KPI strip ────────────────────────────────────────────────────────────────
+
+function KpiStrip() {
+  const kpis = [
+    { label: "Days Payable Outstanding", value: "52", unit: "days", change: "+7 vs benchmark", up: true,  color: C.amber },
+    { label: "Total AP Balance",         value: "423k", unit: "MYR",  change: "6 invoices",       up: null, color: C.blue  },
+    { label: "Overdue Amount",           value: "143k", unit: "MYR",  change: "1 invoice past due", up: false, color: C.red  },
+    { label: "Invoices This Month",      value: "6",    unit: "",     change: "↑ 2 vs last month", up: true,  color: C.green },
+  ]
+
   return (
     <Panel>
-      <SectionHeader title="AP Aging" sub="Outstanding balance by age"/>
-      {/* Stacked bar */}
-      <div className="flex rounded-lg overflow-hidden mb-3" style={{ height: 12 }}>
-        {AGING.map((a, i) => (
-          <div key={i} title={`${a.label}: MYR ${fmt(a.amount)}`}
-            style={{ width: `${(a.amount / AGING_TOTAL) * 100}%`, background: a.color }}/>
-        ))}
-      </div>
-      {/* Legend + amounts */}
-      <div className="space-y-2">
-        {AGING.map((a, i) => (
-          <div key={i} className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="size-2.5 rounded-sm shrink-0" style={{ background: a.color }}/>
-              <span className="text-[11px] text-white">{a.label}</span>
-              <span className="text-[10px]" style={{ color: T.dimText }}>{a.days}</span>
-            </div>
-            <div className="text-right">
-              <span className="text-[12px] font-semibold tabular-nums font-mono" style={{ color: a.color }}>
-                {fmtK(a.amount)}
+      <div className="grid grid-cols-4 divide-x" style={{ borderColor: C.border }}>
+        {kpis.map((k, i) => (
+          <div key={i} className="px-5 py-4">
+            <p className="text-[11px] text-muted-foreground mb-2 font-medium">{k.label}</p>
+            <div className="flex items-baseline gap-1.5 mb-1.5">
+              <span className="text-[28px] font-bold leading-none tabular-nums" style={{ color: k.color }}>
+                {k.value}
               </span>
-              <span className="text-[10px] ml-1" style={{ color: T.dimText }}>MYR</span>
+              {k.unit && <span className="text-xs text-muted-foreground font-medium">{k.unit}</span>}
+            </div>
+            <div className="flex items-center gap-1">
+              {k.up === true  && <ArrowUpRight   size={11} style={{ color: k.color }} />}
+              {k.up === false && <ArrowDownRight  size={11} style={{ color: k.color }} />}
+              <span className="text-[11px] text-muted-foreground">{k.change}</span>
             </div>
           </div>
         ))}
-        <div className="flex items-center justify-between pt-2"
-          style={{ borderTop: "0.5px solid rgba(103,100,136,0.3)" }}>
-          <span className="text-[11px] font-semibold text-white">Total Outstanding</span>
-          <span className="text-[13px] font-bold tabular-nums font-mono" style={{ color: T.purple }}>
-            {fmtK(AGING_TOTAL)} MYR
+      </div>
+    </Panel>
+  )
+}
+
+// ─── AP Aging ─────────────────────────────────────────────────────────────────
+
+function AgingSection() {
+  return (
+    <Panel className="p-5">
+      <SectionHead
+        title="AP Aging"
+        sub="Outstanding balance by age"
+        right={
+          <span className="text-[12px] font-semibold tabular-nums" style={{ color: C.purple }}>
+            {fmtK(AGING_TOTAL)} MYR total
           </span>
-        </div>
-      </div>
-    </Panel>
-  )
-}
+        }
+      />
 
-// ─── DPO gauge ────────────────────────────────────────────────────────────────
-
-function DPOGauge({ dpo }: { dpo: number }) {
-  // Arc from -140deg to +140deg, 280deg range
-  const pct  = Math.min(dpo / 90, 1)
-  const angle = -140 + pct * 280
-  const rad   = (angle * Math.PI) / 180
-  const cx = 80, cy = 80, r = 56
-  const mx = cx + r * Math.cos(rad)
-  const my = cy + r * Math.sin(rad)
-  const arcColor = dpo < 30 ? T.teal : dpo < 60 ? T.amber : T.red
-
-  // Arc path helper
-  const arc = (startDeg: number, endDeg: number, color: string, sw: number) => {
-    const s = (startDeg * Math.PI) / 180
-    const e = (endDeg * Math.PI) / 180
-    const x1 = cx + r * Math.cos(s), y1 = cy + r * Math.sin(s)
-    const x2 = cx + r * Math.cos(e), y2 = cy + r * Math.sin(e)
-    const large = endDeg - startDeg > 180 ? 1 : 0
-    return (
-      <path d={`M${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2}`}
-        fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"/>
-    )
-  }
-
-  return (
-    <Panel>
-      <SectionHeader title="Days Payable Outstanding" sub="vs industry benchmark 45 days"/>
-      <div className="flex items-center justify-center">
-        <svg width={160} height={120} viewBox="0 0 160 120">
-          {/* Track */}
-          {arc(-140, 140, "rgba(103,100,136,0.2)", 10)}
-          {/* Good zone */}
-          {arc(-140, -140 + (30/90)*280, T.teal, 10)}
-          {/* Warning zone */}
-          {arc(-140 + (30/90)*280, -140 + (60/90)*280, T.amber, 10)}
-          {/* Critical zone */}
-          {arc(-140 + (60/90)*280, 140, T.red, 10)}
-          {/* Progress fill */}
-          {arc(-140, angle, arcColor, 10)}
-          {/* Needle dot */}
-          <circle cx={mx} cy={my} r={5} fill={arcColor}/>
-          <circle cx={mx} cy={my} r={2.5} fill="#fff"/>
-          {/* Center text */}
-          <text x={cx} y={cy - 2} textAnchor="middle" fill="white" fontSize={22} fontWeight={700} fontFamily="monospace">{dpo}</text>
-          <text x={cx} y={cy + 14} textAnchor="middle" fill={T.dimText} fontSize={9} fontFamily="sans-serif">DAYS</text>
-          {/* Scale labels */}
-          <text x={18} y={110} fill={T.dimText} fontSize={8} fontFamily="monospace">0</text>
-          <text x={69} y={30} fill={T.dimText} fontSize={8} fontFamily="monospace">45</text>
-          <text x={132} y={110} fill={T.dimText} fontSize={8} fontFamily="monospace">90</text>
-        </svg>
-      </div>
-      <div className="flex items-center justify-center gap-2 -mt-1">
-        <span className="text-[10px]" style={{ color: dpo > 45 ? T.amber : T.teal }}>
-          {dpo > 45 ? `${dpo - 45} days above benchmark` : `${45 - dpo} days below benchmark`}
-        </span>
-        {dpo > 45 ? <TrendingUp size={11} style={{ color: T.amber }}/> : <TrendingDown size={11} style={{ color: T.teal }}/>}
-      </div>
-    </Panel>
-  )
-}
-
-// ─── Top vendors ──────────────────────────────────────────────────────────────
-
-function TopVendors() {
-  const statusColor = (s: string) =>
-    s === "overdue" ? T.red : s === "due_3d" ? T.amber : s === "due_7d" ? "#F97316" : T.dimText
-
-  return (
-    <Panel>
-      <SectionHeader title="Top Vendors by Spend" sub="YTD outstanding"/>
-      <div className="space-y-3">
-        {TOP_VENDORS.map((v, i) => (
-          <div key={i}>
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[10px] font-bold tabular-nums w-4 shrink-0"
-                  style={{ color: T.dimText }}>#{i + 1}</span>
-                <span className="text-[11px] font-medium text-white truncate">{v.name}</span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 ml-2">
-                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
-                  style={{ color: statusColor(v.status), background: statusColor(v.status) + "18" }}>
-                  {v.status === "overdue" ? "OVERDUE" : v.status.replace("_", " ≤").replace("d", "d")}
-                </span>
-                <span className="text-[11px] font-bold tabular-nums font-mono" style={{ color: statusColor(v.status) }}>
-                  {fmtK(v.amount)}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 rounded-full overflow-hidden" style={{ height: 5, background: "rgba(255,255,255,0.08)" }}>
-                <div className="h-full rounded-full transition-all"
-                  style={{ width: `${(v.amount / VENDOR_MAX) * 100}%`, background: statusColor(v.status) }}/>
-              </div>
-              <span className="text-[9px] shrink-0" style={{ color: T.dimText }}>{v.invoices} inv</span>
-            </div>
-          </div>
+      {/* Proportional bar */}
+      <div className="flex rounded-full overflow-hidden mb-5" style={{ height: 5, gap: 2 }}>
+        {AGING.map((a, i) => (
+          <div key={i} style={{ flex: a.amount, background: a.color, borderRadius: 99 }} />
         ))}
       </div>
-    </Panel>
-  )
-}
 
-// ─── Cash flow forecast ───────────────────────────────────────────────────────
-
-function CashFlowForecast() {
-  return (
-    <Panel>
-      <SectionHeader title="30-Day Payment Forecast" sub="Projected AP outflows by due date"/>
-      <div className="flex items-end gap-1.5" style={{ height: 100 }}>
-        {CASH_FLOW.map((c, i) => {
-          const h = CF_MAX > 0 ? Math.max(4, (c.amount / CF_MAX) * 84) : 4
-          const color = c.overdue ? T.red : c.amount > 50000 ? T.amber : c.amount > 0 ? T.purple : "transparent"
+      {/* Rows */}
+      <div className="space-y-0">
+        {AGING.map((a, i) => {
+          const pct = (a.amount / AGING_TOTAL) * 100
           return (
-            <div key={i} className="flex flex-col items-center gap-1 flex-1 min-w-0">
-              <div className="relative w-full flex items-end justify-center" style={{ height: 84 }}>
-                {c.amount > 0 && (
-                  <div className="w-full rounded-t-sm relative group cursor-default"
-                    style={{ height: h, background: color, opacity: 0.85 }}>
-                    <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[8px] font-mono px-1.5 py-0.5 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                      MYR {fmt(c.amount)}
-                    </div>
-                  </div>
-                )}
+            <div
+              key={i}
+              className="flex items-center gap-4 py-4"
+              style={{ borderBottom: i < AGING.length - 1 ? `1px solid ${C.border}` : undefined }}
+            >
+              <div className="flex items-center gap-2 w-36 shrink-0">
+                <div className="size-2 rounded-full shrink-0" style={{ background: a.color }} />
+                <span className="text-[12px] font-semibold text-foreground">{a.bucket}</span>
+                <span className="text-[10px] text-muted-foreground">{a.days}</span>
               </div>
-              <span className="text-[8px] text-center leading-tight" style={{ color: c.amount > 0 ? T.dimText : "rgba(103,100,136,0.4)" }}>
-                {c.label}
-              </span>
+
+              {/* Track */}
+              <div className="flex-1 h-2 rounded-full" style={{ background: C.border }}>
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: a.color }} />
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-[11px] text-muted-foreground w-8 text-right tabular-nums">{pct.toFixed(0)}%</span>
+                <span className="text-[14px] font-bold tabular-nums font-mono w-16 text-right" style={{ color: a.color }}>
+                  {fmtK(a.amount)}
+                </span>
+                <span className="text-[11px] text-muted-foreground w-6">MYR</span>
+              </div>
             </div>
           )
         })}
       </div>
-      <div className="flex items-center gap-4 mt-3 pt-3"
-        style={{ borderTop: "0.5px solid rgba(103,100,136,0.25)" }}>
-        {[
-          { color: T.red,    label: "Overdue" },
-          { color: T.amber,  label: ">RM 50k" },
-          { color: T.purple, label: "Scheduled" },
-        ].map((l, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <div className="size-2.5 rounded-sm" style={{ background: l.color }}/>
-            <span className="text-[10px]" style={{ color: T.dimText }}>{l.label}</span>
-          </div>
-        ))}
-        <div className="ml-auto text-right">
-          <span className="text-[10px]" style={{ color: T.dimText }}>Total 30-day: </span>
-          <span className="text-[11px] font-bold font-mono" style={{ color: T.purple }}>
-            MYR {fmtK(CASH_FLOW.reduce((s, c) => s + c.amount, 0))}
-          </span>
+    </Panel>
+  )
+}
+
+// ─── DPO ──────────────────────────────────────────────────────────────────────
+
+function DPOSection({ dpo }: { dpo: number }) {
+  const pct = Math.min((dpo / 90) * 100, 100)
+  const data = [{ dpo: pct, fill: C.amber }]
+
+  return (
+    <Panel className="p-5 flex flex-col">
+      <SectionHead title="Days Payable Outstanding" sub="vs benchmark 45 days" />
+
+      <ChartContainer config={dpoCfg} className="mx-auto w-full" style={{ height: 200 }}>
+        <RadialBarChart data={data} startAngle={180} endAngle={180 - (pct / 100) * 180} innerRadius={65} outerRadius={90} margin={{ top: 20, bottom: 0, left: 0, right: 0 }}>
+          <PolarGrid gridType="circle" radialLines={false} stroke="none"
+            className="first:fill-muted last:fill-background" polarRadius={[82, 70]} />
+          <RadialBar dataKey="dpo" background cornerRadius={4} />
+          <PolarRadiusAxis tick={false} tickLine={false} axisLine={false}>
+            <Label
+              content={({ viewBox }) => {
+                if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                  return (
+                    <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle">
+                      <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) - 4}
+                        style={{ fontSize: 32, fontWeight: 700, fill: C.amber }}>
+                        {dpo}
+                      </tspan>
+                      <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 16}
+                        style={{ fontSize: 10, fill: C.muted, fontWeight: 500 }}>
+                        DAYS
+                      </tspan>
+                    </text>
+                  )
+                }
+              }}
+            />
+          </PolarRadiusAxis>
+        </RadialBarChart>
+      </ChartContainer>
+
+      <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${C.border}` }}>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label: "Actual", value: dpo,  color: C.amber },
+            { label: "Benchmark", value: 45, color: C.teal  },
+          ].map((s, i) => (
+            <div key={i} className="text-center">
+              <p className="text-[22px] font-bold tabular-nums leading-none" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">{s.label} (days)</p>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-center gap-1 mt-3">
+          <TrendingUp size={12} style={{ color: C.amber }} />
+          <span className="text-[11px]" style={{ color: C.amber }}>{dpo - 45} days above benchmark</span>
         </div>
       </div>
     </Panel>
   )
 }
 
-// ─── Project burn rates ───────────────────────────────────────────────────────
+// ─── Top Vendors ──────────────────────────────────────────────────────────────
 
-function ProjectBurnRates() {
+function VendorsSection() {
   return (
-    <Panel>
-      <SectionHeader title="Project Burn Rates" sub="Budget vs committed vs paid"/>
-      <div className="space-y-5">
+    <Panel className="p-5">
+      <SectionHead title="Top Vendors by Spend" sub="YTD outstanding balance" />
+
+      <ChartContainer config={vendorCfg} className="w-full" style={{ height: 148 }}>
+        <BarChart data={TOP_VENDORS} layout="vertical" margin={{ left: 0, right: 40, top: 0, bottom: 0 }} accessibilityLayer>
+          <CartesianGrid horizontal={false} stroke={C.border} strokeDasharray="3 3" />
+          <YAxis dataKey="shortName" type="category" tickLine={false} axisLine={false} width={58}
+            tick={{ fontSize: 10, fill: C.muted }} />
+          <XAxis type="number" hide />
+          <ChartTooltip cursor={{ fill: C.surfaceMuted }}
+            content={
+              <ChartTooltipContent
+                hideLabel
+                formatter={(value, _, item) => (
+                  <span className="text-xs">{item.payload.name} · MYR {fmt(Number(value))}</span>
+                )}
+              />
+            }
+          />
+          <Bar dataKey="amount" radius={[0, 3, 3, 0]} maxBarSize={16}>
+            {TOP_VENDORS.map((v, i) => <Cell key={i} fill={vendorColor(v.status)} fillOpacity={0.85} />)}
+          </Bar>
+        </BarChart>
+      </ChartContainer>
+
+      <div className="mt-3 space-y-0">
+        {TOP_VENDORS.map((v, i) => {
+          const share = ((v.amount / VENDOR_TOTAL) * 100).toFixed(0)
+          const vc = vendorColor(v.status)
+          return (
+            <div
+              key={i}
+              className="flex items-center justify-between py-2"
+              style={{ borderTop: i > 0 ? `1px solid ${C.border}` : undefined }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[10px] font-mono text-muted-foreground w-4 shrink-0">{i + 1}</span>
+                <span className="text-[12px] text-foreground truncate">{v.name}</span>
+              </div>
+              <div className="flex items-center gap-2.5 shrink-0 ml-2">
+                <span className="text-[10px] text-muted-foreground">{share}%</span>
+                <span className="text-[10px] font-medium" style={{ color: vc }}>{vendorLabel(v.status)}</span>
+                <span className="text-[12px] font-bold tabular-nums font-mono" style={{ color: vc }}>{fmtK(v.amount)}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Panel>
+  )
+}
+
+// ─── Cash Flow ────────────────────────────────────────────────────────────────
+
+function CashFlowSection() {
+  const total = CASH_FLOW.reduce((s, c) => s + c.amount, 0)
+
+  return (
+    <Panel className="p-5">
+      <SectionHead
+        title="30-Day Payment Forecast"
+        sub="Projected AP outflows by due date"
+        right={
+          <span className="text-[12px] font-semibold tabular-nums" style={{ color: C.purple }}>
+            MYR {fmtK(total)} total
+          </span>
+        }
+      />
+
+      <ChartContainer config={cashCfg} className="w-full" style={{ height: 180 }}>
+        <BarChart data={CASH_FLOW} margin={{ left: 0, right: 0, top: 4, bottom: 0 }} accessibilityLayer>
+          <CartesianGrid vertical={false} stroke={C.border} strokeDasharray="3 3" />
+          <XAxis dataKey="label" tickLine={false} axisLine={false}
+            tick={{ fontSize: 8, fill: C.muted }} tickMargin={4} />
+          <YAxis hide />
+          <ReferenceLine y={CASH_AVG} stroke={C.blue} strokeDasharray="4 3" strokeWidth={1}
+            label={{ value: "avg", position: "insideTopRight", fontSize: 8, fill: C.blue }} />
+          <ChartTooltip cursor={{ fill: C.surfaceMuted }}
+            content={<ChartTooltipContent formatter={(v) => `MYR ${fmt(Number(v))}`} labelFormatter={l => l} />}
+          />
+          <Bar dataKey="amount" radius={[2, 2, 0, 0]} maxBarSize={22}>
+            {CASH_FLOW.map((c, i) => (
+              <Cell key={i}
+                fill={c.overdue ? C.red : c.amount > 50000 ? C.amber : c.amount > 0 ? C.purple : "transparent"}
+                fillOpacity={0.8}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ChartContainer>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-3 pt-3" style={{ borderTop: `1px solid ${C.border}` }}>
+        {[{ c: C.red, l: "Overdue" }, { c: C.amber, l: ">RM 50k" }, { c: C.purple, l: "Scheduled" }].map((x, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <div className="size-2 rounded-sm" style={{ background: x.c, opacity: 0.8 }} />
+            <span className="text-[10px] text-muted-foreground">{x.l}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Upcoming payments list */}
+      <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${C.border}` }}>
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-3">Upcoming payments</p>
+        <div className="space-y-0">
+          {CASH_FLOW.filter(c => c.amount > 0).slice(0, 4).map((c, i) => (
+            <div key={i} className="flex items-center justify-between py-2 -mx-1 px-1 rounded-md hover:bg-muted/40 transition-colors cursor-default"
+              style={{ borderTop: i > 0 ? `1px solid ${C.border}` : undefined }}>
+              <div className="flex items-center gap-2">
+                <div className="size-1.5 rounded-full shrink-0"
+                  style={{ background: c.overdue ? C.red : c.amount > 50000 ? C.amber : C.purple }} />
+                <span className="text-[11px] text-foreground">{c.label}</span>
+                {c.overdue && (
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                    style={{ background: `${C.red}12`, color: C.red }}>Overdue</span>
+                )}
+              </div>
+              <span className="text-[12px] font-bold tabular-nums font-mono"
+                style={{ color: c.overdue ? C.red : c.amount > 50000 ? C.amber : C.purple }}>
+                {fmtK(c.amount)} MYR
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
+// ─── Project Burn Rates ───────────────────────────────────────────────────────
+
+function BurnSection() {
+  return (
+    <Panel className="p-5">
+      <SectionHead title="Project Burn Rates" sub="Budget · committed · paid" />
+
+      <div className="space-y-6">
         {PROJECTS.map((p, i) => {
           const committedPct = (p.committed / p.budget) * 100
-          const paidPct      = (p.paid / p.budget) * 100
+          const paidPct      = (p.paid      / p.budget) * 100
           const remaining    = p.budget - p.committed
-          const burnColor    = committedPct > 85 ? T.red : committedPct > 60 ? T.amber : T.teal
+          const burnColor    = committedPct > 85 ? C.red : committedPct > 60 ? C.amber : C.teal
 
           return (
             <div key={i}>
               <div className="flex items-start justify-between mb-2">
-                <div>
-                  <div className="text-[12px] font-semibold text-white leading-snug">{p.name}</div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[9px] font-mono" style={{ color: T.dimText }}>{p.code}</span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded"
-                      style={{ background: "rgba(255,255,255,0.07)", color: T.dimText }}>{p.cc}</span>
+                <div className="min-w-0 pr-4">
+                  <p className="text-[12px] font-semibold leading-snug text-foreground">{p.name}</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[9px] font-mono text-muted-foreground">{p.code}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1.5 font-medium">{p.cc}</Badge>
                   </div>
                 </div>
-                <div className="text-right shrink-0 ml-2">
-                  <div className="text-[11px] font-bold font-mono" style={{ color: burnColor }}>
+                <div className="shrink-0 text-right">
+                  <span className="text-[18px] font-bold tabular-nums leading-none" style={{ color: burnColor }}>
                     {committedPct.toFixed(0)}%
-                  </div>
-                  <div className="text-[9px]" style={{ color: T.dimText }}>committed</div>
+                  </span>
+                  <p className="text-[9px] text-muted-foreground">committed</p>
                 </div>
               </div>
 
-              {/* Budget bar */}
-              <div className="rounded-full overflow-hidden mb-1.5" style={{ height: 8, background: "rgba(255,255,255,0.08)" }}>
-                <div className="h-full relative rounded-full overflow-hidden"
-                  style={{ width: `${committedPct}%`, background: burnColor }}>
-                  {paidPct > 0 && (
-                    <div className="absolute left-0 top-0 h-full rounded-full"
-                      style={{ width: `${(paidPct / committedPct) * 100}%`, background: "rgba(255,255,255,0.4)" }}/>
-                  )}
-                </div>
+              {/* Track */}
+              <div className="relative h-1.5 rounded-full mb-3" style={{ background: C.border }}>
+                <div className="absolute inset-y-0 left-0 rounded-full"
+                  style={{ width: `${committedPct}%`, background: burnColor, opacity: 0.25 }} />
+                <div className="absolute inset-y-0 left-0 rounded-full"
+                  style={{ width: `${paidPct}%`, background: burnColor }} />
               </div>
 
-              {/* Stats row */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2 text-center">
                 {[
-                  { label: "Budget",     value: fmtK(p.budget),    color: "rgba(255,255,255,0.5)" },
-                  { label: "Committed",  value: fmtK(p.committed), color: burnColor },
-                  { label: "Remaining",  value: fmtK(remaining),   color: remaining < p.budget * 0.15 ? T.red : T.teal },
+                  { l: "Budget",    v: fmtK(p.budget),    c: "hsl(var(--foreground))" },
+                  { l: "Committed", v: fmtK(p.committed), c: burnColor },
+                  { l: "Remaining", v: fmtK(remaining),   c: remaining < p.budget * 0.15 ? C.red : C.teal },
                 ].map((s, j) => (
-                  <div key={j} className="text-center">
-                    <div className="text-[11px] font-bold font-mono tabular-nums" style={{ color: s.color }}>
-                      {s.value}
-                    </div>
-                    <div className="text-[9px]" style={{ color: T.dimText }}>{s.label}</div>
+                  <div key={j} className="py-3 rounded-lg" style={{ background: C.surfaceMuted }}>
+                    <p className="text-[15px] font-bold tabular-nums font-mono" style={{ color: s.c }}>{s.v}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{s.l}</p>
                   </div>
                 ))}
               </div>
@@ -388,48 +504,51 @@ function ProjectBurnRates() {
   )
 }
 
-// ─── Control health ───────────────────────────────────────────────────────────
+// ─── Control Health ───────────────────────────────────────────────────────────
 
-function ControlHealth() {
-  const statusIcon = (s: string) =>
-    s === "good"     ? <CheckCircle2 size={12} style={{ color: T.teal  }} strokeWidth={2}/>
-    : s === "warning"  ? <AlertTriangle size={12} style={{ color: T.amber }} strokeWidth={2}/>
-    : <XCircle size={12} style={{ color: T.red }} strokeWidth={2}/>
-
-  const statusColor = (s: string) =>
-    s === "good" ? T.teal : s === "warning" ? T.amber : T.red
-
-  const scoreColor = AVG_HEALTH >= 80 ? T.teal : AVG_HEALTH >= 60 ? T.amber : T.red
+function ControlSection() {
+  const scoreColor = AVG_HEALTH >= 80 ? C.teal : AVG_HEALTH >= 60 ? C.amber : C.red
 
   return (
-    <Panel>
+    <Panel className="p-5">
       <div className="flex items-start justify-between mb-4">
-        <SectionHeader title="Control Health Score" sub="AP compliance & risk controls"/>
-        <div className="flex flex-col items-center shrink-0 ml-3">
-          <div className="text-[28px] font-black tabular-nums leading-none" style={{ color: scoreColor }}>
-            {AVG_HEALTH}
-          </div>
-          <div className="text-[9px] font-semibold uppercase tracking-wider mt-0.5" style={{ color: scoreColor }}>
+        <div>
+          <h2 className="text-[13px] font-semibold tracking-tight">Control Health Score</h2>
+          <p className="text-[11px] text-muted-foreground mt-0.5">AP compliance & risk controls</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[36px] font-black leading-none tabular-nums" style={{ color: scoreColor }}>{AVG_HEALTH}</p>
+          <p className="text-[9px] font-semibold uppercase tracking-wide mt-0.5" style={{ color: scoreColor }}>
             {AVG_HEALTH >= 80 ? "Healthy" : AVG_HEALTH >= 60 ? "Needs Attention" : "Critical"}
-          </div>
+          </p>
         </div>
       </div>
 
-      <div className="space-y-2">
+      {/* Scale bar */}
+      <div className="relative h-1.5 rounded-full mb-4" style={{ background: C.border }}>
+        <div className="h-full rounded-full" style={{ width: `${AVG_HEALTH}%`, background: scoreColor }} />
+        <div className="absolute top-1/2 -translate-y-1/2 size-3 rounded-full border-2 border-white shadow"
+          style={{ left: `${AVG_HEALTH}%`, transform: "translate(-50%, -50%)", background: scoreColor }} />
+      </div>
+
+      <div className="space-y-0.5">
         {CONTROLS.map((c, i) => (
-          <div key={i} className="flex items-center gap-3 py-2 rounded-lg px-2.5 -mx-2.5 transition-colors hover:bg-white/5">
-            <div className="shrink-0">{statusIcon(c.status)}</div>
+          <div
+            key={i}
+            className="flex items-center gap-3 py-2.5 -mx-2 px-2 rounded-md cursor-default transition-colors hover:bg-muted/50"
+          >
+            <div className="shrink-0">{controlIcon(c.status)}</div>
             <div className="flex-1 min-w-0">
-              <div className="text-[11px] font-medium text-white truncate">{c.label}</div>
-              <div className="text-[10px] mt-0.5 leading-snug" style={{ color: T.dimText }}>{c.detail}</div>
+              <p className="text-[11px] font-medium text-foreground leading-none">{c.label}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{c.detail}</p>
             </div>
-            <div className="shrink-0 flex items-center gap-2">
-              <div className="rounded-full overflow-hidden" style={{ width: 48, height: 4, background: "rgba(255,255,255,0.08)" }}>
-                <div className="h-full rounded-full"
-                  style={{ width: `${c.score}%`, background: statusColor(c.status) }}/>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="w-12 h-1 rounded-full" style={{ background: C.border }}>
+                <div className="h-full rounded-full" style={{ width: `${c.score}%`, background: controlColor(c.status) }} />
               </div>
-              <span className="text-[10px] font-bold tabular-nums w-7 text-right"
-                style={{ color: statusColor(c.status) }}>{c.score}</span>
+              <span className="text-[11px] font-bold w-6 text-right tabular-nums" style={{ color: controlColor(c.status) }}>
+                {c.score}
+              </span>
             </div>
           </div>
         ))}
@@ -438,69 +557,45 @@ function ControlHealth() {
   )
 }
 
-// ─── AI summary bar ───────────────────────────────────────────────────────────
-
-function AIBar() {
-  return (
-    <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl"
-      style={{ background: "rgba(93,94,244,0.12)", border: "0.5px solid rgba(93,94,244,0.3)" }}>
-      <Sparkles size={14} style={{ color: "#9EACFE", flexShrink: 0, marginTop: 1 }} strokeWidth={2}/>
-      <div className="flex-1">
-        <span className="text-[12px] leading-relaxed" style={{ color: "#C4C9FF" }}>
-          <strong style={{ color: "#fff" }}>Critical:</strong> RM 142,800 overdue — Tech Solutions invoice requires immediate payment.{" "}
-          Control health at {AVG_HEALTH}/100 — e-invoice compliance and overdue rate pulling the score down.{" "}
-          <strong style={{ color: "#fff" }}>Recommend:</strong> approve Tier 2 today and batch payment run for all due-this-week invoices to recover DPO.
-        </span>
-      </div>
-      <kbd className="text-[11px] font-mono shrink-0 self-center" style={{ color: "rgba(255,255,255,0.3)" }}>⌘K</kbd>
-    </div>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
   return (
-    <div className="flex flex-col min-h-0" style={{ height: "calc(100vh - 20px)", overflowY: "auto" }}>
-      <div className="flex flex-col gap-4 p-4 pb-8">
+    <div className="h-full overflow-y-auto" style={{ background: "#F9FAFB" }}>
+      <div className="max-w-[1400px] flex flex-col gap-5 p-6 pb-12">
 
         {/* Header */}
-        <div className="shrink-0 pb-4" style={{ borderBottom: `1px solid ${T.border}` }}>
-          <div className="flex items-center gap-1 mb-1.5">
-            <span className="text-[12px] font-light" style={{ color: "rgba(255,255,255,0.5)" }}>AP</span>
-            <ChevronRight size={10} color="rgba(255,255,255,0.35)" strokeWidth={2}/>
-            <span className="text-[12px] font-light text-white">Spend & Project Analysis</span>
+        <div>
+          <div className="flex items-center gap-1 mb-1 text-[11px] text-muted-foreground">
+            <span>AP</span>
+            <ChevronRight size={10} strokeWidth={2} />
+            <span className="text-foreground">Spend & Project Analysis</span>
           </div>
-          <h1 className="text-[18px] font-semibold text-white">Spend & Project Analysis</h1>
+          <h1 className="text-[20px] font-semibold tracking-tight text-foreground">Spend & Project Analysis</h1>
         </div>
 
         {/* AI bar */}
-        <AIBar/>
+        <AIBar />
 
         {/* KPI strip */}
-        <div className="grid grid-cols-4 gap-3">
-          <KpiCard label="Days Payable Outstanding" value={52}  unit="days"    sub="vs 45d benchmark" trend="up"   color={T.amber}  />
-          <KpiCard label="Total AP Balance"          value="423k" unit="MYR"   sub="6 invoices"       trend="flat" color={T.purple} />
-          <KpiCard label="Overdue Amount"            value="143k" unit="MYR"   sub="1 invoice"        trend="down" color={T.red}    />
-          <KpiCard label="Invoices This Month"       value={6}   unit=""        sub="↑ 2 vs last month" trend="up" color={T.teal}   />
-        </div>
+        <KpiStrip />
 
         {/* Row 1: Aging + DPO */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="col-span-2"><AgingChart/></div>
-          <DPOGauge dpo={52}/>
+        <div className="grid grid-cols-3 gap-5">
+          <div className="col-span-2"><AgingSection /></div>
+          <DPOSection dpo={52} />
         </div>
 
-        {/* Row 2: Top vendors + Cash flow */}
-        <div className="grid grid-cols-2 gap-4">
-          <TopVendors/>
-          <CashFlowForecast/>
+        {/* Row 2: Vendors + Cash flow */}
+        <div className="grid grid-cols-2 gap-5">
+          <VendorsSection />
+          <CashFlowSection />
         </div>
 
-        {/* Row 3: Project burn + Control health */}
-        <div className="grid grid-cols-2 gap-4">
-          <ProjectBurnRates/>
-          <ControlHealth/>
+        {/* Row 3: Burn + Controls */}
+        <div className="grid grid-cols-2 gap-5">
+          <BurnSection />
+          <ControlSection />
         </div>
 
       </div>

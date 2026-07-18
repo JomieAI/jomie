@@ -52,6 +52,9 @@ export interface InvoiceListItem {
   payment_type?: string | null
   work_order_ref?: string | null
   low_gl_confidence_count?: number  // count of line items with gl_confidence < 0.85
+  invoice_category?: string | null
+  risk_level?: "pass" | "warning" | "fail" | "none"
+  risk_count?: number
 }
 
 export interface LineItemRow {

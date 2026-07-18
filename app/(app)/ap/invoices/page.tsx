@@ -8,6 +8,8 @@ import {
   AlertTriangle, Star, Globe, Building2,
   CheckCircle2, XCircle, RefreshCw, Mail, Zap, MoreHorizontal,
   ExternalLink, FileText, FileImage,
+  Users, Landmark, Truck, Wrench,
+  Briefcase, HeartPulse, Receipt,
 } from "lucide-react"
 import { InvoiceDetailPanel } from "./InvoiceDetailPanel"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -329,9 +331,95 @@ function InvoicePanel({ invoice }: { invoice: Invoice | null }) {
   )
 }
 
+// ─── Invoice list helpers ─────────────────────────────────────────────────────
+
+function urgencyDue(inv: Invoice): React.ReactNode {
+  const bucket = (inv.urgency_bucket ?? "future") as UrgencyBucket
+  if (!inv.due_date) return <span className="text-[12px] text-muted-foreground/40">—</span>
+  const d = new Date(inv.due_date)
+  const now = new Date()
+  const diffDays = Math.ceil((d.getTime() - now.getTime()) / 86400000)
+  const formatted = d.toLocaleDateString("en-MY", { day: "numeric", month: "short" })
+  if (bucket === "overdue") {
+    return (
+      <div>
+        <div className="text-[12px] font-semibold text-destructive tabular-nums">{Math.abs(diffDays)}d overdue</div>
+        <div className="text-[10px] text-muted-foreground/50 tabular-nums">{formatted}</div>
+      </div>
+    )
+  }
+  if (bucket === "due_3d") {
+    return (
+      <div>
+        <div className="text-[12px] font-semibold text-destructive tabular-nums">{diffDays}d left</div>
+        <div className="text-[10px] text-muted-foreground/50 tabular-nums">{formatted}</div>
+      </div>
+    )
+  }
+  if (bucket === "due_7d") {
+    return (
+      <div>
+        <div className="text-[12px] font-semibold text-warning tabular-nums">{diffDays}d left</div>
+        <div className="text-[10px] text-muted-foreground/50 tabular-nums">{formatted}</div>
+      </div>
+    )
+  }
+  return <div className="text-[12px] text-muted-foreground tabular-nums">{formatted}</div>
+}
+
+function riskSignal(inv: Invoice): React.ReactNode {
+  const level = inv.risk_level ?? "none"
+  const count = inv.risk_count ?? 0
+  if (level === "pass") {
+    return <div className="flex items-center justify-center"><div className="size-2 rounded-full bg-success/60" /></div>
+  }
+  if (level === "warning") {
+    return (
+      <div className="flex flex-col items-center gap-0.5">
+        <AlertTriangle size={12} className="text-warning" strokeWidth={2} />
+        {count > 0 && <span className="text-[9px] font-bold text-warning tabular-nums leading-none">{count}</span>}
+      </div>
+    )
+  }
+  if (level === "fail") {
+    return (
+      <div className="flex flex-col items-center gap-0.5">
+        <XCircle size={12} className="text-destructive" strokeWidth={2} />
+        {count > 0 && <span className="text-[9px] font-bold text-destructive tabular-nums leading-none">{count}</span>}
+      </div>
+    )
+  }
+  return null
+}
+
+const CATEGORY_ICON: Record<string, React.ReactNode> = {
+  it_services:           <Wrench size={16} strokeWidth={1.6} className="text-primary" />,
+  professional_services: <Briefcase size={16} strokeWidth={1.6} className="text-primary" />,
+  supplies:              <Truck size={16} strokeWidth={1.6} className="text-muted-foreground" />,
+  utilities:             <Zap size={16} strokeWidth={1.6} className="text-warning" />,
+  travel:                <Truck size={16} strokeWidth={1.6} className="text-muted-foreground" />,
+  financial:             <Landmark size={16} strokeWidth={1.6} className="text-muted-foreground" />,
+  payroll:               <Users size={16} strokeWidth={1.6} className="text-muted-foreground" />,
+  subscription:          <RefreshCw size={16} strokeWidth={1.6} className="text-muted-foreground" />,
+  rent:                  <Building2 size={16} strokeWidth={1.6} className="text-muted-foreground" />,
+  insurance:             <HeartPulse size={16} strokeWidth={1.6} className="text-muted-foreground" />,
+  foreign:               <Globe size={16} strokeWidth={1.6} className="text-primary" />,
+}
+
+function categoryIcon(inv: Invoice): React.ReactNode {
+  const cat = inv.invoice_category ?? (inv.origin === "foreign" ? "foreign" : "")
+  const icon = CATEGORY_ICON[cat] ?? <Receipt size={16} strokeWidth={1.6} className="text-muted-foreground" />
+  const isPrimary = cat === "it_services" || cat === "professional_services" || cat === "foreign"
+  return (
+    <div className={cn("size-9 rounded-lg flex items-center justify-center shrink-0", isPrimary ? "bg-primary/10" : "bg-muted")}>
+      {icon}
+    </div>
+  )
+}
+
 // ─── Invoice list card ────────────────────────────────────────────────────────
 
-const ROW_GRID = "1fr 90px 36px 120px 28px"
+const ROW_GRID = "1fr 100px 56px 120px 28px"
 
 function InvoiceRow({
   inv, selected, onSelect,
@@ -344,7 +432,6 @@ function InvoiceRow({
   const [menuOpen, setMenuOpen] = React.useState(false)
   const isSel = selected?.id === inv.id
   const amountStr = (inv.total_myr ?? 0).toLocaleString("en-MY", { minimumFractionDigits: 2 })
-  const dateStr = formatInvoiceDate((inv as any).invoice_date ?? inv.due_date)
   return (
     <div
       onClick={() => onSelect(inv)}
@@ -352,11 +439,7 @@ function InvoiceRow({
       style={{ gridTemplateColumns: ROW_GRID }}
     >
       <div className="flex items-center gap-3 min-w-0">
-        <div className={cn("size-9 rounded-lg flex items-center justify-center shrink-0", inv.origin === "foreign" ? "bg-primary/10" : "bg-muted")}>
-          {inv.origin === "foreign"
-            ? <Globe size={16} className="text-primary" strokeWidth={1.6} />
-            : <Building2 size={16} className="text-muted-foreground" strokeWidth={1.6} />}
-        </div>
+        {categoryIcon(inv)}
         <div className="min-w-0">
           <div className="text-[13.5px] font-semibold text-foreground truncate leading-snug">{toTitleCase(inv.vendor_name_raw ?? "")}</div>
           <div className="flex items-center gap-1.5 mt-0.5">
@@ -374,8 +457,8 @@ function InvoiceRow({
           </div>
         </div>
       </div>
-      <div className="text-[12px] text-muted-foreground tabular-nums" style={{ textAlign: "left" }}>{dateStr}</div>
-      <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wide" style={{ textAlign: "left" }}>MYR</div>
+      <div style={{ textAlign: "left" }}>{urgencyDue(inv)}</div>
+      <div className="flex items-center justify-center">{riskSignal(inv)}</div>
       <div className="text-[13.5px] font-semibold text-foreground tabular-nums" style={{ textAlign: "left" }}>{amountStr}</div>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
@@ -447,7 +530,7 @@ function InvoiceListCard({
       </div>
       {/* Column headers */}
       <div className="grid items-center gap-4 mx-4 px-2 py-2.5 border-b border-border/20" style={{ gridTemplateColumns: ROW_GRID }}>
-        {(["VENDOR / INVOICE", "DATE", "", "AMOUNT", ""] as const).map((h, i) => (
+        {(["VENDOR / INVOICE", "DUE", "RISK", "AMOUNT", ""] as const).map((h, i) => (
           <div key={i} className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60" style={{ textAlign: "left" }}>{h}</div>
         ))}
       </div>
