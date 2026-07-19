@@ -134,9 +134,10 @@ const SUB_NAV: SubNavGroup[] = [
     moduleKey: "accounts-payable",
     sectionLabel: "Accounts Payable",
     items: [
-      { label: "Invoice Inbox",   href: "/ap/invoices",      badge: 3, badgeVariant: "red"   },
-      { label: "Registrations",  href: "/ap/registrations", badge: 7, badgeVariant: "amber" },
-      { label: "Payment Runs",    href: "/ap/payment-runs" },
+      { label: "Invoice Inbox",    href: "/ap/invoices",           badge: 3, badgeVariant: "red"   },
+      { label: "Payment Request",  href: "/ap/payment-requests",   badge: 2, badgeVariant: "amber" },
+      { label: "Registrations",    href: "/ap/registrations",      badge: 7, badgeVariant: "amber" },
+      { label: "Payment Runs",     href: "/ap/payment-runs" },
       { label: "Payment History", href: "/ap/payment-history" },
       { label: "Spend Analysis",  href: "/ap/analytics" },
     ],

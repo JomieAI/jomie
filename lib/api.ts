@@ -55,6 +55,42 @@ export interface InvoiceListItem {
   invoice_category?: string | null
   risk_level?: "pass" | "warning" | "fail" | "none"
   risk_count?: number
+  // Payment Request fields
+  pr_number?: string
+  requestor_name?: string
+  payment_needed_by?: string
+  urgency_level?: 'normal' | 'urgent' | 'critical'
+  intake_channel?: 'form' | 'email'
+  is_recurring?: boolean
+  recurring_frequency?: string
+  sla_warning?: string
+  comment_thread?: CommentThreadItem[]
+  approval_steps?: ApprovalStep[]
+}
+
+export interface CommentThreadItem {
+  id: string
+  type: 'activity' | 'comment'
+  timestamp: string
+  description?: string
+  author?: string
+  role?: string
+  message?: string
+  is_query?: boolean
+  resolved?: boolean
+  resolved_by?: string
+  attachment?: string
+}
+
+export interface ApprovalStep {
+  title: string
+  status: 'completed' | 'current' | 'pending' | 'skipped'
+  assignee?: string
+  timestamp?: string
+  note?: string
+  sla?: string
+  sla_at_risk?: boolean
+  skip_reason?: string
 }
 
 export interface LineItemRow {
