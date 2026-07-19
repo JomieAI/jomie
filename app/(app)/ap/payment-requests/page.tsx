@@ -13,6 +13,7 @@ import {
 import {
   getMockInvoices,
   getMockMetrics,
+  getMockCompliance,
   DEFAULT_PINNED_METRICS,
 } from "@/lib/mock"
 import type { InvoiceListItem, InvoiceStatus, ApprovalStep, CommentThreadItem } from "@/lib/api"
@@ -242,7 +243,7 @@ function RequestListItem({
 
 // ─── Details Tab ──────────────────────────────────────────────────────────────
 
-function DetailsTab({ invoice }: { invoice: InvoiceListItem }) {
+function DetailsTab({ invoice, onTabChange }: { invoice: InvoiceListItem; onTabChange?: (tab: string) => void }) {
   const inv = invoice as any
 
   const vendorFields = [
@@ -304,7 +305,40 @@ function DetailsTab({ invoice }: { invoice: InvoiceListItem }) {
             <p className="text-[12px] text-amber-700 mt-0.5" style={{ fontFamily: "Inter" }}>
               {inv.risk_count} compliance warning{inv.risk_count !== 1 ? "s" : ""} detected. Review before approving.
             </p>
+            <button
+              className="text-[11px] text-[#5d5ef4] hover:underline cursor-pointer mt-2 block"
+              style={{ fontFamily: "Inter" }}
+              onClick={() => onTabChange?.("checks")}>
+              View All Checks →
+            </button>
           </div>
+        </div>
+      )}
+
+      {/* Jomie Compliance Summary */}
+      {inv.risk_level && (
+        <div className="bg-gradient-to-r from-[#f7f7fe] to-[#eef0ff] border border-[#c7c9fb] rounded-[12px] p-4 mb-5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>
+              ✦ Jomie Compliance
+            </span>
+            <span className="text-[20px] font-bold text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>
+              {inv.risk_level === "pass" ? "92" : inv.risk_level === "warning" ? "78" : "45"} / 100
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full bg-[#eaecf0] overflow-hidden mb-2">
+            <div className="h-full rounded-full bg-[#5d5ef4] transition-all"
+                 style={{ width: inv.risk_level === "pass" ? "92%" : inv.risk_level === "warning" ? "78%" : "45%" }} />
+          </div>
+          <p className="text-[11px] text-[#667085] mb-2" style={{ fontFamily: "Inter" }}>
+            {inv.risk_level === "pass" ? "All checks passed" : `${inv.risk_count} warning${inv.risk_count !== 1 ? "s" : ""} detected`}
+          </p>
+          <button
+            className="text-[11px] text-[#5d5ef4] hover:underline cursor-pointer"
+            style={{ fontFamily: "Inter" }}
+            onClick={() => onTabChange?.("checks")}>
+            View All Checks →
+          </button>
         </div>
       )}
 
@@ -451,38 +485,41 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
 
 // ─── Checks Tab ───────────────────────────────────────────────────────────────
 
-const MOCK_CHECKS = [
-  {
-    category: "Document",
-    checks: [
-      { title: "Invoice number format valid", status: "pass",    detail: "NA0626-0023 matches vendor format." },
-      { title: "Duplicate invoice check",     status: "warning", detail: "Similar invoice NA0526-0010 found (May).", badge: "Possible Dup" },
-      { title: "DO received & signed",        status: "warning", detail: "DO0626-0020 received but not signed back.", badge: "Missing Sign-off" },
-    ],
-  },
-  {
-    category: "Compliance",
-    checks: [
-      { title: "e-Invoice verified (MyInvois)", status: "pass",    detail: "Verified against MyInvois portal." },
-      { title: "Vendor TIN active",             status: "pass",    detail: "C10836440020 is active." },
-      { title: "GL coding confidence > 85%",    status: "warning", detail: "Line item #5 has 88% confidence.", badge: "Low Confidence" },
-    ],
-  },
-  {
-    category: "Payment",
-    checks: [
-      { title: "Within payment terms",  status: "pass", detail: "Due date within 30-day terms." },
-      { title: "Approval route set",    status: "pass", detail: "Auto-determined: FM approval required." },
-    ],
-  },
-]
+const CATEGORY_LABEL_MAP: Record<string, string> = {
+  document_completeness:  "Document Completeness",
+  vendor_integrity:       "Vendor Integrity",
+  financial_accuracy:     "Financial Accuracy",
+  approval_authorisation: "Approval & Authorisation",
+  tax_compliance:         "Tax Compliance",
+  project_costing:        "Project & Costing",
+}
 
 function ChecksTab({ invoice }: { invoice: InvoiceListItem }) {
-  const inv = invoice as any
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
-  const passCount = MOCK_CHECKS.flatMap(c => c.checks).filter(c => c.status === "pass").length
-  const warnCount = MOCK_CHECKS.flatMap(c => c.checks).filter(c => c.status === "warning").length
-  const score = Math.round((passCount / (passCount + warnCount)) * 100)
+  const checks = getMockCompliance(invoice.id) ?? []
+
+  const grouped = checks.reduce((acc: Record<string, any[]>, c: any) => {
+    const cat = c.category ?? "Other"
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(c)
+    return acc
+  }, {})
+
+  const passCount = checks.filter((c: any) => c.result === "pass").length
+  const warnCount = checks.filter((c: any) => c.result === "warning").length
+  const failCount = checks.filter((c: any) => c.result === "fail").length
+  const total = checks.length || 1
+  const score = Math.round((passCount / total) * 100)
+
+  if (checks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <FileText size={40} className="text-[#d0d5dd] mb-3" />
+        <p className="text-[14px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>No compliance checks</p>
+        <p className="text-[13px] text-[#667085] mt-1" style={{ fontFamily: "Inter" }}>Checks will appear after processing.</p>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -496,17 +533,17 @@ function ChecksTab({ invoice }: { invoice: InvoiceListItem }) {
           <div className="h-full rounded-full bg-[#5d5ef4] transition-all duration-500" style={{ width: `${score}%` }} />
         </div>
         <p className="text-[11px] text-[#667085]" style={{ fontFamily: "Inter" }}>
-          {passCount} passed · {warnCount} warnings · 0 critical
+          {passCount} passed · {warnCount} warnings · {failCount} critical
         </p>
       </div>
 
-      {MOCK_CHECKS.map(section => (
-        <div key={section.category} className="mb-4">
+      {Object.entries(grouped).map(([cat, catChecks]) => (
+        <div key={cat} className="mb-4">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[#98a2b3] border-b border-[#f2f4f7] pb-2 mb-2" style={{ fontFamily: "Inter" }}>
-            {section.category}
+            {CATEGORY_LABEL_MAP[cat] ?? cat}
           </p>
-          {section.checks.map((check, i) => {
-            const key = `${section.category}-${i}`
+          {(catChecks as any[]).map((check: any, i: number) => {
+            const key = `${cat}-${i}`
             const isOpen = expanded[key]
             return (
               <div key={i}>
@@ -514,21 +551,29 @@ function ChecksTab({ invoice }: { invoice: InvoiceListItem }) {
                   className="flex items-center gap-3 h-10 hover:bg-[#f9fafb] rounded-[8px] px-2 cursor-pointer transition-colors"
                   onClick={() => setExpanded(p => ({ ...p, [key]: !p[key] }))}
                 >
-                  {check.status === "pass"    && <CheckCircle2  size={16} className="text-green-500 shrink-0" />}
-                  {check.status === "warning" && <AlertTriangle size={16} className="text-amber-500 shrink-0" />}
-                  {check.status === "fail"    && <XCircle       size={16} className="text-red-500 shrink-0" />}
-                  {check.status === "na"      && <Minus         size={16} className="text-[#98a2b3] shrink-0" />}
+                  {check.result === "pass"    && <CheckCircle2  size={16} className="text-green-500 shrink-0" />}
+                  {check.result === "warning" && <AlertTriangle size={16} className="text-amber-500 shrink-0" />}
+                  {check.result === "fail"    && <XCircle       size={16} className="text-red-500 shrink-0" />}
+                  {check.result === "na"      && <Minus         size={16} className="text-[#98a2b3] shrink-0" />}
                   <span className="text-[13px] text-[#344054] flex-1" style={{ fontFamily: "Inter" }}>{check.title}</span>
-                  {(check as any).badge && (
+                  {check.result === "warning" && (
                     <span className="bg-amber-50 text-amber-600 rounded-[6px] px-2 py-0.5 text-[11px]" style={{ fontFamily: "Inter" }}>
-                      {(check as any).badge}
+                      Warning
                     </span>
                   )}
-                  <ChevronDown size={14} className={cn("text-[#98a2b3] transition-transform duration-200", isOpen && "rotate-180")} />
+                  {check.result === "fail" && (
+                    <span className="bg-red-50 text-red-600 rounded-[6px] px-2 py-0.5 text-[11px]" style={{ fontFamily: "Inter" }}>
+                      Critical
+                    </span>
+                  )}
+                  <ChevronDown size={14} className={cn("text-[#98a2b3] transition-transform duration-200 shrink-0", isOpen && "rotate-180")} />
                 </div>
                 {isOpen && (
-                  <div className="ml-9 pb-2">
-                    <p className="text-[12px] text-[#667085]" style={{ fontFamily: "Inter" }}>{check.detail}</p>
+                  <div className="ml-9 pb-3">
+                    <p className="text-[12px] text-[#667085]" style={{ fontFamily: "Inter" }}>{check.description}</p>
+                    {check.skill_citation && (
+                      <p className="text-[10px] font-mono text-[#98a2b3]/60 mt-1" style={{ fontFamily: "Inter" }}>{check.skill_citation}</p>
+                    )}
                     <button className="text-[11px] text-[#5d5ef4] hover:underline mt-1 cursor-pointer" style={{ fontFamily: "Inter" }}>Override →</button>
                   </div>
                 )}
@@ -628,29 +673,74 @@ function ApprovalTab({ invoice }: { invoice: InvoiceListItem }) {
 
 function EmailsTab({ invoice }: { invoice: InvoiceListItem }) {
   const inv = invoice as any
+  const thread = (inv.email_thread ?? []) as any[]
+  const [showAll, setShowAll] = React.useState(false)
+
+  const finance = thread.filter((e: any) => e.tier === "finance")
+  const context = thread.filter((e: any) => e.tier === "context")
+  const toShow = showAll ? thread : [...finance, ...context]
+
+  if (thread.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <FileText size={40} className="text-[#d0d5dd] mb-3" />
+        <p className="text-[14px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>No emails</p>
+        <p className="text-[13px] text-[#667085] mt-1" style={{ fontFamily: "Inter" }}>No email thread for this request.</p>
+      </div>
+    )
+  }
+
   return (
     <div>
-      {inv.email_from ? (
-        <div className="bg-white border border-[#eaecf0] rounded-[12px] p-4">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <p className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{inv.email_subject}</p>
-              <p className="text-[12px] text-[#667085] mt-0.5" style={{ fontFamily: "Inter" }}>From: {inv.email_from}</p>
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={() => setShowAll(false)}
+          className={cn("text-[12px] px-3 py-1.5 rounded-[8px] transition-colors cursor-pointer",
+            !showAll ? "bg-[#171b1d] text-white" : "text-[#667085] hover:text-[#344054]")}
+          style={{ fontFamily: "Inter" }}>
+          Finance-relevant {finance.length}
+        </button>
+        <button
+          onClick={() => setShowAll(true)}
+          className={cn("text-[12px] px-3 py-1.5 rounded-[8px] transition-colors cursor-pointer",
+            showAll ? "bg-[#171b1d] text-white" : "text-[#667085] hover:text-[#344054]")}
+          style={{ fontFamily: "Inter" }}>
+          All emails {thread.length}
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {toShow.map((email: any) => (
+          <div key={email.id} className="bg-white border border-[#eaecf0] rounded-[12px] p-4">
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{email.subject}</p>
+                <p className="text-[12px] text-[#667085] mt-0.5" style={{ fontFamily: "Inter" }}>
+                  {email.from_name} · {new Date(email.date).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}
+                </p>
+              </div>
+              <span className={cn("text-[10px] px-2 py-0.5 rounded-[6px] shrink-0 ml-2",
+                email.tier === "finance" ? "bg-[#eff8ff] text-[#175cd3]" : "bg-[#f2f4f7] text-[#667085]")}
+                style={{ fontFamily: "Inter" }}>
+                {email.tier === "finance" ? "Finance" : "Context"}
+              </span>
             </div>
+            <p className="text-[12px] text-[#667085] border-t border-[#f2f4f7] pt-2 leading-5" style={{ fontFamily: "Inter" }}>
+              {email.body?.split("\n\n")[0]}
+            </p>
+            {email.attachments?.length > 0 && (
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {email.attachments.map((att: string) => (
+                  <div key={att} className="inline-flex items-center gap-1 bg-[#f2f4f7] border border-[#eaecf0] rounded-[6px] px-2 py-1">
+                    <Paperclip size={10} className="text-[#5d5ef4]" />
+                    <span className="text-[11px] text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>{att}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div
-            className="text-[13px] text-[#344054] leading-5 border-t border-[#f2f4f7] pt-3"
-            style={{ fontFamily: "Inter" }}
-            dangerouslySetInnerHTML={{ __html: inv.email_body_html ?? "" }}
-          />
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-12">
-          <FileText size={40} className="text-[#d0d5dd] mb-3" />
-          <p className="text-[14px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>No emails</p>
-          <p className="text-[13px] text-[#667085] mt-1" style={{ fontFamily: "Inter" }}>No email thread for this request.</p>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   )
 }
@@ -710,7 +800,7 @@ function DetailPanel({
             <CatIcon size={24} style={{ color: cat.color }} strokeWidth={1.6} />
           </div>
           <div>
-            <p className="text-[18px] font-bold text-[#344054] leading-7" style={{ fontFamily: "Inter" }}>
+            <p className="text-[18px] font-bold text-[#344054] leading-7 truncate max-w-[220px]" style={{ fontFamily: "Inter" }}>
               {toTitleCase(invoice.vendor_name_raw ?? "")}
             </p>
             <p className="text-[14px] text-[#667085]" style={{ fontFamily: "Inter" }}>
@@ -749,10 +839,10 @@ function DetailPanel({
 
       {/* Tabs */}
       <div className="px-8 shrink-0">
-        <div className="inline-flex bg-[#f2f4f7] border border-[#f2f4f7] rounded-[12px] p-1 gap-0">
+        <div className="inline-flex overflow-x-auto bg-[#f2f4f7] border border-[#f2f4f7] rounded-[12px] p-1 gap-0">
           {[
             { key: "details",  label: "Info" },
-            { key: "comments", label: "Comments & Activity" },
+            { key: "comments", label: "Activity" },
             { key: "checks",   label: "Checks" },
             { key: "approval", label: "Approval" },
             { key: "emails",   label: "Emails" },
@@ -777,7 +867,7 @@ function DetailPanel({
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto px-8 py-5">
-        {activeTab === "details"  && <DetailsTab  invoice={invoice} />}
+        {activeTab === "details"  && <DetailsTab  invoice={invoice} onTabChange={onTabChange} />}
         {activeTab === "comments" && <CommentsTab invoice={invoice} />}
         {activeTab === "checks"   && <ChecksTab   invoice={invoice} />}
         {activeTab === "approval" && <ApprovalTab invoice={invoice} />}
@@ -949,13 +1039,14 @@ export default function PaymentRequestsPage() {
             </>
           )}
 
-          {/* Collapse button */}
-          <button
-            onClick={() => setLeftCollapsed(!leftCollapsed)}
-            className="flex items-center justify-center p-2 rounded-[8px] border border-[#eaecf0] bg-white hover:bg-[#f2f4f7] text-[#667085] transition-colors cursor-pointer shrink-0"
-          >
-            {leftCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
+          <div className="shrink-0 pt-1">
+            <button
+              onClick={() => setLeftCollapsed(!leftCollapsed)}
+              className="flex items-center justify-center w-full p-2 rounded-[8px] border border-[#eaecf0] bg-white hover:bg-[#f2f4f7] text-[#667085] transition-colors cursor-pointer"
+            >
+              {leftCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            </button>
+          </div>
         </div>
 
         {/* Drag handle */}
@@ -972,9 +1063,8 @@ export default function PaymentRequestsPage() {
           {/* Icon gutter */}
           <div className="flex flex-col items-center gap-2 shrink-0 pt-1">
             {[
-              { icon: FileText,      key: "details",   title: "Details" },
-              { icon: Paperclip,     key: "pv",        title: "Attachments" },
-              { icon: MessageSquare, key: "comments",  title: "Comments" },
+              { icon: FileText,      key: "details",   title: "Info" },
+              { icon: MessageSquare, key: "comments",  title: "Activity" },
             ].map(btn => {
               const BtnIcon = btn.icon
               const isActive = activeTab === btn.key && selected !== null
@@ -992,6 +1082,13 @@ export default function PaymentRequestsPage() {
                 </button>
               )
             })}
+            <button
+              title="Expand"
+              onClick={() => setLeftCollapsed(!leftCollapsed)}
+              className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#f2f4f7]"
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
 
           {/* Detail panel or empty */}
