@@ -24,6 +24,13 @@ function toTitleCase(s: string): string {
   return s.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
 }
 
+function formatDate(dateStr?: string | null): string {
+  if (!dateStr) return "—"
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })
+}
+
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
   pending_review: "Pending",
   approved:       "Approved",
@@ -246,6 +253,15 @@ function RequestListItem({
 function DetailsTab({ invoice, onTabChange }: { invoice: InvoiceListItem; onTabChange?: (tab: string) => void }) {
   const inv = invoice as any
 
+  const checks = getMockCompliance(invoice.id) ?? []
+  const passCount = checks.filter((c: any) => c.result === "pass").length
+  const warnCount = checks.filter((c: any) => c.result === "warning").length
+  const failCount = checks.filter((c: any) => c.result === "fail").length
+  const totalChecks = checks.length || 1
+  const complianceScore = checks.length > 0
+    ? Math.round((passCount / totalChecks) * 100)
+    : inv.risk_level === "pass" ? 92 : inv.risk_level === "warning" ? 78 : 45
+
   const vendorFields = [
     { label: "Vendor Name",    value: toTitleCase(invoice.vendor_name_raw ?? "") },
     { label: "TIN",            value: inv.vendor_tin ?? "—" },
@@ -259,8 +275,8 @@ function DetailsTab({ invoice, onTabChange }: { invoice: InvoiceListItem; onTabC
   ]
   const invoiceFields = [
     { label: "Invoice No.",    value: invoice.invoice_number ?? "—" },
-    { label: "Invoice Date",   value: inv.invoice_date ?? "—" },
-    { label: "Due Date",       value: invoice.due_date ?? "—" },
+    { label: "Invoice Date",   value: formatDate(inv.invoice_date) },
+    { label: "Due Date",       value: formatDate(invoice.due_date) },
     { label: "Pay Terms",      value: inv.payment_terms ?? "—" },
     { label: "Currency",       value: inv.currency ?? "MYR" },
     { label: "PO Ref",         value: inv.po_reference ?? "—" },
@@ -296,7 +312,7 @@ function DetailsTab({ invoice, onTabChange }: { invoice: InvoiceListItem; onTabC
     <div>
       {/* Action Required Banner */}
       {inv.risk_level === "warning" && (
-        <div className="flex gap-3 bg-amber-50 border border-amber-200 rounded-[12px] p-4 mb-5 border-l-4 border-l-amber-400">
+        <div className="flex gap-3 bg-amber-50 border border-amber-200 rounded-[12px] p-4 mb-5 border-l-4 border-l-amber-400 shadow-[0_2px_8px_rgba(186,117,23,0.10)]">
           <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
           <div>
             <p className="text-[13px] font-semibold text-amber-900" style={{ fontFamily: "Inter" }}>
@@ -323,15 +339,19 @@ function DetailsTab({ invoice, onTabChange }: { invoice: InvoiceListItem; onTabC
               ✦ Jomie Compliance
             </span>
             <span className="text-[20px] font-bold text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>
-              {inv.risk_level === "pass" ? "92" : inv.risk_level === "warning" ? "78" : "45"} / 100
+              {complianceScore} / 100
             </span>
           </div>
           <div className="h-1.5 rounded-full bg-[#eaecf0] overflow-hidden mb-2">
             <div className="h-full rounded-full bg-[#5d5ef4] transition-all"
-                 style={{ width: inv.risk_level === "pass" ? "92%" : inv.risk_level === "warning" ? "78%" : "45%" }} />
+                 style={{ width: `${complianceScore}%` }} />
           </div>
           <p className="text-[11px] text-[#667085] mb-2" style={{ fontFamily: "Inter" }}>
-            {inv.risk_level === "pass" ? "All checks passed" : `${inv.risk_count} warning${inv.risk_count !== 1 ? "s" : ""} detected`}
+            {failCount > 0
+              ? `${failCount} fail${failCount !== 1 ? "s" : ""}, ${warnCount} warning${warnCount !== 1 ? "s" : ""} detected`
+              : warnCount > 0
+              ? `${warnCount} warning${warnCount !== 1 ? "s" : ""} detected`
+              : "All checks passed"}
           </p>
           <button
             className="text-[11px] text-[#5d5ef4] hover:underline cursor-pointer"
@@ -350,7 +370,7 @@ function DetailsTab({ invoice, onTabChange }: { invoice: InvoiceListItem; onTabC
           {[
             { label: "PR Number",   value: inv.pr_number },
             { label: "Requestor",   value: inv.requestor_name ?? "—" },
-            { label: "Pay By",      value: inv.payment_needed_by ?? "—" },
+            { label: "Pay By",      value: formatDate(inv.payment_needed_by) },
             { label: "Channel",     value: inv.intake_channel ?? "—" },
             { label: "Urgency",     value: inv.urgency_level ?? "normal" },
           ].map((f, i) => (
@@ -866,7 +886,7 @@ function DetailPanel({
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto px-8 py-5">
+      <div key={activeTab} className="flex-1 overflow-y-auto px-8 py-5 animate-in fade-in-0 slide-in-from-bottom-1 duration-150">
         {activeTab === "details"  && <DetailsTab  invoice={invoice} onTabChange={onTabChange} />}
         {activeTab === "comments" && <CommentsTab invoice={invoice} />}
         {activeTab === "checks"   && <ChecksTab   invoice={invoice} />}
