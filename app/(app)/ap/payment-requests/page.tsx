@@ -1184,7 +1184,7 @@ export default function PaymentRequestsPage() {
 
         {/* Gutter — always shrink-0, never grows, sized to its own content only */}
         <TooltipProvider>
-          <div className="flex flex-col items-center gap-2 shrink-0 self-start pt-2 mr-1 px-1 pb-2">
+          <div className="flex flex-col items-center gap-2 shrink-0 self-start pt-2 mr-1 pb-2">
             {[
               { icon: FileText,      key: "details",  title: "Info" },
               { icon: MessageSquare, key: "comments", title: "Activity" },
@@ -1290,12 +1290,11 @@ export default function PaymentRequestsPage() {
 
         {/* Right panel — PDF preview */}
         {rightOpen && (
-          <>
-            <div
-              className="w-1 cursor-col-resize hover:bg-[#5d5ef4]/20 active:bg-[#5d5ef4]/30 transition-colors shrink-0 rounded-full"
-              onMouseDown={handleRightDrag}
-            />
-            <div style={{ width: rightWidth }} className="shrink-0 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col overflow-hidden">
+            <div style={{ width: rightWidth }} className="relative shrink-0 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col overflow-hidden">
+              <div
+                className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#5d5ef4]/20 active:bg-[#5d5ef4]/30 transition-colors z-10"
+                onMouseDown={handleRightDrag}
+              />
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#eaecf0] shrink-0">
               <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>PDF Preview</span>
               <div className="flex items-center gap-3">
@@ -1390,7 +1389,6 @@ export default function PaymentRequestsPage() {
               </div>
             </div>
           </div>
-          </>
         )}
 
       </div>
