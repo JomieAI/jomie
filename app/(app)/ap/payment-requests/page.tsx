@@ -428,8 +428,8 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
     <div className="flex flex-col h-full" style={{ minHeight: 300 }}>
       <MessageScrollerProvider defaultScrollPosition="end">
         <MessageScroller className="flex-1">
-          <MessageScrollerViewport>
-            <MessageScrollerContent>
+          <MessageScrollerViewport className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/30 focus-visible:ring-offset-0">
+            <MessageScrollerContent className="gap-3">
               {thread.length === 0 && (
                 <p className="text-[13px] text-[#98a2b3] text-center py-8" style={{ fontFamily: "Inter" }}>
                   No comments yet.
@@ -438,7 +438,7 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
               {thread.map(item => {
                 if (item.type === "activity") {
                   return (
-                    <MessageScrollerItem key={item.id} messageId={item.id}>
+                    <MessageScrollerItem key={item.id} messageId={item.id} className="[content-visibility:visible]">
                       <Marker className="my-2">
                         <MarkerContent className="text-[11px] italic text-[#98a2b3]" style={{ fontFamily: "Inter" }}>
                           {item.description}
@@ -455,7 +455,7 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                 const initials = (item.author ?? "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
 
                 return (
-                  <MessageScrollerItem key={item.id} messageId={item.id} scrollAnchor={isQuery}>
+                  <MessageScrollerItem key={item.id} messageId={item.id} scrollAnchor={isQuery} className="[content-visibility:visible]">
                     <Message className="mb-3">
                       <MessageAvatar>
                         <Avatar className="size-8">
@@ -474,10 +474,13 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                             {formatDate(item.timestamp)} {formatTime(item.timestamp)}
                           </span>
                         </MessageHeader>
-                        <Bubble className={cn(
-                          "rounded-[12px] rounded-tl-[4px]",
-                          isQuery ? "bg-amber-50 border border-amber-200 border-l-4 border-l-amber-400" : "bg-[#f9fafb] border border-[#eaecf0]"
-                        )}>
+                        <Bubble
+                          variant={isQuery ? "tinted" : "outline"}
+                          className={cn(
+                            "rounded-[12px] rounded-tl-[4px]",
+                            isQuery && "*:data-[slot=bubble-content]:!bg-amber-50 *:data-[slot=bubble-content]:!border-amber-200 *:data-[slot=bubble-content]:border-l-4 *:data-[slot=bubble-content]:!border-l-amber-400"
+                          )}
+                        >
                           <BubbleContent>
                             <p className={cn("text-[13px] text-[#344054] leading-5", isQuery && item.resolved && "line-through")} style={{ fontFamily: "Inter" }}>
                               {item.message}
