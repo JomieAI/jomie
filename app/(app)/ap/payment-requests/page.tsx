@@ -958,7 +958,7 @@ export default function PaymentRequestsPage() {
   const [activeTab, setActiveTab]       = React.useState("details")
   const [rightOpen, setRightOpen]       = React.useState(false)
   const [leftWidth, setLeftWidth]       = React.useState(320)
-  const [leftCollapsed, setLeftCollapsed]     = React.useState(false)
+  const [rightWidth, setRightWidth]     = React.useState(440)
   const [middleCollapsed, setMiddleCollapsed] = React.useState(false)
   const [search, setSearch]             = React.useState("")
   const containerRef = React.useRef<HTMLDivElement>(null)
@@ -1011,6 +1011,24 @@ export default function PaymentRequestsPage() {
     window.addEventListener("mouseup", onUp)
   }
 
+  const handleRightDrag = (e: React.MouseEvent) => {
+    const startX = e.clientX
+    const startW = rightWidth
+    const GUTTER_W = 60
+    const onMove = (ev: MouseEvent) => {
+      const containerW = containerRef.current?.offsetWidth ?? 1200
+      const bWidth = middleCollapsed ? 0 : leftWidth
+      const maxRightW = containerW - bWidth - GUTTER_W - 600 - 8
+      setRightWidth(Math.max(320, Math.min(maxRightW, startW - (ev.clientX - startX))))
+    }
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+  }
+
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: "#f4f4f1" }}>
 
@@ -1052,10 +1070,15 @@ export default function PaymentRequestsPage() {
       <div ref={containerRef} className="flex flex-1 overflow-hidden mt-9 px-4 pb-8 gap-2">
 
         {/* Left panel */}
-        <div className="flex flex-col gap-3 overflow-hidden shrink-0" style={{ width: leftCollapsed ? 48 : leftWidth }}>
+        <div
+          className={cn(
+            "flex flex-col gap-3 overflow-hidden transition-all duration-300 ease-in-out",
+            middleCollapsed ? "flex-1" : "shrink-0"
+          )}
+          style={middleCollapsed ? undefined : { width: leftWidth }}
+        >
 
-          {!leftCollapsed && (
-            <>
+          <>
               {/* View tabs */}
               <div className="flex items-center gap-0.5 flex-wrap">
                 {[
@@ -1094,7 +1117,7 @@ export default function PaymentRequestsPage() {
               </div>
 
               {/* Metrics */}
-              <MetricsBoard metrics={metrics} pinned={pinnedMetrics} expanded={leftWidth > 500} />
+              <MetricsBoard metrics={metrics} pinned={pinnedMetrics} expanded={middleCollapsed || leftWidth > 500} />
 
               {/* Filters */}
               <div className="flex items-center gap-2">
@@ -1134,7 +1157,7 @@ export default function PaymentRequestsPage() {
                         key={inv.id}
                         inv={inv}
                         selected={selected?.id === inv.id}
-                        expanded={leftWidth > 480}
+                        expanded={middleCollapsed || leftWidth > 480}
                         onSelect={() => { setSelected(inv); setActiveTab("details") }}
                       />
                     ))
@@ -1147,38 +1170,21 @@ export default function PaymentRequestsPage() {
                   </div>
                 )}
               </div>
-            </>
-          )}
+          </>
 
         </div>
 
         {/* Drag handle */}
-        {!leftCollapsed && (
+        {!middleCollapsed && (
           <div
             className="w-1 cursor-col-resize hover:bg-[#5d5ef4]/20 active:bg-[#5d5ef4]/30 transition-colors shrink-0 rounded-full"
             onMouseDown={handleLeftDrag}
           />
         )}
 
-        {/* Middle panel */}
-        <div className="flex flex-1 min-w-[400px] gap-2 overflow-hidden">
-
-          {/* Icon gutter */}
-          <TooltipProvider>
-          <div className="flex flex-col items-center gap-2 shrink-0 pt-2 mr-1 bg-white/60 rounded-[12px] px-1 pb-2">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    onClick={() => setMiddleCollapsed(!middleCollapsed)}
-                    className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1"
-                  />
-                }
-              >
-                {middleCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-              </TooltipTrigger>
-              <TooltipContent side="right">{middleCollapsed ? "Expand panel" : "Collapse panel"}</TooltipContent>
-            </Tooltip>
+        {/* Gutter — always shrink-0, never grows, sized to its own content only */}
+        <TooltipProvider>
+          <div className="flex flex-col items-center gap-2 shrink-0 self-start pt-2 mr-3 bg-white/60 rounded-[12px] px-2 pb-2">
             {[
               { icon: FileText,      key: "details",  title: "Info" },
               { icon: MessageSquare, key: "comments", title: "Activity" },
@@ -1197,10 +1203,11 @@ export default function PaymentRequestsPage() {
                           if (btn.key === "pdf") {
                             const opening = !rightOpen
                             setRightOpen(opening)
-                            setLeftCollapsed(opening)
                             setL2(!opening)
                           } else {
-                            selected && setActiveTab(btn.key)
+                            if (!selected) return
+                            setActiveTab(btn.key)
+                            if (middleCollapsed) setMiddleCollapsed(false)
                           }
                         }}
                         className={cn(
@@ -1216,14 +1223,29 @@ export default function PaymentRequestsPage() {
                 </Tooltip>
               )
             })}
-          </div>
-          </TooltipProvider>
 
-          {/* Detail panel or empty — animated width */}
-          <div className={cn(
-            "flex flex-1 overflow-hidden transition-all duration-300 ease-in-out",
-            middleCollapsed ? "w-0 opacity-0 pointer-events-none" : "opacity-100"
-          )}>
+            {/* Collapse toggle — last item, directly below Documents */}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={() => setMiddleCollapsed(!middleCollapsed)}
+                    className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1"
+                  />
+                }
+              >
+                {middleCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              </TooltipTrigger>
+              <TooltipContent side="right">{middleCollapsed ? "Expand panel" : "Collapse panel"}</TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
+
+        {/* D — detail panel, animates to w-0 when collapsed */}
+        <div className={cn(
+          "overflow-hidden transition-all duration-300 ease-in-out",
+          middleCollapsed ? "w-0 opacity-0 pointer-events-none" : "flex-1 min-w-[600px] opacity-100"
+        )}>
           {!middleCollapsed && (selected ? (
             <DetailPanel
               invoice={selected}
@@ -1241,8 +1263,7 @@ export default function PaymentRequestsPage() {
               }}
             />
           ) : (
-            <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col items-center justify-center gap-4 p-8">
-              {/* Branded SVG illustration */}
+            <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col items-center justify-center gap-4 p-8 h-full">
               <svg width="120" height="100" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No payment request selected illustration">
                 <rect x="20" y="25" width="60" height="70" rx="6" fill="#f2f4f7" stroke="#eaecf0" strokeWidth="1.5"/>
                 <rect x="28" y="15" width="60" height="70" rx="6" fill="#f7f7fe" stroke="#e0e1fd" strokeWidth="1.5"/>
@@ -1265,12 +1286,16 @@ export default function PaymentRequestsPage() {
               </div>
             </div>
           ))}
-          </div>
         </div>
 
         {/* Right panel — PDF preview */}
         {rightOpen && (
-          <div className="w-[440px] shrink-0 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col overflow-hidden">
+          <>
+            <div
+              className="w-1 cursor-col-resize hover:bg-[#5d5ef4]/20 active:bg-[#5d5ef4]/30 transition-colors shrink-0 rounded-full"
+              onMouseDown={handleRightDrag}
+            />
+            <div style={{ width: rightWidth }} className="shrink-0 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#eaecf0] shrink-0">
               <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>PDF Preview</span>
               <div className="flex items-center gap-3">
@@ -1365,6 +1390,7 @@ export default function PaymentRequestsPage() {
               </div>
             </div>
           </div>
+          </>
         )}
 
       </div>
