@@ -47,7 +47,7 @@ export function getMockMetrics() {
     due_this_week:   { key: 'due_this_week',   label: 'Due This Week',      value: 1,              color: 'gradient' as const },
     due_two_weeks:   { key: 'due_two_weeks',   label: 'Due 2 Weeks',        value: 12,             color: 'default'  as const },
     overdue:         { key: 'overdue',         label: 'Overdue',            value: 1,              color: 'red'      as const },
-    awaiting_action: { key: 'awaiting_action', label: 'Awaiting My Action', value: 2,              color: 'amber'    as const },
+    awaiting_action: { key: 'awaiting_action', label: 'Awaiting Me',        value: 2,              color: 'amber'    as const },
     high_risk:       { key: 'high_risk',       label: 'High Risk',          value: 1,              color: 'amber'    as const },
     total_pending:   { key: 'total_pending',   label: 'Total Pending',      value: 'RM 33,414.80', color: 'default'  as const },
   }

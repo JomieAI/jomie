@@ -412,14 +412,21 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
             No comments yet.
           </p>
         )}
-        {thread.map(item => {
+        {thread.map((item, idx) => {
+          const isLast = idx === thread.length - 1
+
           if (item.type === "activity") {
             return (
-              <div key={item.id} className="flex items-start gap-2 pl-1">
-                <div className="flex flex-col items-center mt-1">
-                  <div className="size-2 rounded-full bg-[#d0d5dd]" />
+              <div key={item.id} className="flex gap-3">
+                {/* Left: dot + connector */}
+                <div className="flex flex-col items-center shrink-0" style={{ width: 20 }}>
+                  <div className="size-2 rounded-full bg-[#d0d5dd] mt-1 shrink-0" />
+                  {!isLast && (
+                    <div className="w-px flex-1 mt-1" style={{ borderLeft: "1.5px dashed #eaecf0" }} />
+                  )}
                 </div>
-                <div className="flex-1">
+                {/* Right: text */}
+                <div className="flex-1 pb-3">
                   <span className="text-[11px] italic text-[#98a2b3]" style={{ fontFamily: "Inter" }}>
                     {item.description}
                   </span>
@@ -435,17 +442,24 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
           const initials = (item.author ?? "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
 
           return (
-            <div key={item.id} className={cn("flex gap-2.5", isQuery && item.resolved && "opacity-50")}>
-              <div className="size-8 rounded-full bg-[#f2f4f7] flex items-center justify-center shrink-0 text-[12px] font-semibold text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>
-                {initials}
+            <div key={item.id} className="flex gap-3">
+              {/* Left: avatar + connector */}
+              <div className="flex flex-col items-center shrink-0" style={{ width: 20 }}>
+                <div className="size-8 rounded-full bg-[#f2f4f7] flex items-center justify-center shrink-0 text-[11px] font-semibold text-[#5d5ef4] -ml-2" style={{ fontFamily: "Inter" }}>
+                  {initials}
+                </div>
+                {!isLast && (
+                  <div className="w-px flex-1 mt-1" style={{ borderLeft: "1.5px dashed #eaecf0" }} />
+                )}
               </div>
-              <div className="flex-1">
+              {/* Right: bubble */}
+              <div className="flex-1 pb-3 -ml-2">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{item.author}</span>
                   {item.role && (
                     <span className="text-[10px] bg-[#f2f4f7] rounded-full px-2 text-[#667085]" style={{ fontFamily: "Inter" }}>{item.role}</span>
                   )}
-                  <span className="text-[10px] text-[#98a2b3]" style={{ fontFamily: "Inter" }}>
+                  <span className="text-[10px] text-[#98a2b3] ml-auto" style={{ fontFamily: "Inter" }}>
                     {formatDate(item.timestamp)} {formatTime(item.timestamp)}
                   </span>
                 </div>
@@ -770,24 +784,54 @@ function EmailsTab({ invoice }: { invoice: InvoiceListItem }) {
 function PVTab({ invoice }: { invoice: InvoiceListItem }) {
   const inv = invoice as any
   const pvs = inv.payment_vouchers ?? []
+  const total = inv.total_myr ?? 0
+  const paid = inv.amount_paid ?? 0
+  const outstanding = inv.amount_outstanding ?? (total - paid)
+
   return (
-    <div>
+    <div className="flex flex-col gap-4">
+      {/* Balance summary — always shown */}
+      <div className="bg-[#f9fafb] border border-[#eaecf0] rounded-[12px] p-4">
+        <div className="flex items-center justify-between py-2 border-b border-[#f2f4f7]">
+          <span className="text-[12px] text-[#667085]" style={{ fontFamily: "Inter" }}>Invoice total</span>
+          <span className="text-[13px] font-medium text-[#344054]" style={{ fontFamily: "Inter" }}>MYR {total.toFixed(2)}</span>
+        </div>
+        <div className="flex items-center justify-between py-2 border-b border-[#f2f4f7]">
+          <span className="text-[12px] text-[#667085]" style={{ fontFamily: "Inter" }}>Amount paid</span>
+          <span className="text-[13px] font-medium text-green-600" style={{ fontFamily: "Inter" }}>MYR {paid.toFixed(2)}</span>
+        </div>
+        <div className="flex items-center justify-between py-2">
+          <span className="text-[12px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>Outstanding</span>
+          <span className={cn("text-[13px] font-bold", outstanding <= 0 ? "text-green-600" : "text-[#5d5ef4]")} style={{ fontFamily: "Inter" }}>
+            {outstanding <= 0 ? "✓ Fully paid" : `MYR ${outstanding.toFixed(2)}`}
+          </span>
+        </div>
+      </div>
+
+      {/* PV list or empty */}
       {pvs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12">
-          <FileText size={40} className="text-[#d0d5dd] mb-3" />
-          <p className="text-[14px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>No payment vouchers</p>
-          <p className="text-[13px] text-[#667085] mt-1" style={{ fontFamily: "Inter" }}>Vouchers will appear after approval.</p>
+        <div className="flex flex-col items-center justify-center py-8 gap-2">
+          <div className="size-10 rounded-full bg-[#f2f4f7] flex items-center justify-center">
+            <FileText size={18} className="text-[#98a2b3]" />
+          </div>
+          <p className="text-[13px] font-medium text-[#344054]" style={{ fontFamily: "Inter" }}>No payment vouchers yet</p>
+          <p className="text-[12px] text-[#667085] text-center max-w-[180px]" style={{ fontFamily: "Inter" }}>
+            A voucher will be auto-created once this request is fully approved
+          </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-2">
           {pvs.map((pv: any, i: number) => (
             <div key={i} className="bg-white border border-[#eaecf0] rounded-[12px] p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{pv.pv_number}</span>
                 <span className="bg-green-50 text-green-600 text-[11px] rounded-[6px] px-2 py-0.5" style={{ fontFamily: "Inter" }}>{pv.status}</span>
               </div>
-              <p className="text-[13px] text-[#344054]" style={{ fontFamily: "Inter" }}>MYR {pv.amount.toFixed(2)}</p>
+              <p className="text-[14px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>MYR {pv.amount.toFixed(2)}</p>
               <p className="text-[12px] text-[#667085] mt-0.5" style={{ fontFamily: "Inter" }}>{pv.payment_method} · {pv.payment_date}</p>
+              {pv.bank_name && (
+                <p className="text-[11px] text-[#98a2b3] mt-0.5" style={{ fontFamily: "Inter" }}>{pv.bank_name} · {pv.bank_account_no}</p>
+              )}
             </div>
           ))}
         </div>
@@ -1036,7 +1080,7 @@ export default function PaymentRequestsPage() {
 
               {/* Request list */}
               <div className="flex flex-col bg-white border border-[#eaecf0] rounded-[12px] p-2 gap-1 flex-1 overflow-y-auto">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#98a2b3] px-2 pt-1 pb-1" style={{ fontFamily: "Inter" }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#98a2b3] px-2 pt-1 pb-0.5" style={{ fontFamily: "Inter" }}>
                   VENDOR / INVOICE
                 </p>
                 {filteredInvoices.map(inv => (
@@ -1121,11 +1165,27 @@ export default function PaymentRequestsPage() {
               onQuery={() => setActiveTab("comments")}
             />
           ) : (
-            <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col items-center justify-center gap-3">
-              <FileText size={48} className="text-[#d0d5dd]" />
+            <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col items-center justify-center gap-4 p-8">
+              {/* Branded SVG illustration */}
+              <svg width="120" height="100" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="20" y="25" width="60" height="70" rx="6" fill="#f2f4f7" stroke="#eaecf0" strokeWidth="1.5"/>
+                <rect x="28" y="15" width="60" height="70" rx="6" fill="#f7f7fe" stroke="#e0e1fd" strokeWidth="1.5"/>
+                <rect x="36" y="5" width="60" height="70" rx="6" fill="white" stroke="#c7c9fb" strokeWidth="1.5"/>
+                <rect x="46" y="20" width="36" height="3" rx="1.5" fill="#5d5ef4" opacity="0.6"/>
+                <rect x="46" y="28" width="28" height="2" rx="1" fill="#eaecf0"/>
+                <rect x="46" y="34" width="32" height="2" rx="1" fill="#eaecf0"/>
+                <rect x="46" y="40" width="24" height="2" rx="1" fill="#eaecf0"/>
+                <circle cx="88" cy="60" r="16" fill="white" stroke="#eaecf0" strokeWidth="1.5"/>
+                <path d="M81 60 L86 65 L95 55" stroke="#5d5ef4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
               <div className="text-center">
-                <p className="text-[16px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>Select a request</p>
-                <p className="text-[13px] text-[#667085] mt-1" style={{ fontFamily: "Inter" }}>Choose a payment request from the list to review</p>
+                <p className="text-[15px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>Select a request to review</p>
+                <p className="text-[13px] text-[#98a2b3] mt-1 max-w-[200px]" style={{ fontFamily: "Inter" }}>Choose from the list to see details, compliance checks, and approval status</p>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-[#c0c5ce]" style={{ fontFamily: "Inter" }}>
+                <span className="bg-[#f2f4f7] border border-[#eaecf0] rounded-[4px] px-1.5 py-0.5 font-mono text-[10px]">↑</span>
+                <span className="bg-[#f2f4f7] border border-[#eaecf0] rounded-[4px] px-1.5 py-0.5 font-mono text-[10px]">↓</span>
+                <span>to navigate</span>
               </div>
             </div>
           )}
@@ -1151,9 +1211,63 @@ export default function PaymentRequestsPage() {
               </div>
             </div>
 
-            <div className="flex-1 bg-[#f2f4f7] flex items-center justify-center">
-              <p className="text-[13px] text-[#667085]" style={{ fontFamily: "Inter" }}>
-                {selected?.invoice_number}.pdf
+            {/* PDF viewer area */}
+            <div className="flex-1 bg-[#f4f4f1] flex flex-col items-center justify-center overflow-auto p-6">
+              {/* Document outline */}
+              <div className="bg-white rounded-[8px] shadow-[0_4px_24px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden" style={{ width: 280, minHeight: 360 }}>
+                {/* Document header bar */}
+                <div className="bg-[#5d5ef4] px-5 py-3 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2">
+                    <FileText size={14} className="text-white/80" />
+                    <span className="text-[12px] font-medium text-white truncate max-w-[160px]" style={{ fontFamily: "Inter" }}>
+                      {selected?.invoice_number}.pdf
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-white/60" style={{ fontFamily: "Inter" }}>Page 1 of 3</span>
+                </div>
+                {/* Document body — skeleton lines */}
+                <div className="flex-1 p-6 flex flex-col gap-3">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="h-3 w-24 bg-[#f2f4f7] rounded-full" />
+                      <div className="h-2 w-16 bg-[#f2f4f7] rounded-full" />
+                      <div className="h-2 w-20 bg-[#f2f4f7] rounded-full" />
+                    </div>
+                    <div className="h-8 w-20 bg-[#5d5ef4]/10 rounded-[4px] flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>INVOICE</span>
+                    </div>
+                  </div>
+                  <div className="h-2 w-full bg-[#5d5ef4]/15 rounded-full" />
+                  {[80, 65, 90, 55, 70].map((w, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="h-1.5 rounded-full bg-[#f2f4f7]" style={{ width: `${w}%` }} />
+                      <div className="h-1.5 w-8 rounded-full bg-[#f2f4f7] ml-auto" />
+                    </div>
+                  ))}
+                  <div className="flex-1" />
+                  <div className="border-t border-[#f2f4f7] pt-3 flex flex-col gap-1.5">
+                    <div className="flex justify-between">
+                      <div className="h-1.5 w-16 bg-[#f2f4f7] rounded-full" />
+                      <div className="h-1.5 w-12 bg-[#f2f4f7] rounded-full" />
+                    </div>
+                    <div className="flex justify-between">
+                      <div className="h-2 w-20 bg-[#344054]/20 rounded-full" />
+                      <div className="h-2 w-14 bg-[#5d5ef4]/30 rounded-full" />
+                    </div>
+                  </div>
+                  <div className="flex justify-end mt-2">
+                    <div className="size-10 bg-[#f2f4f7] rounded-[4px] flex items-center justify-center">
+                      <div className="size-6 grid grid-cols-3 gap-0.5">
+                        {Array.from({ length: 9 }).map((_, i) => (
+                          <div key={i} className={cn("rounded-[1px]", [0,2,6,8].includes(i) ? "bg-[#344054]" : i === 4 ? "bg-[#5d5ef4]" : "bg-[#d0d5dd]")} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-[#98a2b3] mt-3" style={{ fontFamily: "Inter" }}>
+                Real PDF preview will appear when connected to backend
               </p>
             </div>
 
