@@ -2,6 +2,7 @@ import { Inter, Plus_Jakarta_Sans, Lora, Figtree } from "next/font/google"
 import "./globals.css"
 import { cn } from "@/lib/utils"
 import AgentationToolbar from "@/components/agentation-toolbar"
+import { Toaster } from "@/components/ui/sonner"
 
 // Preset fonts (bPuhec5Mm): Inter heading + Figtree body
 const interHeading = Inter({ subsets: ["latin"], variable: "--font-heading", weight: ["400", "500", "600", "700"] })
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="text-foreground bg-background" style={{ minHeight: "100vh" }}>
         {children}
         <AgentationToolbar />
+        <Toaster />
       </body>
     </html>
   )

@@ -17,6 +17,10 @@ import {
   DEFAULT_PINNED_METRICS,
 } from "@/lib/mock"
 import type { InvoiceListItem, InvoiceStatus, ApprovalStep, CommentThreadItem } from "@/lib/api"
+import { useSidebar } from "@/components/sidebar-context"
+import { toast } from "sonner"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -497,7 +501,7 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
           value={message}
           onChange={e => setMessage(e.target.value)}
           placeholder="Add a comment..."
-          className="w-full bg-[#f9fafb] border border-[#eaecf0] rounded-[12px] px-3 py-2.5 text-[13px] text-[#344054] min-h-[72px] resize-none focus:outline-none focus:border-[#5d5ef4] focus:ring-2 focus:ring-[#5d5ef4]/10 transition-colors"
+          className="w-full bg-[#f9fafb] border border-[#eaecf0] rounded-[12px] px-3 py-2.5 text-[13px] text-[#344054] min-h-[72px] resize-none focus:outline-none focus:border-[#5d5ef4] focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/10 transition-colors"
           style={{ fontFamily: "Inter" }}
         />
         <div className="flex justify-between items-center mt-2">
@@ -843,13 +847,15 @@ function PVTab({ invoice }: { invoice: InvoiceListItem }) {
 // ─── Detail Panel ─────────────────────────────────────────────────────────────
 
 function DetailPanel({
-  invoice, activeTab, onTabChange, onOpenPDF, onQuery,
+  invoice, activeTab, onTabChange, onOpenPDF, onQuery, onApprove, onReject,
 }: {
   invoice: InvoiceListItem
   activeTab: string
   onTabChange: (tab: string) => void
   onOpenPDF: () => void
   onQuery: () => void
+  onApprove: () => void
+  onReject: () => void
 }) {
   const cat = getCat(invoice.invoice_category)
   const CatIcon = cat.icon
@@ -884,11 +890,13 @@ function DetailPanel({
             Query
           </button>
           <button
-            className="bg-white border border-[#fda29b] rounded-[12px] p-[10px] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-red-50 hover:border-[#f97066] focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:ring-offset-1 transition-colors cursor-pointer">
+            onClick={onReject}
+            className="bg-white border border-[#fda29b] rounded-[12px] p-[10px] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-red-50 hover:border-[#f97066] focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 focus:ring-offset-1 transition-colors cursor-pointer">
             <X size={20} className="text-[#b42318]" />
           </button>
           <button
-            className="bg-[#5d5ef4] border border-[#5d5ef4] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#4546d4] transition-colors cursor-pointer"
+            onClick={onApprove}
+            className="bg-[#5d5ef4] border border-[#5d5ef4] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#4546d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1 transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             Approve
           </button>
@@ -938,9 +946,11 @@ function DetailPanel({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function PaymentRequestsPage() {
-  const invoices = getMockInvoices()
-  const metrics  = getMockMetrics()
+  const { l2Open, setL2 } = useSidebar()
+  const metrics = getMockMetrics()
 
+  const [invoices, setInvoices]         = React.useState(() => getMockInvoices())
+  const [isLoading, setIsLoading]       = React.useState(true)
   const [channel, setChannel]           = React.useState<"form" | "email">("form")
   const [pinnedMetrics]                 = React.useState(DEFAULT_PINNED_METRICS)
   const [viewTab, setViewTab]           = React.useState<"all" | "dashboard" | "my_request" | "awaiting">("all")
@@ -952,6 +962,13 @@ export default function PaymentRequestsPage() {
   const [middleCollapsed, setMiddleCollapsed] = React.useState(false)
   const [search, setSearch]             = React.useState("")
   const containerRef = React.useRef<HTMLDivElement>(null)
+  const prevL2Open   = React.useRef(l2Open)
+
+  // Simulate loading — replace setTimeout body with real fetch later
+  React.useEffect(() => {
+    const t = setTimeout(() => setIsLoading(false), 400)
+    return () => clearTimeout(t)
+  }, [])
 
   const filteredInvoices = invoices.filter(inv => {
     if (!search) return true
@@ -962,6 +979,22 @@ export default function PaymentRequestsPage() {
       ((inv as any).pr_number ?? "").toLowerCase().includes(q)
     )
   })
+
+  // V7 — auto-select first invoice once loaded
+  React.useEffect(() => {
+    if (!isLoading && !selected && filteredInvoices.length > 0) {
+      setSelected(filteredInvoices[0])
+      setActiveTab("details")
+    }
+  }, [isLoading, filteredInvoices])
+
+  // V9 — when sidebar re-expands (l2Open false→true), close PDF panel
+  React.useEffect(() => {
+    if (l2Open && !prevL2Open.current) {
+      setRightOpen(false)
+    }
+    prevL2Open.current = l2Open
+  }, [l2Open])
 
   const handleLeftDrag = (e: React.MouseEvent) => {
     const startX = e.clientX
@@ -1001,12 +1034,14 @@ export default function PaymentRequestsPage() {
         {/* Right: action buttons */}
         <div className="ml-auto flex items-center gap-3">
           <button
-            className="bg-white border border-[#d0d5dd] rounded-[12px] px-4 py-[10px] text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#5d5ef4]/40 focus:ring-offset-1 transition-colors cursor-pointer"
+            onClick={() => toast("Coming soon", { description: "Export will be available in the next release." })}
+            className="bg-white border border-[#d0d5dd] rounded-[12px] px-4 py-[10px] text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1 transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             Export ↓
           </button>
           <button
-            className="bg-[#171b1d] border border-[#171b1d] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#2a2f31] focus:outline-none focus:ring-2 focus:ring-[#171b1d]/40 focus:ring-offset-1 transition-colors cursor-pointer"
+            onClick={() => toast("Coming soon", { description: "Create Request form is coming in the next release." })}
+            className="bg-[#171b1d] border border-[#171b1d] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#2a2f31] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#171b1d]/40 focus:ring-offset-1 transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             + Create Request
           </button>
@@ -1014,7 +1049,7 @@ export default function PaymentRequestsPage() {
       </div>
 
       {/* Body */}
-      <div ref={containerRef} className="flex flex-1 overflow-hidden mt-4 px-4 pb-4 gap-2">
+      <div ref={containerRef} className="flex flex-1 overflow-hidden mt-9 px-4 pb-8 gap-2">
 
         {/* Left panel */}
         <div className="flex flex-col gap-3 overflow-hidden shrink-0" style={{ width: leftCollapsed ? 48 : leftWidth }}>
@@ -1053,7 +1088,7 @@ export default function PaymentRequestsPage() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search invoice number, vendor..."
-                  className="w-full bg-white border border-[#eaecf0] rounded-[10px] pl-9 pr-3 py-[7px] text-[14px] text-[#667085] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus:outline-none focus:border-[#5d5ef4] focus:ring-2 focus:ring-[#5d5ef4]/20 transition-colors"
+                  className="w-full max-w-[320px] bg-white border border-[#eaecf0] rounded-[10px] pl-9 pr-3 py-[7px] text-[14px] text-[#667085] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus:outline-none focus:border-[#5d5ef4] focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/20 transition-colors"
                   style={{ fontFamily: "Inter" }}
                 />
               </div>
@@ -1083,15 +1118,27 @@ export default function PaymentRequestsPage() {
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#98a2b3] px-2 pt-1 pb-0.5" style={{ fontFamily: "Inter" }}>
                   VENDOR / INVOICE
                 </p>
-                {filteredInvoices.map(inv => (
-                  <RequestListItem
-                    key={inv.id}
-                    inv={inv}
-                    selected={selected?.id === inv.id}
-                    expanded={leftWidth > 480}
-                    onSelect={() => { setSelected(inv); setActiveTab("details") }}
-                  />
-                ))}
+                {isLoading
+                  ? Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="flex items-start gap-2 p-2">
+                        <Skeleton className="size-[38px] rounded-[8px] shrink-0" />
+                        <div className="flex-1 flex flex-col gap-1.5">
+                          <Skeleton className="h-3 w-3/4 rounded" />
+                          <Skeleton className="h-2.5 w-1/2 rounded" />
+                        </div>
+                        <Skeleton className="h-5 w-14 rounded-[6px]" />
+                      </div>
+                    ))
+                  : filteredInvoices.map(inv => (
+                      <RequestListItem
+                        key={inv.id}
+                        inv={inv}
+                        selected={selected?.id === inv.id}
+                        expanded={leftWidth > 480}
+                        onSelect={() => { setSelected(inv); setActiveTab("details") }}
+                      />
+                    ))
+                }
                 {filteredInvoices.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-8">
                     <Search size={24} className="text-[#d0d5dd] mb-2" />
@@ -1117,7 +1164,19 @@ export default function PaymentRequestsPage() {
         <div className="flex flex-1 min-w-[400px] gap-2 overflow-hidden">
 
           {/* Icon gutter */}
-          <div className="flex flex-col items-center gap-2 shrink-0 pt-1">
+          <TooltipProvider>
+          <div className="flex flex-col items-center gap-2 shrink-0 pt-2 mr-1 bg-white/60 rounded-[12px] px-1 pb-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setMiddleCollapsed(!middleCollapsed)}
+                  className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1"
+                >
+                  {middleCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{middleCollapsed ? "Expand panel" : "Collapse panel"}</TooltipContent>
+            </Tooltip>
             {[
               { icon: FileText,      key: "details",  title: "Info" },
               { icon: MessageSquare, key: "comments", title: "Activity" },
@@ -1128,37 +1187,39 @@ export default function PaymentRequestsPage() {
                 ? rightOpen
                 : (activeTab === btn.key && selected !== null)
               return (
-                <button
-                  key={btn.key}
-                  title={btn.title}
-                  onClick={() => {
-                    if (btn.key === "pdf") {
-                      setRightOpen(!rightOpen)
-                      setLeftCollapsed(true)
-                    } else {
-                      selected && setActiveTab(btn.key)
-                    }
-                  }}
-                  className={cn(
-                    "p-2 rounded-[8px] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#5d5ef4]/40 focus:ring-offset-1",
-                    isActive ? "bg-[#e7e6e6] text-[#344054]" : "text-[#667085] hover:text-[#344054] hover:bg-[#f2f4f7]"
-                  )}
-                >
-                  <BtnIcon size={16} />
-                </button>
+                <Tooltip key={btn.key}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => {
+                        if (btn.key === "pdf") {
+                          const opening = !rightOpen
+                          setRightOpen(opening)
+                          setLeftCollapsed(opening)
+                          setL2(!opening)
+                        } else {
+                          selected && setActiveTab(btn.key)
+                        }
+                      }}
+                      className={cn(
+                        "p-2 rounded-[8px] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1",
+                        isActive ? "bg-[#e7e6e6] text-[#344054]" : "text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6]"
+                      )}
+                    >
+                      <BtnIcon size={16} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{btn.title}</TooltipContent>
+                </Tooltip>
               )
             })}
-            <div className="flex-1" />
-            <button
-              title={middleCollapsed ? "Expand panel" : "Collapse panel"}
-              onClick={() => setMiddleCollapsed(!middleCollapsed)}
-              className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#f2f4f7] focus:outline-none focus:ring-2 focus:ring-[#5d5ef4]/40 focus:ring-offset-1"
-            >
-              {middleCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            </button>
           </div>
+          </TooltipProvider>
 
-          {/* Detail panel or empty */}
+          {/* Detail panel or empty — animated width */}
+          <div className={cn(
+            "flex flex-1 overflow-hidden transition-all duration-300 ease-in-out",
+            middleCollapsed ? "w-0 opacity-0 pointer-events-none" : "opacity-100"
+          )}>
           {!middleCollapsed && (selected ? (
             <DetailPanel
               invoice={selected}
@@ -1166,6 +1227,14 @@ export default function PaymentRequestsPage() {
               onTabChange={setActiveTab}
               onOpenPDF={() => setRightOpen(true)}
               onQuery={() => setActiveTab("comments")}
+              onApprove={() => {
+                setInvoices(prev => prev.map(inv => inv.id === selected.id ? { ...inv, status: "approved" as InvoiceStatus } : inv))
+                toast.success("Payment request approved", { description: `${selected.invoice_number} has been approved.` })
+              }}
+              onReject={() => {
+                setInvoices(prev => prev.map(inv => inv.id === selected.id ? { ...inv, status: "rejected" as InvoiceStatus } : inv))
+                toast.warning("Payment request rejected", { description: `${selected.invoice_number} has been rejected.` })
+              }}
             />
           ) : (
             <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col items-center justify-center gap-4 p-8">
@@ -1192,6 +1261,7 @@ export default function PaymentRequestsPage() {
               </div>
             </div>
           ))}
+          </div>
         </div>
 
         {/* Right panel — PDF preview */}
