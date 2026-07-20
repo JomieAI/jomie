@@ -1030,7 +1030,7 @@ export default function PaymentRequestsPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: "#f4f4f1" }}>
+    <div className="flex flex-col h-screen overflow-hidden pb-4" style={{ backgroundColor: "#f4f4f1" }}>
 
       {/* Header */}
       <div className="relative flex items-center px-4 pt-4 pb-0 shrink-0">
@@ -1072,7 +1072,7 @@ export default function PaymentRequestsPage() {
         {/* Left panel */}
         <div
           className={cn(
-            "flex flex-col gap-3 overflow-hidden transition-all duration-300 ease-in-out",
+            "flex flex-col gap-3 overflow-hidden",
             middleCollapsed ? "flex-1" : "shrink-0"
           )}
           style={middleCollapsed ? undefined : { width: leftWidth }}
@@ -1184,7 +1184,7 @@ export default function PaymentRequestsPage() {
 
         {/* Gutter — always shrink-0, never grows, sized to its own content only */}
         <TooltipProvider>
-          <div className="flex flex-col items-center gap-2 shrink-0 self-start pt-2 mr-3 px-1 pb-2">
+          <div className="flex flex-col items-center gap-2 shrink-0 self-start pt-2 mr-1 px-1 pb-2">
             {[
               { icon: FileText,      key: "details",  title: "Info" },
               { icon: MessageSquare, key: "comments", title: "Activity" },
