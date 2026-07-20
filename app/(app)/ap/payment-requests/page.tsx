@@ -1067,7 +1067,7 @@ export default function PaymentRequestsPage() {
       </div>
 
       {/* Body */}
-      <div ref={containerRef} className="flex flex-1 overflow-hidden mt-9 px-4 pb-8 gap-2">
+      <div ref={containerRef} className="flex flex-1 overflow-hidden mt-9 px-4 pb-4 gap-2">
 
         {/* Left panel */}
         <div
@@ -1184,7 +1184,7 @@ export default function PaymentRequestsPage() {
 
         {/* Gutter — always shrink-0, never grows, sized to its own content only */}
         <TooltipProvider>
-          <div className="flex flex-col items-center gap-2 shrink-0 self-start pt-2 mr-3 bg-white/60 rounded-[12px] px-2 pb-2">
+          <div className="flex flex-col items-center gap-2 shrink-0 self-start pt-2 mr-3 px-1 pb-2">
             {[
               { icon: FileText,      key: "details",  title: "Info" },
               { icon: MessageSquare, key: "comments", title: "Activity" },
@@ -1241,10 +1241,10 @@ export default function PaymentRequestsPage() {
           </div>
         </TooltipProvider>
 
-        {/* D — detail panel, animates to w-0 when collapsed */}
+        {/* D — detail panel, slides in/out like a drawer */}
         <div className={cn(
-          "overflow-hidden transition-all duration-300 ease-in-out",
-          middleCollapsed ? "w-0 opacity-0 pointer-events-none" : "flex-1 min-w-[600px] opacity-100"
+          "overflow-hidden transition-[width] duration-200",
+          middleCollapsed ? "w-0 pointer-events-none" : "flex-1 min-w-[600px]"
         )}>
           {!middleCollapsed && (selected ? (
             <DetailPanel
