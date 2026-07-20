@@ -4,7 +4,7 @@ import React from "react"
 import { cn } from "@/lib/utils"
 import {
   Search, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, Plus,
-  ListChecks, UserCheck, Mail,
+  ListChecks, Mail,
   FileText, Paperclip, MessageSquare, X, Download, Printer,
   Zap, RefreshCw, Users, Landmark, Truck, Globe, Building2,
   Wrench, Receipt, Banknote, CreditCard, UserCheck, ArrowLeftRight,
