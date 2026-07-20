@@ -1159,7 +1159,7 @@ export default function PaymentRequestsPage() {
           </div>
 
           {/* Detail panel or empty */}
-          {!middleCollapsed && selected ? (
+          {!middleCollapsed && (selected ? (
             <DetailPanel
               invoice={selected}
               activeTab={activeTab}
@@ -1167,7 +1167,7 @@ export default function PaymentRequestsPage() {
               onOpenPDF={() => setRightOpen(true)}
               onQuery={() => setActiveTab("comments")}
             />
-          ) : !middleCollapsed ? (
+          ) : (
             <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col items-center justify-center gap-4 p-8">
               {/* Branded SVG illustration */}
               <svg width="120" height="100" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No payment request selected illustration">
@@ -1191,7 +1191,7 @@ export default function PaymentRequestsPage() {
                 <span>to navigate</span>
               </div>
             </div>
-          )}
+          ))}
         </div>
 
         {/* Right panel — PDF preview */}
