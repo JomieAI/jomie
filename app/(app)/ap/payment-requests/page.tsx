@@ -4,6 +4,7 @@ import React from "react"
 import { cn } from "@/lib/utils"
 import {
   Search, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, Plus,
+  ListChecks, UserCheck, Mail, Receipt,
   FileText, Paperclip, MessageSquare, X, Download, Printer,
   Zap, RefreshCw, Users, Landmark, Truck, Globe, Building2,
   Wrench, Receipt, Banknote, CreditCard, UserCheck, ArrowLeftRight,
@@ -21,6 +22,10 @@ import { useSidebar } from "@/components/sidebar-context"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel,
+} from "@/components/ui/alert-dialog"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -863,6 +868,7 @@ function DetailPanel({
   const cat = getCat(invoice.invoice_category)
   const CatIcon = cat.icon
   const inv = invoice as any
+  const [confirmAction, setConfirmAction] = React.useState<"approve" | "reject" | null>(null)
 
   return (
     <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col overflow-hidden">
@@ -893,43 +899,16 @@ function DetailPanel({
             Query
           </button>
           <button
-            onClick={onReject}
+            onClick={() => setConfirmAction("reject")}
             className="bg-white border border-[#fda29b] rounded-[12px] p-[10px] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-red-50 hover:border-[#f97066] focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 focus:ring-offset-1 transition-colors cursor-pointer">
             <X size={20} className="text-[#b42318]" />
           </button>
           <button
-            onClick={onApprove}
+            onClick={() => setConfirmAction("approve")}
             className="bg-[#5d5ef4] border border-[#5d5ef4] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#4546d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1 transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             Approve
           </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="px-8 shrink-0">
-        <div className="inline-flex overflow-x-auto bg-[#f2f4f7] border border-[#f2f4f7] rounded-[12px] p-1 gap-0">
-          {[
-            { key: "details",  label: "Info" },
-            { key: "checks",   label: "Checks" },
-            { key: "approval", label: "Approval" },
-            { key: "emails",   label: "Emails" },
-            { key: "pv",       label: "PV" },
-          ].map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => onTabChange(tab.key)}
-              className={cn(
-                "px-3 py-2 rounded-[10px] text-[14px] whitespace-nowrap transition-all duration-150 cursor-pointer",
-                activeTab === tab.key
-                  ? "bg-white text-[#344054] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
-                  : "text-[#667085] hover:text-[#344054]"
-              )}
-              style={{ fontFamily: "Inter" }}
-            >
-              {tab.label}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -942,6 +921,34 @@ function DetailPanel({
         {activeTab === "emails"   && <EmailsTab   invoice={invoice} />}
         {activeTab === "pv"       && <PVTab       invoice={invoice} />}
       </div>
+
+      <AlertDialog open={confirmAction !== null} onOpenChange={(open) => { if (!open) setConfirmAction(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction === "approve" ? "Approve this payment request?" : "Reject this payment request?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction === "approve"
+                ? `${invoice.invoice_number} will move to the next step in the approval flow.`
+                : `${invoice.invoice_number} will be rejected and sent back to the requestor.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmAction === "approve") onApprove()
+                else if (confirmAction === "reject") onReject()
+                setConfirmAction(null)
+              }}
+              className={confirmAction === "reject" ? "bg-red-600 hover:bg-red-700 text-white" : ""}
+            >
+              {confirmAction === "approve" ? "Approve" : "Reject"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -1197,6 +1204,10 @@ export default function PaymentRequestsPage() {
           <div className="flex flex-col items-center gap-2 shrink-0 self-start pt-2 mr-1 pb-2">
             {[
               { icon: FileText,      key: "details",  title: "Info" },
+              { icon: ListChecks,    key: "checks",   title: "Checks" },
+              { icon: UserCheck,     key: "approval", title: "Approval" },
+              { icon: Mail,          key: "emails",   title: "Emails" },
+              { icon: Receipt,       key: "pv",       title: "PV" },
               { icon: MessageSquare, key: "comments", title: "Activity" },
               { icon: Paperclip,     key: "pdf",      title: "Documents" },
             ].map(btn => {
