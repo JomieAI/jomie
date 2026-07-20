@@ -1131,8 +1131,11 @@ export default function PaymentRequestsPage() {
                   style={{ fontFamily: "Inter" }}>
                   Datetime <ChevronDown size={14} />
                 </button>
-                <button className="p-[10px] rounded-[10px] hover:bg-[#f2f4f7] transition-colors cursor-pointer">
-                  <SlidersHorizontal size={16} className="text-[#667085]" />
+                <button
+                  onClick={() => {}}
+                  className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus-visible:ring-offset-1"
+                >
+                  <SlidersHorizontal size={16} />
                 </button>
               </div>
 
@@ -1234,7 +1237,7 @@ export default function PaymentRequestsPage() {
                   />
                 }
               >
-                {middleCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                {middleCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
               </TooltipTrigger>
               <TooltipContent side="right">{middleCollapsed ? "Expand panel" : "Collapse panel"}</TooltipContent>
             </Tooltip>
