@@ -171,23 +171,23 @@ function RequestListItem({
     <div
       onClick={onSelect}
       className={cn(
-        "flex items-center gap-2 p-2 rounded-[10px] cursor-pointer transition-colors duration-150",
+        "flex items-start gap-2 p-2 rounded-[10px] cursor-pointer transition-colors duration-150",
         selected ? "bg-[#f2f4f7]" : "bg-white hover:bg-[#f2f4f7]"
       )}
     >
       <div
-        className="size-[40px] rounded-[8px] flex items-center justify-center shrink-0"
+        className="size-[38px] rounded-[8px] flex items-center justify-center shrink-0 mt-0.5"
         style={{ background: cat.color + "18" }}
         title={cat.label}
       >
-        <CatIcon size={20} style={{ color: cat.color }} strokeWidth={1.6} />
+        <CatIcon size={18} style={{ color: cat.color }} strokeWidth={1.6} />
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-[14px] font-bold text-[#344054] truncate" style={{ fontFamily: "Inter" }}>
+        <p className="text-[13px] font-semibold text-[#344054] truncate" style={{ fontFamily: "Inter" }}>
           {toTitleCase(inv.vendor_name_raw ?? "")}
         </p>
-        <p className="text-[12px] text-[#667085] truncate" style={{ fontFamily: "Inter" }}>
+        <p className="text-[11px] text-[#667085] truncate" style={{ fontFamily: "Inter" }}>
           {inv.invoice_number}{pr && ` · ${pr}`}
         </p>
 
@@ -223,7 +223,7 @@ function RequestListItem({
       <div className="flex flex-col items-end gap-1 shrink-0">
         <div className="mix-blend-multiply">
           <div className="bg-[#eff8ff] rounded-[6px] px-2 py-0.5">
-            <span className="text-[12px] text-[#175cd3]" style={{ fontFamily: "Inter" }}>
+            <span className="text-[11px] text-[#175cd3]" style={{ fontFamily: "Inter" }}>
               {STATUS_LABEL[inv.status as InvoiceStatus]}
             </span>
           </div>
@@ -240,7 +240,7 @@ function RequestListItem({
             </span>
           )}
         </div>
-        <p className="text-[14px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>
+        <p className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>
           {amount}
         </p>
       </div>
@@ -406,7 +406,7 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
 
   return (
     <div className="flex flex-col h-full" style={{ minHeight: 300 }}>
-      <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+      <div className="flex-1 overflow-y-auto flex flex-col gap-3 pb-4">
         {thread.length === 0 && (
           <p className="text-[13px] text-[#98a2b3] text-center py-8" style={{ fontFamily: "Inter" }}>
             No comments yet.
@@ -743,7 +743,7 @@ function EmailsTab({ invoice }: { invoice: InvoiceListItem }) {
         </button>
       </div>
 
-      <div className="space-y-3">
+      <div className="flex flex-col gap-3">
         {toShow.map((email: any) => (
           <div key={email.id} className="bg-white border border-[#eaecf0] rounded-[12px] p-4">
             <div className="flex items-start justify-between mb-2">
@@ -884,19 +884,13 @@ function DetailPanel({
             Query
           </button>
           <button
-            className="bg-white border border-[#fda29b] rounded-[12px] p-[10px] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-red-50 transition-colors cursor-pointer">
+            className="bg-white border border-[#fda29b] rounded-[12px] p-[10px] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-red-50 hover:border-[#f97066] focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:ring-offset-1 transition-colors cursor-pointer">
             <X size={20} className="text-[#b42318]" />
           </button>
           <button
             className="bg-[#5d5ef4] border border-[#5d5ef4] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#4546d4] transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             Approve
-          </button>
-          <button
-            onClick={onOpenPDF}
-            className="text-[12px] text-[#5d5ef4] hover:text-[#4546d4] transition-colors cursor-pointer whitespace-nowrap"
-            style={{ fontFamily: "Inter" }}>
-            View Document →
           </button>
         </div>
       </div>
@@ -906,7 +900,6 @@ function DetailPanel({
         <div className="inline-flex overflow-x-auto bg-[#f2f4f7] border border-[#f2f4f7] rounded-[12px] p-1 gap-0">
           {[
             { key: "details",  label: "Info" },
-            { key: "comments", label: "Activity" },
             { key: "checks",   label: "Checks" },
             { key: "approval", label: "Approval" },
             { key: "emails",   label: "Emails" },
@@ -930,7 +923,7 @@ function DetailPanel({
       </div>
 
       {/* Tab content */}
-      <div key={activeTab} className="flex-1 overflow-y-auto px-8 py-5 animate-in fade-in-0 slide-in-from-bottom-1 duration-150">
+      <div key={activeTab} className="flex-1 overflow-y-auto px-8 py-5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 duration-150">
         {activeTab === "details"  && <DetailsTab  invoice={invoice} onTabChange={onTabChange} />}
         {activeTab === "comments" && <CommentsTab invoice={invoice} />}
         {activeTab === "checks"   && <ChecksTab   invoice={invoice} />}
@@ -955,7 +948,8 @@ export default function PaymentRequestsPage() {
   const [activeTab, setActiveTab]       = React.useState("details")
   const [rightOpen, setRightOpen]       = React.useState(false)
   const [leftWidth, setLeftWidth]       = React.useState(320)
-  const [leftCollapsed, setLeftCollapsed] = React.useState(false)
+  const [leftCollapsed, setLeftCollapsed]     = React.useState(false)
+  const [middleCollapsed, setMiddleCollapsed] = React.useState(false)
   const [search, setSearch]             = React.useState("")
   const containerRef = React.useRef<HTMLDivElement>(null)
 
@@ -988,7 +982,8 @@ export default function PaymentRequestsPage() {
     <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: "#f4f4f1" }}>
 
       {/* Header */}
-      <div className="flex items-end justify-between px-8 pt-8 pb-0 shrink-0">
+      <div className="relative flex items-center px-4 pt-4 pb-0 shrink-0">
+        {/* Left: title */}
         <div>
           <p className="text-[12px] font-light text-[#344054]" style={{ fontFamily: "Inter" }}>
             AP / Payment Requests
@@ -998,15 +993,20 @@ export default function PaymentRequestsPage() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-3 pb-1">
+        {/* Centre: channel toggle — absolutely centred */}
+        <div className="absolute left-1/2 -translate-x-1/2">
           <ChannelToggle channel={channel} onChange={setChannel} />
+        </div>
+
+        {/* Right: action buttons */}
+        <div className="ml-auto flex items-center gap-3">
           <button
-            className="bg-white border border-[#d0d5dd] rounded-[12px] px-4 py-[10px] text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-gray-50 transition-colors cursor-pointer"
+            className="bg-white border border-[#d0d5dd] rounded-[12px] px-4 py-[10px] text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#5d5ef4]/40 focus:ring-offset-1 transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             Export ↓
           </button>
           <button
-            className="bg-[#171b1d] border border-[#171b1d] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#2a2f31] transition-colors cursor-pointer"
+            className="bg-[#171b1d] border border-[#171b1d] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#2a2f31] focus:outline-none focus:ring-2 focus:ring-[#171b1d]/40 focus:ring-offset-1 transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             + Create Request
           </button>
@@ -1014,7 +1014,7 @@ export default function PaymentRequestsPage() {
       </div>
 
       {/* Body */}
-      <div ref={containerRef} className="flex flex-1 overflow-hidden mt-8 px-8 pb-8 gap-2">
+      <div ref={containerRef} className="flex flex-1 overflow-hidden mt-4 px-4 pb-4 gap-2">
 
         {/* Left panel */}
         <div className="flex flex-col gap-3 overflow-hidden shrink-0" style={{ width: leftCollapsed ? 48 : leftWidth }}>
@@ -1053,7 +1053,7 @@ export default function PaymentRequestsPage() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search invoice number, vendor..."
-                  className="w-full bg-white border border-[#eaecf0] rounded-[10px] pl-9 pr-3 py-[7px] text-[14px] text-[#667085] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus:outline-none focus:border-[#5d5ef4] transition-colors"
+                  className="w-full bg-white border border-[#eaecf0] rounded-[10px] pl-9 pr-3 py-[7px] text-[14px] text-[#667085] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus:outline-none focus:border-[#5d5ef4] focus:ring-2 focus:ring-[#5d5ef4]/20 transition-colors"
                   style={{ fontFamily: "Inter" }}
                 />
               </div>
@@ -1103,14 +1103,6 @@ export default function PaymentRequestsPage() {
             </>
           )}
 
-          <div className="shrink-0 pt-1">
-            <button
-              onClick={() => setLeftCollapsed(!leftCollapsed)}
-              className="flex items-center justify-center w-full p-2 rounded-[8px] border border-[#eaecf0] bg-white hover:bg-[#f2f4f7] text-[#667085] transition-colors cursor-pointer"
-            >
-              {leftCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-            </button>
-          </div>
         </div>
 
         {/* Drag handle */}
@@ -1127,18 +1119,28 @@ export default function PaymentRequestsPage() {
           {/* Icon gutter */}
           <div className="flex flex-col items-center gap-2 shrink-0 pt-1">
             {[
-              { icon: FileText,      key: "details",   title: "Info" },
-              { icon: MessageSquare, key: "comments",  title: "Activity" },
+              { icon: FileText,      key: "details",  title: "Info" },
+              { icon: MessageSquare, key: "comments", title: "Activity" },
+              { icon: Paperclip,     key: "pdf",      title: "Documents" },
             ].map(btn => {
               const BtnIcon = btn.icon
-              const isActive = activeTab === btn.key && selected !== null
+              const isActive = btn.key === "pdf"
+                ? rightOpen
+                : (activeTab === btn.key && selected !== null)
               return (
                 <button
                   key={btn.key}
                   title={btn.title}
-                  onClick={() => selected && setActiveTab(btn.key)}
+                  onClick={() => {
+                    if (btn.key === "pdf") {
+                      setRightOpen(!rightOpen)
+                      setLeftCollapsed(true)
+                    } else {
+                      selected && setActiveTab(btn.key)
+                    }
+                  }}
                   className={cn(
-                    "p-2 rounded-[8px] transition-colors cursor-pointer",
+                    "p-2 rounded-[8px] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#5d5ef4]/40 focus:ring-offset-1",
                     isActive ? "bg-[#e7e6e6] text-[#344054]" : "text-[#667085] hover:text-[#344054] hover:bg-[#f2f4f7]"
                   )}
                 >
@@ -1146,17 +1148,18 @@ export default function PaymentRequestsPage() {
                 </button>
               )
             })}
+            <div className="flex-1" />
             <button
-              title="Expand"
-              onClick={() => setLeftCollapsed(!leftCollapsed)}
-              className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#f2f4f7]"
+              title={middleCollapsed ? "Expand panel" : "Collapse panel"}
+              onClick={() => setMiddleCollapsed(!middleCollapsed)}
+              className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#f2f4f7] focus:outline-none focus:ring-2 focus:ring-[#5d5ef4]/40 focus:ring-offset-1"
             >
-              <ChevronRight size={16} />
+              {middleCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </button>
           </div>
 
           {/* Detail panel or empty */}
-          {selected ? (
+          {!middleCollapsed && selected ? (
             <DetailPanel
               invoice={selected}
               activeTab={activeTab}
@@ -1164,10 +1167,10 @@ export default function PaymentRequestsPage() {
               onOpenPDF={() => setRightOpen(true)}
               onQuery={() => setActiveTab("comments")}
             />
-          ) : (
+          ) : !middleCollapsed ? (
             <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col items-center justify-center gap-4 p-8">
               {/* Branded SVG illustration */}
-              <svg width="120" height="100" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg width="120" height="100" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No payment request selected illustration">
                 <rect x="20" y="25" width="60" height="70" rx="6" fill="#f2f4f7" stroke="#eaecf0" strokeWidth="1.5"/>
                 <rect x="28" y="15" width="60" height="70" rx="6" fill="#f7f7fe" stroke="#e0e1fd" strokeWidth="1.5"/>
                 <rect x="36" y="5" width="60" height="70" rx="6" fill="white" stroke="#c7c9fb" strokeWidth="1.5"/>
