@@ -3,7 +3,7 @@
 import React from "react"
 import { cn } from "@/lib/utils"
 import {
-  Search, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal,
+  Search, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, Plus,
   FileText, Paperclip, MessageSquare, X, Download, Printer,
   Zap, RefreshCw, Users, Landmark, Truck, Globe, Building2,
   Wrench, Receipt, Banknote, CreditCard, UserCheck, ArrowLeftRight,
@@ -33,6 +33,15 @@ function formatDate(dateStr?: string | null): string {
   const d = new Date(dateStr)
   if (isNaN(d.getTime())) return dateStr
   return d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })
+}
+
+const STATUS_COLOR: Record<InvoiceStatus, { bg: string; text: string }> = {
+  pending_review: { bg: "#eff8ff", text: "#175cd3" },
+  approved:       { bg: "#ecfdf3", text: "#027a48" },
+  rejected:       { bg: "#fef3f2", text: "#b42318" },
+  paid:           { bg: "#f2f4f7", text: "#344054" },
+  overdue:        { bg: "#fff6ed", text: "#c4320a" },
+  partially_paid: { bg: "#fffaeb", text: "#b54708" },
 }
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
@@ -170,83 +179,77 @@ function RequestListItem({
   const CatIcon = cat.icon
   const amount = (inv.total_myr ?? 0).toLocaleString("en-MY", { minimumFractionDigits: 2 })
   const pr = (inv as any).pr_number as string | undefined
+  const statusColor = STATUS_COLOR[inv.status as InvoiceStatus]
 
   return (
     <div
       onClick={onSelect}
       className={cn(
-        "flex items-start gap-2 p-2 rounded-[10px] cursor-pointer transition-colors duration-150",
-        selected ? "bg-[#f2f4f7]" : "bg-white hover:bg-[#f2f4f7]"
+        "flex flex-col gap-1.5 p-2.5 rounded-[10px] cursor-pointer transition-colors duration-150 border",
+        selected ? "bg-[#f2f4f7] border-[#d0d5dd]" : "bg-white border-transparent hover:bg-[#f9fafb] hover:border-[#eaecf0]"
       )}
     >
-      <div
-        className="size-[38px] rounded-[8px] flex items-center justify-center shrink-0 mt-0.5"
-        style={{ background: cat.color + "18" }}
-        title={cat.label}
-      >
-        <CatIcon size={18} style={{ color: cat.color }} strokeWidth={1.6} />
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-semibold text-[#344054] truncate" style={{ fontFamily: "Inter" }}>
-          {toTitleCase(inv.vendor_name_raw ?? "")}
-        </p>
-        <p className="text-[11px] text-[#667085] truncate" style={{ fontFamily: "Inter" }}>
-          {inv.invoice_number}{pr && ` · ${pr}`}
-        </p>
-
-        {expanded && (
-          <>
-            <p className="text-[11px] text-[#98a2b3] truncate" style={{ fontFamily: "Inter" }}>
-              {(inv as any).requestor_name}
+      <div className="flex items-start gap-3">
+        <div
+          className="size-9 rounded-[8px] flex items-center justify-center shrink-0"
+          style={{ background: cat.color + "18" }}
+          title={cat.label}
+        >
+          <CatIcon size={16} style={{ color: cat.color }} strokeWidth={1.6} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[13px] font-semibold text-[#1d2939] truncate" style={{ fontFamily: "Inter" }}>
+              {toTitleCase(inv.vendor_name_raw ?? "")}
             </p>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className={cn("text-[11px]", urgencyColor(inv))} style={{ fontFamily: "Inter" }}>
-                {urgencyLabel(inv)}
-              </span>
-              {inv.risk_level === "warning" && (
-                <span className="flex items-center gap-0.5 text-amber-500">
-                  <AlertTriangle size={11} />
-                  <span className="text-[11px] font-semibold">{inv.risk_count}</span>
-                </span>
-              )}
-              {inv.risk_level === "fail" && (
-                <span className="flex items-center gap-0.5 text-red-500">
-                  <XCircle size={11} />
-                  <span className="text-[11px] font-semibold">{inv.risk_count}</span>
-                </span>
-              )}
-              {inv.risk_level === "pass" && (
-                <CheckCircle2 size={11} className="text-green-500" />
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="flex flex-col items-end gap-1 shrink-0">
-        <div className="mix-blend-multiply">
-          <div className="bg-[#eff8ff] rounded-[6px] px-2 py-0.5">
-            <span className="text-[11px] text-[#175cd3]" style={{ fontFamily: "Inter" }}>
+            <p className="text-[13px] font-medium text-[#344054] tabular-nums shrink-0" style={{ fontFamily: "Inter" }}>
+              {amount}
+            </p>
+          </div>
+          <div className="flex items-center justify-between gap-2 mt-0.5">
+            <p className="text-[11px] text-[#667085] truncate" style={{ fontFamily: "Inter" }}>
+              {inv.invoice_number}{pr && ` · ${pr}`}
+            </p>
+            <span
+              className="text-[10px] font-medium rounded-[5px] px-1.5 py-0.5 shrink-0"
+              style={{ background: statusColor.bg, color: statusColor.text }}
+            >
               {STATUS_LABEL[inv.status as InvoiceStatus]}
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          {inv.duplicate_risk !== "none" && (
-            <span className="flex items-center gap-0.5 text-[10px] font-medium text-red-500">
-              <AlertTriangle size={9} /> Dup
-            </span>
-          )}
-          {(inv as any).sla_warning && (
-            <span className="flex items-center gap-0.5 text-[10px] text-amber-500">
-              <Clock size={9} /> {(inv as any).sla_warning}
-            </span>
-          )}
-        </div>
-        <p className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>
-          {amount}
-        </p>
+      </div>
+
+      {/* Meta row — requestor/urgency/risk always show; Dup + FM only when expanded */}
+      <div className="flex items-center gap-2 pl-12 flex-wrap">
+        <span className="text-[11px] text-[#98a2b3] truncate" style={{ fontFamily: "Inter" }}>
+          {(inv as any).requestor_name}
+        </span>
+        <span className={cn("text-[11px]", urgencyColor(inv))} style={{ fontFamily: "Inter" }}>
+          {urgencyLabel(inv)}
+        </span>
+        {inv.risk_level === "warning" && (
+          <span className="flex items-center gap-0.5 text-amber-500">
+            <AlertTriangle size={10} /> <span className="text-[11px] font-semibold">{inv.risk_count}</span>
+          </span>
+        )}
+        {inv.risk_level === "fail" && (
+          <span className="flex items-center gap-0.5 text-red-500">
+            <XCircle size={10} /> <span className="text-[11px] font-semibold">{inv.risk_count}</span>
+          </span>
+        )}
+        {inv.risk_level === "pass" && <CheckCircle2 size={10} className="text-green-500" />}
+
+        {expanded && inv.duplicate_risk !== "none" && (
+          <span className="flex items-center gap-0.5 text-[11px] font-medium text-red-500">
+            <AlertTriangle size={10} /> Dup
+          </span>
+        )}
+        {expanded && (inv as any).sla_warning && (
+          <span className="flex items-center gap-0.5 text-[11px] text-amber-500">
+            <Clock size={10} /> {(inv as any).sla_warning}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -1042,6 +1045,33 @@ export default function PaymentRequestsPage() {
           <h1 className="text-[30px] font-semibold leading-[38px] text-[#171b1d] mt-0" style={{ fontFamily: "Inter" }}>
             Payment Requests
           </h1>
+          <div className="flex items-center gap-0.5 mt-2 flex-wrap">
+            {[
+              { key: "all",        label: "All",         count: filteredInvoices.length },
+              { key: "dashboard",  label: "Dashboard",   count: null },
+              { key: "my_request", label: "My Request",  count: 2 },
+              { key: "awaiting",   label: "Awaiting Me", count: 1 },
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setViewTab(tab.key as any)}
+                className={cn(
+                  "px-3 py-2 rounded-[10px] text-[14px] transition-colors whitespace-nowrap cursor-pointer",
+                  viewTab === tab.key ? "bg-[#171b1d] text-white" : "text-[#667085] hover:text-[#344054]"
+                )}
+                style={{ fontFamily: "Inter" }}
+              >
+                {tab.label}
+                {tab.count !== null && <span className="ml-1 text-[11px] opacity-70">{tab.count}</span>}
+              </button>
+            ))}
+            <button
+              onClick={() => toast("Coming soon", { description: "Custom views are coming in the next release." })}
+              className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus-visible:ring-offset-1 ml-1"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Centre: channel toggle — absolutely centred */}
@@ -1079,31 +1109,6 @@ export default function PaymentRequestsPage() {
         >
 
           <>
-              {/* View tabs */}
-              <div className="flex items-center gap-0.5 flex-wrap">
-                {[
-                  { key: "all",        label: "All",         count: filteredInvoices.length },
-                  { key: "dashboard",  label: "Dashboard",   count: null },
-                  { key: "my_request", label: "My Request",  count: 2 },
-                  { key: "awaiting",   label: "Awaiting Me", count: 1 },
-                ].map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setViewTab(tab.key as any)}
-                    className={cn(
-                      "px-3 py-2 rounded-[10px] text-[14px] transition-colors whitespace-nowrap cursor-pointer",
-                      viewTab === tab.key ? "bg-[#171b1d] text-white" : "text-[#667085] hover:text-[#344054]"
-                    )}
-                    style={{ fontFamily: "Inter" }}
-                  >
-                    {tab.label}
-                    {tab.count !== null && (
-                      <span className="ml-1 text-[11px] opacity-70">{tab.count}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
               {/* Search */}
               <div className="relative">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#667085]" />
@@ -1140,7 +1145,7 @@ export default function PaymentRequestsPage() {
               </div>
 
               {/* Request list */}
-              <div className="flex flex-col bg-white border border-[#eaecf0] rounded-[12px] p-2 gap-1 flex-1 overflow-y-auto">
+              <div className="flex flex-col bg-white border border-[#eaecf0] rounded-[12px] p-2 gap-2 flex-1 overflow-y-auto">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#98a2b3] px-2 pt-1 pb-0.5" style={{ fontFamily: "Inter" }}>
                   VENDOR / INVOICE
                 </p>
