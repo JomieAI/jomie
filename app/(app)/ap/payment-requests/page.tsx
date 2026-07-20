@@ -4,7 +4,7 @@ import React from "react"
 import { cn } from "@/lib/utils"
 import {
   Search, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, Plus,
-  ListChecks, Mail,
+  ListChecks, Mail, Copy,
   FileText, Paperclip, MessageSquare, X, Download, Printer,
   Zap, RefreshCw, Users, Landmark, Truck, Globe, Building2,
   Wrench, Receipt, Banknote, CreditCard, UserCheck, ArrowLeftRight,
@@ -30,10 +30,14 @@ import {
   MessageScrollerProvider, MessageScroller, MessageScrollerViewport,
   MessageScrollerContent, MessageScrollerItem, MessageScrollerButton,
 } from "@/components/ui/message-scroller"
-import { Message, MessageAvatar, MessageContent, MessageHeader, MessageFooter } from "@/components/ui/message"
+import { Message, MessageGroup, MessageAvatar, MessageContent, MessageHeader, MessageFooter } from "@/components/ui/message"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Marker, MarkerContent } from "@/components/ui/marker"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import {
+  Attachment, AttachmentAction, AttachmentActions,
+  AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle,
+} from "@/components/ui/attachment"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -414,8 +418,11 @@ function DetailsTab({ invoice, onTabChange }: { invoice: InvoiceListItem; onTabC
 
 function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
   const inv = invoice as any
-  const thread: CommentThreadItem[] = inv.comment_thread ?? []
+  const [localThread, setLocalThread] = React.useState<CommentThreadItem[]>(
+    () => inv.comment_thread ?? []
+  )
   const [message, setMessage] = React.useState("")
+  const CURRENT_USER = "Thony"
 
   function formatTime(ts: string) {
     return new Date(ts).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: true })
@@ -424,19 +431,63 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
     return new Date(ts).toLocaleDateString("en-MY", { day: "numeric", month: "short" })
   }
 
+  function handleSend() {
+    if (!message.trim()) return
+    setLocalThread(prev => [...prev, {
+      id: `local-${Date.now()}`,
+      type: "comment",
+      is_query: false,
+      resolved: false,
+      timestamp: new Date().toISOString(),
+      author: CURRENT_USER,
+      role: "Requestor",
+      message: message.trim(),
+    } as CommentThreadItem])
+    setMessage("")
+  }
+
+  function handleResolve(id: string) {
+    setLocalThread(prev => prev.map(it =>
+      it.id === id ? { ...it, resolved: true, resolved_by: CURRENT_USER } : it
+    ))
+  }
+
+  function handleCopy(text: string) {
+    navigator.clipboard.writeText(text)
+    toast.success("Copied to clipboard")
+  }
+
+  type RenderRow =
+    | { kind: "activity"; item: CommentThreadItem }
+    | { kind: "group"; items: CommentThreadItem[] }
+  const rows: RenderRow[] = []
+  for (const item of localThread) {
+    if (item.type === "activity") {
+      rows.push({ kind: "activity", item })
+    } else {
+      const last = rows[rows.length - 1]
+      if (last?.kind === "group" && last.items[last.items.length - 1].author === item.author) {
+        last.items.push(item)
+      } else {
+        rows.push({ kind: "group", items: [item] })
+      }
+    }
+  }
+
   return (
     <div className="flex flex-col h-full" style={{ minHeight: 300 }}>
-      <MessageScrollerProvider defaultScrollPosition="end">
+      <MessageScrollerProvider defaultScrollPosition="end" autoScroll>
         <MessageScroller className="flex-1">
           <MessageScrollerViewport className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/30 focus-visible:ring-offset-0">
             <MessageScrollerContent className="gap-3">
-              {thread.length === 0 && (
+              {rows.length === 0 && (
                 <p className="text-[13px] text-[#98a2b3] text-center py-8" style={{ fontFamily: "Inter" }}>
                   No comments yet.
                 </p>
               )}
-              {thread.map(item => {
-                if (item.type === "activity") {
+              {rows.map((row) => {
+                if (row.kind === "activity") {
+                  const item = row.item
                   return (
                     <MessageScrollerItem key={item.id} messageId={item.id} className="[content-visibility:visible]">
                       <Marker className="my-2">
@@ -451,61 +502,110 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                   )
                 }
 
-                const isQuery = item.is_query
-                const initials = (item.author ?? "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
+                const groupItems = row.items
+                const firstItem = groupItems[0]
+                const isMine = firstItem.author === CURRENT_USER
+                const anyQuery = groupItems.some(it => it.is_query)
 
                 return (
-                  <MessageScrollerItem key={item.id} messageId={item.id} scrollAnchor={isQuery} className="[content-visibility:visible]">
-                    <Message className="mb-3">
-                      <MessageAvatar>
-                        <Avatar className="size-8">
-                          <AvatarFallback className="text-[11px] font-semibold text-[#5d5ef4] bg-[#f2f4f7]">
-                            {initials}
-                          </AvatarFallback>
-                        </Avatar>
-                      </MessageAvatar>
-                      <MessageContent>
-                        <MessageHeader className="flex items-center gap-2">
-                          <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{item.author}</span>
-                          {item.role && (
-                            <span className="text-[10px] bg-[#f2f4f7] rounded-full px-2 text-[#667085]" style={{ fontFamily: "Inter" }}>{item.role}</span>
-                          )}
-                          <span className="text-[10px] text-[#98a2b3] ml-auto" style={{ fontFamily: "Inter" }}>
-                            {formatDate(item.timestamp)} {formatTime(item.timestamp)}
-                          </span>
-                        </MessageHeader>
-                        <Bubble
-                          variant={isQuery ? "tinted" : "outline"}
-                          className={cn(
-                            "rounded-[12px] rounded-tl-[4px]",
-                            isQuery && "*:data-[slot=bubble-content]:!bg-amber-50 *:data-[slot=bubble-content]:!border-amber-200 *:data-[slot=bubble-content]:border-l-4 *:data-[slot=bubble-content]:!border-l-amber-400"
-                          )}
-                        >
-                          <BubbleContent>
-                            <p className={cn("text-[13px] text-[#344054] leading-5", isQuery && item.resolved && "line-through")} style={{ fontFamily: "Inter" }}>
-                              {item.message}
-                            </p>
-                            {item.attachment && (
-                              <div className="inline-flex items-center gap-1.5 mt-2 bg-[#f2f4f7] border border-[#eaecf0] rounded-[8px] px-2 py-1">
-                                <Paperclip size={10} className="text-[#5d5ef4]" />
-                                <span className="text-[11px] text-[#5d5ef4] hover:underline cursor-pointer" style={{ fontFamily: "Inter" }}>{item.attachment}</span>
-                              </div>
-                            )}
-                          </BubbleContent>
-                        </Bubble>
-                        {isQuery && (
-                          <MessageFooter>
-                            {!item.resolved ? (
-                              <button className="text-[11px] text-green-600 hover:underline cursor-pointer" style={{ fontFamily: "Inter" }}>
-                                Mark Resolved ✓
-                              </button>
-                            ) : (
-                              <p className="text-[10px] text-green-600" style={{ fontFamily: "Inter" }}>✓ Resolved by {item.resolved_by ?? "—"}</p>
-                            )}
-                          </MessageFooter>
-                        )}
-                      </MessageContent>
-                    </Message>
+                  <MessageScrollerItem
+                    key={firstItem.id}
+                    messageId={firstItem.id}
+                    scrollAnchor={anyQuery || isMine}
+                    className="[content-visibility:visible]"
+                  >
+                    <MessageGroup>
+                      {groupItems.map((item, i) => {
+                        const isLastInGroup = i === groupItems.length - 1
+                        const isQuery = item.is_query
+                        const initials = (item.author ?? "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
+
+                        return (
+                          <Message key={item.id} align={isMine ? "end" : "start"} className="mb-1">
+                            <MessageAvatar>
+                              {isLastInGroup && (
+                                <Avatar className="size-8">
+                                  <AvatarFallback className="text-[11px] font-semibold text-[#5d5ef4] bg-[#f2f4f7]">
+                                    {initials}
+                                  </AvatarFallback>
+                                </Avatar>
+                              )}
+                            </MessageAvatar>
+                            <MessageContent>
+                              {i === 0 && (
+                                <MessageHeader className="flex items-center gap-2">
+                                  <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{item.author}</span>
+                                  {item.role && (
+                                    <span className="text-[10px] bg-[#f2f4f7] rounded-full px-2 text-[#667085]" style={{ fontFamily: "Inter" }}>{item.role}</span>
+                                  )}
+                                  <span className="text-[10px] text-[#98a2b3] ml-auto" style={{ fontFamily: "Inter" }}>
+                                    {formatDate(item.timestamp)} {formatTime(item.timestamp)}
+                                  </span>
+                                </MessageHeader>
+                              )}
+                              <Bubble
+                                align={isMine ? "end" : "start"}
+                                variant={isQuery ? "tinted" : isMine ? "default" : "outline"}
+                                className={cn(
+                                  "rounded-[12px]",
+                                  isMine ? "rounded-tr-[4px]" : "rounded-tl-[4px]",
+                                  isQuery && "*:data-[slot=bubble-content]:!bg-amber-50 *:data-[slot=bubble-content]:!border-amber-200 *:data-[slot=bubble-content]:border-l-4 *:data-[slot=bubble-content]:!border-l-amber-400"
+                                )}
+                              >
+                                <BubbleContent>
+                                  <p className={cn(
+                                    "text-[13px] leading-5",
+                                    isMine ? "text-white" : "text-[#344054]",
+                                    isQuery && item.resolved && "line-through"
+                                  )} style={{ fontFamily: "Inter" }}>
+                                    {item.message}
+                                  </p>
+                                </BubbleContent>
+                              </Bubble>
+                              {item.attachment && (
+                                <Attachment size="sm" className="mt-2">
+                                  <AttachmentMedia>
+                                    <FileText size={14} />
+                                  </AttachmentMedia>
+                                  <AttachmentContent>
+                                    <AttachmentTitle>{item.attachment}</AttachmentTitle>
+                                  </AttachmentContent>
+                                  <AttachmentActions>
+                                    <AttachmentAction
+                                      aria-label={`Download ${item.attachment}`}
+                                      onClick={() => toast("Coming soon", { description: "File download will be available in the next release." })}
+                                    >
+                                      <Download size={12} />
+                                    </AttachmentAction>
+                                  </AttachmentActions>
+                                </Attachment>
+                              )}
+                              <MessageFooter className="flex items-center gap-3">
+                                <button
+                                  aria-label="Copy message"
+                                  onClick={() => handleCopy(item.message)}
+                                  className="text-[#98a2b3] hover:text-[#344054] transition-colors cursor-pointer"
+                                >
+                                  <Copy size={12} />
+                                </button>
+                                {isQuery && !item.resolved && (
+                                  <button
+                                    onClick={() => handleResolve(item.id)}
+                                    className="text-[11px] text-green-600 hover:underline cursor-pointer"
+                                    style={{ fontFamily: "Inter" }}
+                                  >
+                                    Mark Resolved ✓
+                                  </button>
+                                )}
+                                {isQuery && item.resolved && (
+                                  <p className="text-[10px] text-green-600" style={{ fontFamily: "Inter" }}>✓ Resolved by {item.resolved_by ?? "—"}</p>
+                                )}
+                              </MessageFooter>
+                            </MessageContent>
+                          </Message>
+                        )
+                      })}
+                    </MessageGroup>
                   </MessageScrollerItem>
                 )
               })}
@@ -520,6 +620,12 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
         <textarea
           value={message}
           onChange={e => setMessage(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault()
+              handleSend()
+            }
+          }}
           placeholder="Add a comment..."
           className="w-full bg-[#f9fafb] border border-[#eaecf0] rounded-[12px] px-3 py-2.5 text-[13px] text-[#344054] min-h-[72px] resize-none focus:outline-none focus:border-[#5d5ef4] focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/10 transition-colors"
           style={{ fontFamily: "Inter" }}
@@ -530,6 +636,7 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
             <button className="text-[#98a2b3] hover:text-[#344054] transition-colors cursor-pointer"><AlertTriangle size={14} /></button>
           </div>
           <button
+            onClick={handleSend}
             className="bg-[#5d5ef4] text-white rounded-[10px] px-4 py-2 text-[13px] hover:bg-[#4546d4] transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}
           >
