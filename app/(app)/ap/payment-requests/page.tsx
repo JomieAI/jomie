@@ -1167,13 +1167,15 @@ export default function PaymentRequestsPage() {
           <TooltipProvider>
           <div className="flex flex-col items-center gap-2 shrink-0 pt-2 mr-1 bg-white/60 rounded-[12px] px-1 pb-2">
             <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setMiddleCollapsed(!middleCollapsed)}
-                  className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1"
-                >
-                  {middleCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-                </button>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={() => setMiddleCollapsed(!middleCollapsed)}
+                    className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1"
+                  />
+                }
+              >
+                {middleCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
               </TooltipTrigger>
               <TooltipContent side="right">{middleCollapsed ? "Expand panel" : "Collapse panel"}</TooltipContent>
             </Tooltip>
@@ -1188,25 +1190,27 @@ export default function PaymentRequestsPage() {
                 : (activeTab === btn.key && selected !== null)
               return (
                 <Tooltip key={btn.key}>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => {
-                        if (btn.key === "pdf") {
-                          const opening = !rightOpen
-                          setRightOpen(opening)
-                          setLeftCollapsed(opening)
-                          setL2(!opening)
-                        } else {
-                          selected && setActiveTab(btn.key)
-                        }
-                      }}
-                      className={cn(
-                        "p-2 rounded-[8px] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1",
-                        isActive ? "bg-[#e7e6e6] text-[#344054]" : "text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6]"
-                      )}
-                    >
-                      <BtnIcon size={16} />
-                    </button>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        onClick={() => {
+                          if (btn.key === "pdf") {
+                            const opening = !rightOpen
+                            setRightOpen(opening)
+                            setLeftCollapsed(opening)
+                            setL2(!opening)
+                          } else {
+                            selected && setActiveTab(btn.key)
+                          }
+                        }}
+                        className={cn(
+                          "p-2 rounded-[8px] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1",
+                          isActive ? "bg-[#e7e6e6] text-[#344054]" : "text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6]"
+                        )}
+                      />
+                    }
+                  >
+                    <BtnIcon size={16} />
                   </TooltipTrigger>
                   <TooltipContent side="right">{btn.title}</TooltipContent>
                 </Tooltip>
