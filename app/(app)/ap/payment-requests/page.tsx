@@ -1045,33 +1045,6 @@ export default function PaymentRequestsPage() {
           <h1 className="text-[30px] font-semibold leading-[38px] text-[#171b1d] mt-0" style={{ fontFamily: "Inter" }}>
             Payment Requests
           </h1>
-          <div className="flex items-center gap-0.5 mt-2 flex-wrap">
-            {[
-              { key: "all",        label: "All",         count: filteredInvoices.length },
-              { key: "dashboard",  label: "Dashboard",   count: null },
-              { key: "my_request", label: "My Request",  count: 2 },
-              { key: "awaiting",   label: "Awaiting Me", count: 1 },
-            ].map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setViewTab(tab.key as any)}
-                className={cn(
-                  "px-3 py-2 rounded-[10px] text-[14px] transition-colors whitespace-nowrap cursor-pointer",
-                  viewTab === tab.key ? "bg-[#171b1d] text-white" : "text-[#667085] hover:text-[#344054]"
-                )}
-                style={{ fontFamily: "Inter" }}
-              >
-                {tab.label}
-                {tab.count !== null && <span className="ml-1 text-[11px] opacity-70">{tab.count}</span>}
-              </button>
-            ))}
-            <button
-              onClick={() => toast("Coming soon", { description: "Custom views are coming in the next release." })}
-              className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus-visible:ring-offset-1 ml-1"
-            >
-              <Plus size={16} />
-            </button>
-          </div>
         </div>
 
         {/* Centre: channel toggle — absolutely centred */}
@@ -1094,6 +1067,35 @@ export default function PaymentRequestsPage() {
             + Create Request
           </button>
         </div>
+      </div>
+
+      {/* View tabs — separate section from header */}
+      <div className="flex items-center gap-0.5 mt-2 px-4 flex-wrap shrink-0">
+        {[
+          { key: "all",        label: "All",         count: filteredInvoices.length },
+          { key: "dashboard",  label: "Dashboard",   count: null },
+          { key: "my_request", label: "My Request",  count: 2 },
+          { key: "awaiting",   label: "Awaiting Me", count: 1 },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setViewTab(tab.key as any)}
+            className={cn(
+              "px-3 py-2 rounded-[10px] text-[14px] transition-colors whitespace-nowrap cursor-pointer",
+              viewTab === tab.key ? "bg-[#171b1d] text-white" : "text-[#667085] hover:text-[#344054]"
+            )}
+            style={{ fontFamily: "Inter" }}
+          >
+            {tab.label}
+            {tab.count !== null && <span className="ml-1 text-[11px] opacity-70">{tab.count}</span>}
+          </button>
+        ))}
+        <button
+          onClick={() => toast("Coming soon", { description: "Custom views are coming in the next release." })}
+          className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus-visible:ring-offset-1 ml-1"
+        >
+          <Plus size={16} />
+        </button>
       </div>
 
       {/* Body */}
