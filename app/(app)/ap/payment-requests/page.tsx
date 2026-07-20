@@ -26,6 +26,14 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel,
 } from "@/components/ui/alert-dialog"
+import {
+  MessageScrollerProvider, MessageScroller, MessageScrollerViewport,
+  MessageScrollerContent, MessageScrollerItem, MessageScrollerButton,
+} from "@/components/ui/message-scroller"
+import { Message, MessageAvatar, MessageContent, MessageHeader, MessageFooter } from "@/components/ui/message"
+import { Bubble, BubbleContent } from "@/components/ui/bubble"
+import { Marker, MarkerContent } from "@/components/ui/marker"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -418,90 +426,91 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
 
   return (
     <div className="flex flex-col h-full" style={{ minHeight: 300 }}>
-      <div className="flex-1 overflow-y-auto flex flex-col gap-3 pb-4">
-        {thread.length === 0 && (
-          <p className="text-[13px] text-[#98a2b3] text-center py-8" style={{ fontFamily: "Inter" }}>
-            No comments yet.
-          </p>
-        )}
-        {thread.map((item, idx) => {
-          const isLast = idx === thread.length - 1
+      <MessageScrollerProvider defaultScrollPosition="end">
+        <MessageScroller className="flex-1">
+          <MessageScrollerViewport>
+            <MessageScrollerContent>
+              {thread.length === 0 && (
+                <p className="text-[13px] text-[#98a2b3] text-center py-8" style={{ fontFamily: "Inter" }}>
+                  No comments yet.
+                </p>
+              )}
+              {thread.map(item => {
+                if (item.type === "activity") {
+                  return (
+                    <MessageScrollerItem key={item.id} messageId={item.id}>
+                      <Marker className="my-2">
+                        <MarkerContent className="text-[11px] italic text-[#98a2b3]" style={{ fontFamily: "Inter" }}>
+                          {item.description}
+                          <span className="ml-2 text-[10px] text-[#c0c5ce] tabular-nums not-italic">
+                            {formatDate(item.timestamp)} {formatTime(item.timestamp)}
+                          </span>
+                        </MarkerContent>
+                      </Marker>
+                    </MessageScrollerItem>
+                  )
+                }
 
-          if (item.type === "activity") {
-            return (
-              <div key={item.id} className="flex gap-3">
-                {/* Left: dot + connector */}
-                <div className="flex flex-col items-center shrink-0" style={{ width: 20 }}>
-                  <div className="size-2 rounded-full bg-[#d0d5dd] mt-1 shrink-0" />
-                  {!isLast && (
-                    <div className="w-px flex-1 mt-1" style={{ borderLeft: "1.5px dashed #eaecf0" }} />
-                  )}
-                </div>
-                {/* Right: text */}
-                <div className="flex-1 pb-3">
-                  <span className="text-[11px] italic text-[#98a2b3]" style={{ fontFamily: "Inter" }}>
-                    {item.description}
-                  </span>
-                  <span className="ml-2 text-[10px] text-[#c0c5ce] tabular-nums" style={{ fontFamily: "Inter" }}>
-                    {formatDate(item.timestamp)} {formatTime(item.timestamp)}
-                  </span>
-                </div>
-              </div>
-            )
-          }
+                const isQuery = item.is_query
+                const initials = (item.author ?? "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
 
-          const isQuery = item.is_query
-          const initials = (item.author ?? "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
-
-          return (
-            <div key={item.id} className="flex gap-3">
-              {/* Left: avatar + connector */}
-              <div className="flex flex-col items-center shrink-0" style={{ width: 20 }}>
-                <div className="size-8 rounded-full bg-[#f2f4f7] flex items-center justify-center shrink-0 text-[11px] font-semibold text-[#5d5ef4] -ml-2" style={{ fontFamily: "Inter" }}>
-                  {initials}
-                </div>
-                {!isLast && (
-                  <div className="w-px flex-1 mt-1" style={{ borderLeft: "1.5px dashed #eaecf0" }} />
-                )}
-              </div>
-              {/* Right: bubble */}
-              <div className="flex-1 pb-3 -ml-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{item.author}</span>
-                  {item.role && (
-                    <span className="text-[10px] bg-[#f2f4f7] rounded-full px-2 text-[#667085]" style={{ fontFamily: "Inter" }}>{item.role}</span>
-                  )}
-                  <span className="text-[10px] text-[#98a2b3] ml-auto" style={{ fontFamily: "Inter" }}>
-                    {formatDate(item.timestamp)} {formatTime(item.timestamp)}
-                  </span>
-                </div>
-                <div className={cn(
-                  "rounded-[12px] rounded-tl-[4px] p-3",
-                  isQuery ? "bg-amber-50 border border-amber-200 border-l-4 border-l-amber-400" : "bg-[#f9fafb] border border-[#eaecf0]"
-                )}>
-                  <p className={cn("text-[13px] text-[#344054] leading-5", isQuery && item.resolved && "line-through")} style={{ fontFamily: "Inter" }}>
-                    {item.message}
-                  </p>
-                  {item.attachment && (
-                    <div className="inline-flex items-center gap-1.5 mt-2 bg-[#f2f4f7] border border-[#eaecf0] rounded-[8px] px-2 py-1">
-                      <Paperclip size={10} className="text-[#5d5ef4]" />
-                      <span className="text-[11px] text-[#5d5ef4] hover:underline cursor-pointer" style={{ fontFamily: "Inter" }}>{item.attachment}</span>
-                    </div>
-                  )}
-                  {isQuery && !item.resolved && (
-                    <button className="mt-2 text-[11px] text-green-600 hover:underline cursor-pointer" style={{ fontFamily: "Inter" }}>
-                      Mark Resolved ✓
-                    </button>
-                  )}
-                  {isQuery && item.resolved && (
-                    <p className="mt-1 text-[10px] text-green-600" style={{ fontFamily: "Inter" }}>✓ Resolved by {item.resolved_by ?? "—"}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+                return (
+                  <MessageScrollerItem key={item.id} messageId={item.id} scrollAnchor={isQuery}>
+                    <Message className="mb-3">
+                      <MessageAvatar>
+                        <Avatar className="size-8">
+                          <AvatarFallback className="text-[11px] font-semibold text-[#5d5ef4] bg-[#f2f4f7]">
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                      </MessageAvatar>
+                      <MessageContent>
+                        <MessageHeader className="flex items-center gap-2">
+                          <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{item.author}</span>
+                          {item.role && (
+                            <span className="text-[10px] bg-[#f2f4f7] rounded-full px-2 text-[#667085]" style={{ fontFamily: "Inter" }}>{item.role}</span>
+                          )}
+                          <span className="text-[10px] text-[#98a2b3] ml-auto" style={{ fontFamily: "Inter" }}>
+                            {formatDate(item.timestamp)} {formatTime(item.timestamp)}
+                          </span>
+                        </MessageHeader>
+                        <Bubble className={cn(
+                          "rounded-[12px] rounded-tl-[4px]",
+                          isQuery ? "bg-amber-50 border border-amber-200 border-l-4 border-l-amber-400" : "bg-[#f9fafb] border border-[#eaecf0]"
+                        )}>
+                          <BubbleContent>
+                            <p className={cn("text-[13px] text-[#344054] leading-5", isQuery && item.resolved && "line-through")} style={{ fontFamily: "Inter" }}>
+                              {item.message}
+                            </p>
+                            {item.attachment && (
+                              <div className="inline-flex items-center gap-1.5 mt-2 bg-[#f2f4f7] border border-[#eaecf0] rounded-[8px] px-2 py-1">
+                                <Paperclip size={10} className="text-[#5d5ef4]" />
+                                <span className="text-[11px] text-[#5d5ef4] hover:underline cursor-pointer" style={{ fontFamily: "Inter" }}>{item.attachment}</span>
+                              </div>
+                            )}
+                          </BubbleContent>
+                        </Bubble>
+                        {isQuery && (
+                          <MessageFooter>
+                            {!item.resolved ? (
+                              <button className="text-[11px] text-green-600 hover:underline cursor-pointer" style={{ fontFamily: "Inter" }}>
+                                Mark Resolved ✓
+                              </button>
+                            ) : (
+                              <p className="text-[10px] text-green-600" style={{ fontFamily: "Inter" }}>✓ Resolved by {item.resolved_by ?? "—"}</p>
+                            )}
+                          </MessageFooter>
+                        )}
+                      </MessageContent>
+                    </Message>
+                  </MessageScrollerItem>
+                )
+              })}
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+          <MessageScrollerButton />
+        </MessageScroller>
+      </MessageScrollerProvider>
 
       {/* Compose */}
       <div className="border-t border-[#eaecf0] pt-4 bg-white shrink-0">
