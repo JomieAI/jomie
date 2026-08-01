@@ -21,6 +21,7 @@ import type { InvoiceListItem, InvoiceStatus, ApprovalStep, CommentThreadItem } 
 import { useSidebar } from "@/components/sidebar-context"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
@@ -475,7 +476,7 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: 300 }}>
+    <div className="flex flex-col flex-1 min-h-0 px-8 py-5">
       <MessageScrollerProvider defaultScrollPosition="end" autoScroll>
         <MessageScroller className="flex-1">
           <MessageScrollerViewport className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/30 focus-visible:ring-offset-0">
@@ -521,7 +522,7 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                         const initials = (item.author ?? "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
 
                         return (
-                          <Message key={item.id} align={isMine ? "end" : "start"} className="mb-1">
+                          <Message key={item.id} align={isMine ? "end" : "start"} className="mb-1 group/message">
                             <MessageAvatar>
                               {isLastInGroup && (
                                 <Avatar className="size-8">
@@ -563,12 +564,13 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                                 </BubbleContent>
                               </Bubble>
                               {item.attachment && (
-                                <Attachment size="sm" className="mt-2">
-                                  <AttachmentMedia>
+                                <Attachment size="sm" className="mt-2 bg-[#f9fafb] border-[#eaecf0]">
+                                  <AttachmentMedia className="bg-[#f2f4f7]">
                                     <FileText size={14} />
                                   </AttachmentMedia>
                                   <AttachmentContent>
                                     <AttachmentTitle>{item.attachment}</AttachmentTitle>
+                                    <AttachmentDescription>PDF</AttachmentDescription>
                                   </AttachmentContent>
                                   <AttachmentActions>
                                     <AttachmentAction
@@ -580,25 +582,24 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                                   </AttachmentActions>
                                 </Attachment>
                               )}
-                              <MessageFooter className="flex items-center gap-3">
-                                <button
-                                  aria-label="Copy message"
-                                  onClick={() => handleCopy(item.message)}
-                                  className="text-[#98a2b3] hover:text-[#344054] transition-colors cursor-pointer"
-                                >
-                                  <Copy size={12} />
-                                </button>
+                              <MessageFooter className="flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity">
+                                <Button variant="ghost" size="xs" onClick={() => handleCopy(item.message)}>
+                                  <Copy size={12} /> Copy
+                                </Button>
                                 {isQuery && !item.resolved && (
-                                  <button
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
                                     onClick={() => handleResolve(item.id)}
-                                    className="text-[11px] text-green-600 hover:underline cursor-pointer"
-                                    style={{ fontFamily: "Inter" }}
+                                    className="text-green-600 hover:text-green-700"
                                   >
-                                    Mark Resolved ✓
-                                  </button>
+                                    <CheckCircle2 size={12} /> Mark Resolved
+                                  </Button>
                                 )}
                                 {isQuery && item.resolved && (
-                                  <p className="text-[10px] text-green-600" style={{ fontFamily: "Inter" }}>✓ Resolved by {item.resolved_by ?? "—"}</p>
+                                  <p className="text-[11px] text-green-600 flex items-center gap-1 opacity-100" style={{ fontFamily: "Inter" }}>
+                                    <CheckCircle2 size={11} /> Resolved by {item.resolved_by ?? "—"}
+                                  </p>
                                 )}
                               </MessageFooter>
                             </MessageContent>
@@ -1032,7 +1033,13 @@ function DetailPanel({
       </div>
 
       {/* Tab content */}
-      <div key={activeTab} className="flex-1 overflow-y-auto px-8 py-5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 duration-150">
+      <div
+        key={activeTab}
+        className={cn(
+          "flex-1 min-h-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 duration-150",
+          activeTab === "comments" ? "flex flex-col overflow-hidden" : "overflow-y-auto px-8 py-5"
+        )}
+      >
         {activeTab === "details"  && <DetailsTab  invoice={invoice} onTabChange={onTabChange} />}
         {activeTab === "comments" && <CommentsTab invoice={invoice} />}
         {activeTab === "checks"   && <ChecksTab   invoice={invoice} />}

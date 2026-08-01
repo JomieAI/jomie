@@ -86,8 +86,8 @@
     --card-foreground:   oklch(0.148 0.004 228.8);
     --popover:   oklch(1 0 0);
     --popover-foreground:   oklch(0.148 0.004 228.8);
-    --primary:   oklch(0.218 0.008 223.9);             /* preset near-black — buttons, solid CTAs */
-    --primary-foreground:   oklch(0.987 0.002 197.1); /* near-white on dark button */
+    --primary:   oklch(0.488 0.243 264.376);           /* Jomie purple #5D5EF4 */
+    --primary-foreground:   oklch(0.987 0.002 197.1); /* near-white on purple button */
     --secondary:   oklch(0.963 0.002 197.1);
     --secondary-foreground:   oklch(0.218 0.008 223.9);
     --muted:   oklch(0.963 0.002 197.1);
@@ -129,8 +129,8 @@
     --card-foreground:   oklch(0.987 0.002 197.1);
     --popover:   oklch(0.218 0.008 223.9);
     --popover-foreground:   oklch(0.987 0.002 197.1);
-    --primary:   oklch(0.925 0.005 214.3);                     /* near-white on dark — preset default */
-    --primary-foreground:   oklch(0.218 0.008 223.9);
+    --primary:   oklch(0.488 0.243 264.376);           /* Jomie purple, same as light mode */
+    --primary-foreground:   oklch(0.987 0.002 197.1);
     --secondary:   oklch(0.275 0.011 216.9);             /* secondary-600 #191647 */
     --secondary-foreground:   oklch(0.987 0.002 197.1);
     --muted:   oklch(0.275 0.011 216.9);                 /* purple-navy muted surface */
