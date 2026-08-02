@@ -1,7 +1,5 @@
 "use client"
 
-export const dynamic = "force-dynamic"
-
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -578,7 +576,7 @@ function InvoiceListCard({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function APInvoicesPage() {
+function APInvoicesPageInner() {
   const router        = useRouter()
   const searchParams  = useSearchParams()
   const { setL2 }     = useSidebar()
@@ -999,5 +997,13 @@ export default function APInvoicesPage() {
         </div>
       </div>
     </TooltipProvider>
+  )
+}
+
+export default function APInvoicesPage() {
+  return (
+    <React.Suspense>
+      <APInvoicesPageInner />
+    </React.Suspense>
   )
 }
