@@ -16,7 +16,7 @@ export function SidebarAwareContent({ children }: { children: React.ReactNode })
         transition: "margin-left 0.22s cubic-bezier(0.4,0,0.2,1)",
       }}
     >
-      <div className="flex-1 overflow-hidden p-8" style={{ backgroundColor: '#F2F3F3' }}>
+      <div className="flex-1 overflow-hidden p-4" style={{ backgroundColor: '#F2F3F3' }}>
         {children}
       </div>
     </div>

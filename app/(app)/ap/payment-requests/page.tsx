@@ -9,7 +9,7 @@ import {
   Zap, RefreshCw, Users, Landmark, Truck, Globe, Building2,
   Wrench, Receipt, Banknote, CreditCard, UserCheck, ArrowLeftRight,
   Briefcase, HeartPulse, AlertTriangle, XCircle, CheckCircle2,
-  Minus, Clock,
+  Minus, Clock, TrendingUp, BarChart2, Timer,
 } from "lucide-react"
 import {
   getMockInvoices,
@@ -36,9 +36,886 @@ import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Marker, MarkerContent } from "@/components/ui/marker"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
+  ChartContainer, ChartTooltip, ChartTooltipContent,
+} from "@/components/ui/chart"
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+  LineChart, Line, PieChart, Pie, Cell,
+} from "recharts"
+import {
   Attachment, AttachmentAction, AttachmentActions,
   AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle,
 } from "@/components/ui/attachment"
+
+// ─── AP Dashboard ─────────────────────────────────────────────────────────────
+
+const PURPLE      = "#5d5ef4"
+const PURPLE_MID  = "#8485f7"
+const PURPLE_PALE = "#a5b4fc"
+const GREEN       = "#10b981"
+const AMBER       = "#f59e0b"
+const RED         = "#ef4444"
+const GRAY_LINE   = "#e4e7ec"
+
+const AVATAR_PALETTE = [
+  { bg: "#fde8e4", text: "#b94a2c" },
+  { bg: "#d1fae5", text: "#065f46" },
+  { bg: "#dbeafe", text: "#1e40af" },
+  { bg: "#fef3c7", text: "#92400e" },
+  { bg: "#ede9fe", text: "#5b21b6" },
+  { bg: "#fce7f3", text: "#9d174d" },
+  { bg: "#e0f2fe", text: "#0c4a6e" },
+]
+function avatarColor(name: string) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xff
+  return AVATAR_PALETTE[h % AVATAR_PALETTE.length]
+}
+
+function APDashboard({ invoices }: { invoices: InvoiceListItem[] }) {
+  const inv = invoices as any[]
+  const today = new Date()
+
+  // ── Financial KPIs ───────────────────────────────────────────────────────────
+  const pendingList = inv.filter(i => i.status !== "paid")
+  const totalOutstanding = pendingList.reduce((s, i) => s + (i.total_myr ?? 0), 0)
+
+  const overdueList = pendingList.filter(i => {
+    const due = i.due_date ? new Date(i.due_date) : null
+    return due && due < today
+  })
+  const overdueTotal = overdueList.reduce((s, i) => s + (i.total_myr ?? 0), 0)
+
+  const awaitingMeList = inv.filter(i => {
+    const steps = i.approval_steps ?? []
+    return steps.some((s: any) => s.status === "current")
+  })
+
+  const paidWithDates = inv.filter(i => i.status === "paid" && i.created_at && i.payment_vouchers?.[0]?.payment_date)
+  const avgProcessingDays = paidWithDates.length > 0
+    ? Math.round(paidWithDates.reduce((s, i) => {
+        return s + (new Date(i.payment_vouchers[0].payment_date).getTime() - new Date(i.created_at).getTime()) / 86400000
+      }, 0) / paidWithDates.length)
+    : 9
+
+  const avgEndToEnd = avgProcessingDays
+
+  const approvedInvoices = inv.filter(i => {
+    const steps = i.approval_steps ?? []
+    return steps.some((s: any) => s.status === "completed" && s.title?.includes("Finance"))
+  })
+  const avgTimeToApprove = approvedInvoices.length > 0
+    ? Math.round(approvedInvoices.reduce((s, i) => {
+        const fmStep = (i.approval_steps ?? []).find((s: any) => s.title?.includes("Finance") && s.timestamp)
+        if (!fmStep || !i.created_at) return s
+        return s + (new Date(fmStep.timestamp).getTime() - new Date(i.created_at).getTime()) / 86400000
+      }, 0) / approvedInvoices.length)
+    : 3
+
+  const processedAll = inv.filter(i => i.status === "paid" || (i.approval_steps ?? []).some((s: any) => s.status === "completed"))
+  const slaBreached = processedAll.filter(i => (i.approval_steps ?? []).some((s: any) => s.sla_at_risk))
+  const slaRate = processedAll.length > 0
+    ? Math.round(((processedAll.length - slaBreached.length) / processedAll.length) * 100)
+    : 78
+
+  const queriedCount = inv.filter(i =>
+    (i.comment_thread ?? []).some((t: any) => t.type === "comment" && t.is_query)
+  ).length
+  const queryRate = inv.length > 0 ? Math.round((queriedCount / inv.length) * 100) : 0
+
+  // ── Stage bottleneck ─────────────────────────────────────────────────────────
+  const stageCounts: Record<string, number> = {}
+  const stageAvgDays: Record<string, number> = { "AP Clerk Review": 2, "Finance Manager": 3, "CFO Sign-off": 1, "Payment Processing": 2, "Completed": 0 }
+  inv.forEach(i => {
+    const currentStep = (i.approval_steps ?? []).find((s: any) => s.status === "current")
+    if (currentStep) {
+      const key = currentStep.title
+      stageCounts[key] = (stageCounts[key] ?? 0) + 1
+    } else if (i.status === "paid") {
+      stageCounts["Completed"] = (stageCounts["Completed"] ?? 0) + 1
+    } else {
+      stageCounts["AP Clerk Review"] = (stageCounts["AP Clerk Review"] ?? 0) + 1
+    }
+  })
+  const totalAtStage = inv.length || 1
+  const stageData = [
+    { stage: "AP Clerk Review",    short: "AP Review",     count: stageCounts["AP Clerk Review"] ?? 0,          avgDays: stageAvgDays["AP Clerk Review"] },
+    { stage: "Finance Manager",    short: "Finance Mgr",   count: stageCounts["Finance Manager Approval"] ?? 0, avgDays: stageAvgDays["Finance Manager"] },
+    { stage: "CFO Sign-off",       short: "CFO",           count: stageCounts["CFO Sign-off"] ?? 0,             avgDays: stageAvgDays["CFO Sign-off"] },
+    { stage: "Payment Processing", short: "Payment",       count: stageCounts["Payment Processing"] ?? 0,       avgDays: stageAvgDays["Payment Processing"] },
+    { stage: "Completed",          short: "Done",          count: stageCounts["Completed"] ?? 0,                avgDays: 0 },
+  ].filter(s => s.count > 0 || s.stage === "AP Clerk Review" || s.stage === "Finance Manager")
+
+  const bottleneckStage = stageData.reduce((max, s) => s.count > max.count ? s : max, stageData[0] ?? { stage: "—", count: 0 })
+
+  // ── Stage owners (who is holding each stage) ────────────────────────────────
+  const stageOwners: Record<string, { name: string; sla: boolean; invoiceCount: number }> = {}
+  inv.forEach(i => {
+    const currentStep = (i.approval_steps ?? []).find((s: any) => s.status === "current")
+    if (currentStep?.title && currentStep?.assignee) {
+      const key = currentStep.title
+      if (!stageOwners[key]) stageOwners[key] = { name: currentStep.assignee, sla: false, invoiceCount: 0 }
+      stageOwners[key].invoiceCount++
+      if (currentStep.sla_at_risk) stageOwners[key].sla = true
+    }
+  })
+
+  // ── Assignee workload ────────────────────────────────────────────────────────
+  const workloadMap: Record<string, { total: number; sla: number }> = {}
+  inv.forEach(i => {
+    const currentStep = (i.approval_steps ?? []).find((s: any) => s.status === "current")
+    if (currentStep?.assignee) {
+      const a = currentStep.assignee
+      if (!workloadMap[a]) workloadMap[a] = { total: 0, sla: 0 }
+      workloadMap[a].total++
+      if (currentStep.sla_at_risk) workloadMap[a].sla++
+    }
+  })
+  const workloadData = Object.entries(workloadMap)
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5)
+  const maxWorkload = Math.max(...workloadData.map(w => w.total), 1)
+
+  // ── Cycle time trend ─────────────────────────────────────────────────────────
+  const cycleData = [
+    { month: "Feb", days: 12 },
+    { month: "Mar", days: 10 },
+    { month: "Apr", days: 11 },
+    { month: "May", days: 9  },
+    { month: "Jun", days: 8  },
+    { month: "Jul", days: avgEndToEnd > 1 && avgEndToEnd < 30 ? avgEndToEnd : 7 },
+  ]
+  const cycleDelta = cycleData[0].days - cycleData[cycleData.length - 1].days
+
+  // ── First-pass rate ──────────────────────────────────────────────────────────
+  const firstPassCount = inv.length - queriedCount
+  const firstPassData = [
+    { name: "Approved clean",     value: firstPassCount, fill: PURPLE },
+    { name: "Had query / rework", value: queriedCount,   fill: "#e4e7ec" },
+  ]
+  const firstPassRate = inv.length > 0 ? Math.round((firstPassCount / inv.length) * 100) : 0
+
+  // ── Needs Attention ──────────────────────────────────────────────────────────
+  const actionItems = inv.filter(i => {
+    const steps = i.approval_steps ?? []
+    const thread = i.comment_thread ?? []
+    return steps.some((s: any) => s.sla_at_risk)
+      || thread.some((t: any) => t.type === "comment" && t.is_query && !t.resolved)
+      || i.risk_level === "warning" || i.risk_level === "fail"
+  }).slice(0, 6)
+
+  const fmtMYR = (n: number) =>
+    `MYR ${n.toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+  const fmtMYRShort = (n: number) => {
+    if (n >= 1_000_000) return `MYR ${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `MYR ${(n / 1_000).toFixed(1)}K`
+    return fmtMYR(n)
+  }
+
+  // ── Mini sparkline data (5-bar outstanding trend) ──────────────────────────
+  const outstandingTrend = [28900, 31200, 29800, 33400, 30100, totalOutstanding]
+  const trendMax = Math.max(...outstandingTrend)
+
+  // ── Process health target progress (capped 0–100%) ──────────────────────────
+  const hasE2EData      = avgEndToEnd > 0
+  const hasApproveData  = avgTimeToApprove > 0
+  const e2eDisplay      = hasE2EData ? avgEndToEnd : null
+  const approveDisplay  = hasApproveData ? avgTimeToApprove : null
+  const e2ePct          = hasE2EData ? Math.min(100, (avgEndToEnd / 14) * 100) : 0
+  const approvePct      = hasApproveData ? Math.min(100, (avgTimeToApprove / 5) * 100) : 0
+  const e2eDelta        = hasE2EData ? 14 - avgEndToEnd : null
+  const approveDelta    = hasApproveData ? 5 - avgTimeToApprove : null
+
+  // ── Oldest wait + value per assignee ────────────────────────────────────────
+  const oldestWaitMap: Record<string, number> = {}
+  const assigneeValueMap: Record<string, number> = {}
+  inv.forEach(i => {
+    const currentStep = (i.approval_steps ?? []).find((s: any) => s.status === "current")
+    if (currentStep?.assignee) {
+      const a = currentStep.assignee
+      assigneeValueMap[a] = (assigneeValueMap[a] ?? 0) + (i.total_myr ?? 0)
+      if (currentStep.assigned_at) {
+        const days = Math.max(0, Math.floor((today.getTime() - new Date(currentStep.assigned_at).getTime()) / 86400000))
+        if (oldestWaitMap[a] === undefined || days > oldestWaitMap[a]) oldestWaitMap[a] = days
+      }
+    }
+  })
+
+  // ── Delay reason data ────────────────────────────────────────────────────────
+  const delayReasonData = [
+    { reason: "Missing or late approval",    count: (stageData.find(s => s.stage.includes("Finance"))?.count ?? 0) + (stageData.find(s => s.stage.includes("CFO"))?.count ?? 0) + 3 },
+    { reason: "Service evidence incomplete", count: Math.max(1, Math.floor(queriedCount * 0.6) + 1) },
+    { reason: "PO or invoice ambiguity",     count: Math.max(1, Math.floor(queriedCount * 0.4) + 1) },
+    { reason: "Vendor or bank mismatch",     count: Math.max(1, overdueList.length) },
+  ]
+  const delayTotal = Math.max(1, delayReasonData.reduce((s, d) => s + d.count, 0))
+  const delayMax   = Math.max(...delayReasonData.map(d => d.count), 1)
+
+  // ── Compliance & Control Health ───────────────────────────────────────────────
+  const highValueInv = inv.filter(i => (i.total_myr ?? 0) >= 5000)
+  const dualApprovalRate = highValueInv.length > 0
+    ? Math.round((highValueInv.filter(i => (i.approval_steps ?? []).filter((s: any) => s.status === "completed").length >= 2).length / highValueInv.length) * 100)
+    : 100
+
+  const docCompleteRate = inv.length > 0
+    ? Math.round((inv.filter(i => ((i as any).attachments ?? []).length > 0).length / inv.length) * 100)
+    : 0
+
+  const threeWayMatchRate = inv.length > 0
+    ? Math.round((inv.filter(i => (i as any).purchase_order_number || (i as any).po_number).length / inv.length) * 100)
+    : 0
+
+  const vendorRegRate = inv.length > 0
+    ? Math.round((inv.filter(i => (i as any).vendor_bank_account || (i as any).vendor_registration_number).length / inv.length) * 100)
+    : 0
+
+  const complianceDimensions = [
+    { label: "Dual approval on invoices >MYR 5K", rate: dualApprovalRate,  target: 100, weight: 25 },
+    { label: "Supporting documents attached",      rate: docCompleteRate,   target: 95,  weight: 25 },
+    { label: "SLA adherence",                      rate: slaRate,           target: 90,  weight: 20 },
+    { label: "Three-way match (PO → GRN → Inv)",   rate: threeWayMatchRate, target: 80,  weight: 15 },
+    { label: "Vendor registration before payment", rate: vendorRegRate,     target: 100, weight: 15 },
+  ]
+
+  const complianceScore = Math.round(
+    complianceDimensions.reduce((s, d) => s + (d.rate / 100) * d.weight, 0)
+  )
+  const complianceStatus  = complianceScore >= 80 ? "Compliant" : complianceScore >= 60 ? "Needs Review" : "At Risk"
+  const complianceColor   = complianceScore >= 80 ? GREEN : complianceScore >= 60 ? AMBER : RED
+  const complianceBg      = complianceScore >= 80 ? "#f0fdf4" : complianceScore >= 60 ? "#fffbeb" : "#fff1f2"
+  const complianceBorder  = complianceScore >= 80 ? "#bbf7d0" : complianceScore >= 60 ? "#fde68a" : "#fecdd3"
+  const passedCount   = complianceDimensions.filter(d => d.rate >= d.target * 0.9).length
+  const warningCount  = complianceDimensions.filter(d => d.rate >= d.target * 0.6 && d.rate < d.target * 0.9).length
+  const failedCount   = complianceDimensions.filter(d => d.rate < d.target * 0.6).length
+
+  const dimStatus = (d: typeof complianceDimensions[0]) =>
+    d.rate >= d.target * 0.9 ? "pass" : d.rate >= d.target * 0.6 ? "warn" : "fail"
+  const dimColor = (d: typeof complianceDimensions[0]) =>
+    dimStatus(d) === "pass" ? GREEN : dimStatus(d) === "warn" ? AMBER : RED
+
+  // ── Invoice volume by month ───────────────────────────────────────────────────
+  const volumeData = [
+    { month: "Feb", submitted: 6, processed: 5 },
+    { month: "Mar", submitted: 5, processed: 4 },
+    { month: "Apr", submitted: 8, processed: 7 },
+    { month: "May", submitted: 7, processed: 6 },
+    { month: "Jun", submitted: 6, processed: 5 },
+    { month: "Jul", submitted: Math.max(inv.length, 4), processed: Math.max(inv.length - pendingList.length, 0) },
+  ]
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 pb-6 pt-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#d0d5dd] [&::-webkit-scrollbar-thumb]:rounded-full" style={{ fontFamily: "Inter" }}>
+
+      {/* ── Row 1: [2fr 1.5fr 1.5fr] — Needs Attention | Financial Snapshot | Awaiting Me ── */}
+      <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: "2fr 1.5fr 1.5fr" }}>
+
+        {/* Needs Attention */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="size-6 rounded-[6px] bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle size={11} className="text-red-500" />
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054] leading-none">Needs Attention</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">SLA · open queries · compliance flags</p>
+              </div>
+            </div>
+            {actionItems.length > 0 && (
+              <span className="text-[11px] font-bold bg-red-500 text-white px-2 py-0.5 rounded-full shrink-0">{actionItems.length}</span>
+            )}
+          </div>
+          {actionItems.length === 0 ? (
+            <div className="flex items-center gap-2 px-4 py-5">
+              <CheckCircle2 size={14} className="text-[#10b981] shrink-0" />
+              <p className="text-[13px] font-medium text-[#344054]">All clear — no action items</p>
+            </div>
+          ) : (
+            <>
+              {actionItems.map((item, i) => {
+                const steps: any[] = item.approval_steps ?? []
+                const thread: any[] = item.comment_thread ?? []
+                const currentStep = steps.find((s: any) => s.status === "current")
+                const openQuery = thread.find((t: any) => t.type === "comment" && t.is_query && !t.resolved)
+                const isOverdue = overdueList.some(o => o.id === item.id)
+                const hasSLA = currentStep?.sla_at_risk
+                const leadBadge = isOverdue ? { label: "Overdue",    cls: "bg-[#f9fafb] text-red-600 border-[#f2f4f7]" }
+                  : hasSLA    ? { label: "SLA risk",   cls: "bg-[#f9fafb] text-amber-600 border-[#f2f4f7]" }
+                  : openQuery ? { label: "Query",      cls: "bg-[#f9fafb] text-blue-600 border-[#f2f4f7]" }
+                  :             { label: "Compliance", cls: "bg-[#f9fafb] text-[#5d5ef4] border-[#f2f4f7]" }
+                const ac = avatarColor(item.vendor_name_raw ?? "")
+                return (
+                  <div key={item.id} className={cn("flex items-center gap-3 px-4 py-3.5", i < actionItems.length - 1 && "border-b border-[#f2f4f7]")}>
+                    <div className="size-9 rounded-full flex items-center justify-center shrink-0" style={{ background: ac.bg }}>
+                      <span className="text-[11px] font-bold" style={{ color: ac.text }}>
+                        {toTitleCase(item.vendor_name_raw ?? "").split(" ").map((n: string) => n[0]).slice(0, 2).join("")}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-[#344054] truncate leading-none">{toTitleCase(item.vendor_name_raw ?? "")}</p>
+                      <p className="text-[11px] text-[#98a2b3] truncate mt-0.5">{item.invoice_number} · {fmtMYRShort(item.total_myr ?? 0)}</p>
+                    </div>
+                    <span className={cn("text-[10px] font-medium border px-2 py-0.5 rounded-full shrink-0", leadBadge.cls)}>{leadBadge.label}</span>
+                    <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-[11px] font-medium text-[#5d5ef4] hover:bg-[#eef0ff] shrink-0">
+                      View →
+                    </Button>
+                  </div>
+                )
+              })}
+              <div className="mx-4 mb-4 mt-3 flex gap-2">
+                <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+                  <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide mb-1">Overdue value</p>
+                  <p className="text-[13px] font-bold text-red-600">{fmtMYRShort(overdueTotal)}</p>
+                </div>
+                <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+                  <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide mb-1">Open queries</p>
+                  <p className={cn("text-[13px] font-bold", actionItems.filter(i => (i.comment_thread ?? []).some((t: any) => t.is_query && !t.resolved)).length > 0 ? "text-blue-600" : "text-[#344054]")}>
+                    {actionItems.filter(i => (i.comment_thread ?? []).some((t: any) => t.is_query && !t.resolved)).length}
+                  </p>
+                </div>
+                <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+                  <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide mb-1">SLA at risk</p>
+                  <p className={cn("text-[13px] font-bold", actionItems.filter(i => (i.approval_steps ?? []).some((s: any) => s.sla_at_risk)).length > 0 ? "text-amber-600" : "text-[#344054]")}>
+                    {actionItems.filter(i => (i.approval_steps ?? []).some((s: any) => s.sla_at_risk)).length}
+                  </p>
+                </div>
+              </div>
+              <div className="px-4 pb-4 mt-auto border-t border-[#f2f4f7] pt-3">
+                <Button variant="outline" size="sm" className="w-full h-8 text-[12px] font-medium text-[#667085] border-[#e4e7ec] hover:bg-[#f9fafb]">
+                  View All Requests
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Financial Snapshot */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] bg-[#eef0ff] border border-[#c7c9fb] flex items-center justify-center shrink-0">
+                <Banknote size={11} className="text-[#5d5ef4]" />
+              </span>
+              <p className="text-[13px] font-semibold text-[#344054] leading-none">Financial Snapshot</p>
+            </div>
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-[#5d5ef4] bg-[#eef0ff] border border-[#c7c9fb] px-2 py-0.5 rounded-full">AP</span>
+          </div>
+          <div className="px-4 pt-4 pb-4 flex-1 flex flex-col">
+            <div className="mb-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#98a2b3] mb-1.5">Total Outstanding</p>
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-[30px] font-bold text-[#101828] leading-none tracking-tight">{fmtMYRShort(totalOutstanding)}</span>
+                <span className="text-[12px] text-[#98a2b3]">pending</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <span className={cn("text-[11px] font-semibold", overdueList.length > 0 ? "text-red-500" : "text-[#10b981]")}>
+                  {overdueList.length > 0 ? `${overdueList.length} overdue` : "All on track"}
+                </span>
+                <span className="text-[11px] text-[#d0d5dd]">·</span>
+                <span className="text-[11px] text-[#98a2b3]">{slaRate}% SLA compliance</span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 mt-auto">
+              <div className="flex items-center justify-between rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+                <p className="text-[11px] text-[#667085]">Pending invoices</p>
+                <p className="text-[14px] font-bold text-[#344054]">{pendingList.length}</p>
+              </div>
+              <div className="flex items-center justify-between rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+                <p className="text-[11px] text-[#667085]">Overdue</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[14px] font-bold text-red-600">{overdueList.length}</p>
+                  <p className="text-[11px] text-[#98a2b3]">{fmtMYRShort(overdueTotal)}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+                <p className="text-[11px] text-[#667085]">SLA compliance</p>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-14 h-1.5 rounded-full bg-[#e4e7ec] overflow-hidden">
+                    <div className="h-full rounded-full bg-[#10b981]" style={{ width: `${slaRate}%` }} />
+                  </div>
+                  <p className="text-[14px] font-bold text-[#10b981]">{slaRate}%</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Awaiting Me */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] bg-[#eef0ff] border border-[#c7c9fb] flex items-center justify-center shrink-0">
+                <Clock size={11} className="text-[#5d5ef4]" />
+              </span>
+              <p className="text-[13px] font-semibold text-[#344054] leading-none">Awaiting Me</p>
+            </div>
+            {awaitingMeList.length > 0 && (
+              <span className="text-[11px] font-bold bg-[#5d5ef4] text-white px-2 py-0.5 rounded-full shrink-0">{awaitingMeList.length}</span>
+            )}
+          </div>
+          <div className="px-4 pt-3.5 pb-3 border-b border-[#f2f4f7]">
+            <div className="flex items-baseline gap-2">
+              <span className={cn("text-[36px] font-bold leading-none", awaitingMeList.length > 0 ? "text-[#5d5ef4]" : "text-[#98a2b3]")}>{awaitingMeList.length}</span>
+              <span className="text-[12px] text-[#98a2b3]">{awaitingMeList.length === 1 ? "request needs action" : "requests need action"}</span>
+            </div>
+          </div>
+          <div className="flex flex-col flex-1">
+            {awaitingMeList.length === 0 ? (
+              <div className="flex items-center gap-2 px-4 py-4">
+                <CheckCircle2 size={14} className="text-[#10b981] shrink-0" />
+                <p className="text-[12px] text-[#667085]">Nothing pending from you</p>
+              </div>
+            ) : (
+              awaitingMeList.slice(0, 3).map((item: any, i: number) => {
+                const currentStep = (item.approval_steps ?? []).find((s: any) => s.status === "current")
+                const isSLA = currentStep?.sla_at_risk
+                const ac = avatarColor(item.vendor_name_raw ?? "")
+                return (
+                  <div key={item.id} className={cn("flex items-center gap-3 px-4 py-3.5", i < Math.min(awaitingMeList.length, 3) - 1 && "border-b border-[#f2f4f7]")}>
+                    <div className="size-9 rounded-full flex items-center justify-center shrink-0" style={{ background: ac.bg }}>
+                      <span className="text-[11px] font-bold" style={{ color: ac.text }}>
+                        {toTitleCase(item.vendor_name_raw ?? "").split(" ").map((n: string) => n[0]).slice(0, 2).join("")}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-semibold text-[#344054] truncate leading-none">{toTitleCase(item.vendor_name_raw ?? "")}</p>
+                      <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">{currentStep?.title ?? "Review"} · {fmtMYRShort(item.total_myr ?? 0)}</p>
+                    </div>
+                    {isSLA && <span className="text-[10px] font-medium bg-[#f9fafb] text-amber-600 border border-[#f2f4f7] px-2 py-0.5 rounded-full shrink-0">SLA</span>}
+                    <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-[11px] font-medium text-[#5d5ef4] hover:bg-[#eef0ff] shrink-0">
+                      Review →
+                    </Button>
+                  </div>
+                )
+              })
+            )}
+          </div>
+          <div className="mx-4 mb-4 mt-auto flex gap-2">
+            <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide mb-1">Value pending</p>
+              <p className="text-[13px] font-bold text-[#344054]">{fmtMYRShort(awaitingMeList.reduce((s: number, i: any) => s + (i.total_myr ?? 0), 0))}</p>
+            </div>
+            <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide mb-1">SLA at risk</p>
+              <p className={cn("text-[13px] font-bold", awaitingMeList.filter((i: any) => (i.approval_steps ?? []).some((s: any) => s.status === "current" && s.sla_at_risk)).length > 0 ? "text-amber-600" : "text-[#344054]")}>
+                {awaitingMeList.filter((i: any) => (i.approval_steps ?? []).some((s: any) => s.status === "current" && s.sla_at_risk)).length}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Row 2: [1fr 1fr] — Approval Bottlenecks | Why Delayed ── */}
+      <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+
+        {/* Approval Bottlenecks */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] bg-[#f5f3ff] border border-[#ddd6fe] flex items-center justify-center shrink-0">
+                <Users size={11} className="text-[#7c3aed]" />
+              </span>
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054] leading-none">Approval bottlenecks</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">Current workflow · oldest first</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col flex-1">
+            {workloadData.length === 0 ? (
+              <div className="flex items-center gap-2 px-4 py-5">
+                <CheckCircle2 size={14} className="text-[#10b981] shrink-0" />
+                <p className="text-[12px] text-[#667085]">No pending approvals — queue clear</p>
+              </div>
+            ) : (
+              workloadData.map((w, i) => {
+                const ac = avatarColor(w.name)
+                const waitDays = oldestWaitMap[w.name]
+                const value = assigneeValueMap[w.name] ?? 0
+                return (
+                  <div key={w.name} className={cn("flex items-center gap-3 px-4 py-3.5", i < workloadData.length - 1 && "border-b border-[#f2f4f7]")}>
+                    <div className="size-9 rounded-full flex items-center justify-center shrink-0" style={{ background: ac.bg }}>
+                      <span className="text-[11px] font-bold" style={{ color: ac.text }}>
+                        {w.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("")}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[13px] font-semibold text-[#344054] leading-none truncate">{w.name}</p>
+                        {w.sla > 0 && <span className="text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded-full shrink-0 ml-2">SLA</span>}
+                      </div>
+                      <div className="h-1.5 rounded-full bg-[#f2f4f7] overflow-hidden mb-1">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${(w.total / maxWorkload) * 100}%`, background: PURPLE }} />
+                      </div>
+                      <p className="text-[10px] text-[#98a2b3]">{w.total} {w.total === 1 ? "request" : "requests"} · {fmtMYRShort(value)}</p>
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                      {waitDays !== undefined ? (
+                        <>
+                          <p className="text-[15px] font-bold text-[#344054] leading-none">{waitDays}d</p>
+                          <p className="text-[10px] text-[#98a2b3] mt-0.5">oldest wait</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[15px] font-bold text-[#5d5ef4] leading-none">{w.total}</p>
+                          <p className="text-[10px] text-[#98a2b3] mt-0.5">pending</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Why Requests Are Delayed */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] bg-[#fff7ed] border border-[#fed7aa] flex items-center justify-center shrink-0">
+                <Timer size={11} className="text-[#ea580c]" />
+              </span>
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054] leading-none">Why requests are delayed</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">Last 90 days · top causes</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col flex-1">
+            {delayReasonData.map((d, i) => {
+              const pct = Math.round((d.count / delayTotal) * 100)
+              const barW = Math.max(8, Math.round((d.count / delayMax) * 100))
+              return (
+                <div key={d.reason} className={cn("flex items-center gap-3 px-4 py-3", i < delayReasonData.length - 1 && "border-b border-[#f2f4f7]")}>
+                  <div className="w-[52px] shrink-0">
+                    <div className="h-1.5 rounded-full bg-[#f2f4f7] overflow-hidden">
+                      <div className="h-full rounded-full bg-[#2d6a5a] transition-all" style={{ width: `${barW}%` }} />
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-[#344054] leading-none">{d.reason}</p>
+                    <p className="text-[10px] text-[#98a2b3] mt-0.5">{d.count} {d.count === 1 ? "request" : "requests"}</p>
+                  </div>
+                  <span className="text-[14px] font-bold text-[#344054] shrink-0">{pct}%</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+      </div>
+
+      {/* ── Row 3: [1fr 1fr 2fr] — Workload | First-Pass | Cycle Time ─────── */}
+      <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 2fr" }}>
+
+        {/* Invoice Volume by Month */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] bg-[#eef0ff] border border-[#c7c9fb] flex items-center justify-center shrink-0">
+                <BarChart2 size={11} className="text-[#5d5ef4]" />
+              </span>
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054] leading-none">Invoice Volume</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">Submitted vs processed · 6 months</p>
+              </div>
+            </div>
+          </div>
+          <div className="px-4 pt-3 pb-1 flex-1">
+            <ChartContainer config={{ submitted: { color: "#eef0ff" }, processed: { color: PURPLE } }} className="h-[120px] w-full">
+              <BarChart data={volumeData} barSize={13} barGap={3} barCategoryGap="28%">
+                <defs>
+                  <linearGradient id="volProcessedGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#a5b4fc" />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#98a2b3" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#98a2b3" }} axisLine={false} tickLine={false} width={18} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="submitted" fill="#e8eaff" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="processed" fill="url(#volProcessedGrad)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          </div>
+          <div className="mx-4 mb-4 mt-2 flex gap-2">
+            <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="size-2 rounded-full shrink-0" style={{ background: PURPLE }} />
+                <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide">Submitted</p>
+              </div>
+              <p className="text-[13px] font-bold text-[#344054]">{volumeData.reduce((s, d) => s + d.submitted, 0)}</p>
+            </div>
+            <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="size-2 rounded-full shrink-0" style={{ background: GREEN }} />
+                <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide">Processed</p>
+              </div>
+              <p className="text-[13px] font-bold text-[#344054]">{volumeData.reduce((s, d) => s + d.processed, 0)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* First-Pass Rate */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] bg-[#f0fdf4] border border-green-100 flex items-center justify-center shrink-0">
+                <CheckCircle2 size={11} className="text-[#10b981]" />
+              </span>
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054] leading-none">First-Pass Rate</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">Approved without rework</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-semibold border px-2 py-0.5 rounded-full text-[#10b981] bg-[#f0fdf4] border-green-100">↑ 8% vs last mo</span>
+          </div>
+          <div className="flex items-center justify-center py-5">
+            <div className="relative size-[100px] shrink-0">
+              <ChartContainer config={{ value: { color: PURPLE } }} className="size-[100px]">
+                <PieChart>
+                  <Pie data={firstPassData} cx="50%" cy="50%" innerRadius={34} outerRadius={48}
+                    startAngle={90} endAngle={-270} dataKey="value" strokeWidth={0}>
+                    {firstPassData.map((_, idx) => (
+                      <Cell key={idx} fill={idx === 0 ? PURPLE : "#e4e7ec"} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ChartContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[20px] font-bold text-[#344054] leading-none">{firstPassRate}%</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col border-t border-[#f2f4f7] mt-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#f2f4f7]">
+              <div className="flex items-center gap-2">
+                <span className="size-2 rounded-full shrink-0" style={{ background: PURPLE }} />
+                <span className="text-[12px] text-[#667085]">Approved clean</span>
+              </div>
+              <span className="text-[13px] font-bold text-[#344054]">{firstPassCount}</span>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#f2f4f7]">
+              <div className="flex items-center gap-2">
+                <span className="size-2 rounded-full bg-[#e4e7ec] shrink-0" />
+                <span className="text-[12px] text-[#667085]">Had query / rework</span>
+              </div>
+              <span className="text-[13px] font-bold text-amber-600">{queriedCount}</span>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="text-[12px] text-[#98a2b3]">Total processed</span>
+              <span className="text-[13px] font-bold text-[#344054]">{inv.length}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Cycle Time Trend */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] bg-[#eef0ff] border border-[#c7c9fb] flex items-center justify-center shrink-0">
+                <TrendingUp size={11} className="text-[#5d5ef4]" />
+              </span>
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054] leading-none">Cycle Time Trend</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">Avg days end-to-end · last 6 months</p>
+              </div>
+            </div>
+            <span className={cn("text-[10px] font-semibold border px-2 py-0.5 rounded-full", cycleDelta > 0 ? "text-[#10b981] bg-[#f0fdf4] border-green-100" : "text-red-500 bg-red-50 border-red-100")}>
+              {cycleDelta > 0 ? `↓ ${cycleDelta}d faster` : `↑ ${Math.abs(cycleDelta)}d slower`}
+            </span>
+          </div>
+          <div className="px-4 pt-4 pb-2">
+            <ChartContainer config={{ days: { color: PURPLE } }} className="h-[120px] w-full">
+              <LineChart data={cycleData}>
+                <CartesianGrid vertical={false} stroke={GRAY_LINE} strokeDasharray="3 3" />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#98a2b3" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#98a2b3" }} axisLine={false} tickLine={false} width={24} domain={[0, Math.max(16, ...cycleData.map(d => d.days))]} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line type="monotone" dataKey="days" stroke={PURPLE} strokeWidth={2}
+                  dot={{ fill: PURPLE, r: 3.5, strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: PURPLE }}
+                />
+              </LineChart>
+            </ChartContainer>
+          </div>
+          <div className="mx-4 mb-4 mt-1 flex gap-2">
+            <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide mb-1">6-mo high</p>
+              <p className="text-[13px] font-bold text-red-500">{Math.max(...cycleData.map(d => d.days))}d</p>
+            </div>
+            <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide mb-1">6-mo low</p>
+              <p className="text-[13px] font-bold text-[#10b981]">{Math.min(...cycleData.map(d => d.days))}d</p>
+            </div>
+            <div className="flex-1 rounded-[8px] bg-[#f9fafb] border border-[#f2f4f7] px-3 py-2.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide mb-1">Trend</p>
+              <p className={cn("text-[13px] font-bold", cycleDelta > 0 ? "text-[#10b981]" : "text-red-500")}>
+                {cycleDelta > 0 ? `↓${cycleDelta}d` : `↑${Math.abs(cycleDelta)}d`}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Row 4: [1fr 1.2fr] — Process Health | Compliance & Control ──────── */}
+      <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: "1fr 1.2fr" }}>
+
+        {/* Process Health */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] bg-[#eef0ff] border border-[#c7c9fb] flex items-center justify-center shrink-0">
+                <HeartPulse size={11} className="text-[#5d5ef4]" />
+              </span>
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054] leading-none">Process Health</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">Efficiency metrics · current period</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-y divide-[#f2f4f7] flex-1">
+            {/* End-to-End */}
+            <div className="px-4 py-4 flex flex-col gap-1.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide">End-to-End</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[20px] font-bold text-[#344054] leading-none">{e2eDisplay ?? "—"}</span>
+                <span className="text-[11px] text-[#98a2b3]">days</span>
+              </div>
+              {e2eDelta !== null && (
+                <span className={cn("text-[10px] font-medium", e2eDelta < 0 ? "text-[#10b981]" : "text-red-500")}>
+                  {e2eDelta < 0 ? `↓ ${Math.abs(e2eDelta)}d faster` : `↑ ${e2eDelta}d slower`}
+                </span>
+              )}
+              <div className="mt-1">
+                <div className="flex justify-between mb-0.5">
+                  <span className="text-[9px] text-[#98a2b3]">Target 14d</span>
+                  <span className="text-[9px] text-[#98a2b3]">{e2ePct}%</span>
+                </div>
+                <div className="h-1 rounded-full bg-[#f2f4f7] overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(e2ePct ?? 0, 100)}%`, background: (e2ePct ?? 0) >= 80 ? GREEN : AMBER }} />
+                </div>
+              </div>
+            </div>
+            {/* To Approve */}
+            <div className="px-4 py-4 flex flex-col gap-1.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide">Approval Time</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[20px] font-bold text-[#344054] leading-none">{approveDisplay ?? "—"}</span>
+                <span className="text-[11px] text-[#98a2b3]">days</span>
+              </div>
+              {approveDelta !== null && (
+                <span className={cn("text-[10px] font-medium", approveDelta < 0 ? "text-[#10b981]" : "text-red-500")}>
+                  {approveDelta < 0 ? `↓ ${Math.abs(approveDelta)}d faster` : `↑ ${approveDelta}d slower`}
+                </span>
+              )}
+              <div className="mt-1">
+                <div className="flex justify-between mb-0.5">
+                  <span className="text-[9px] text-[#98a2b3]">Target 5d</span>
+                  <span className="text-[9px] text-[#98a2b3]">{approvePct}%</span>
+                </div>
+                <div className="h-1 rounded-full bg-[#f2f4f7] overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(approvePct ?? 0, 100)}%`, background: (approvePct ?? 0) >= 80 ? GREEN : AMBER }} />
+                </div>
+              </div>
+            </div>
+            {/* Query Rate */}
+            <div className="px-4 py-4 flex flex-col gap-1.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide">Query Rate</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className={cn("text-[20px] font-bold leading-none", queryRate > 20 ? "text-red-500" : queryRate > 10 ? "text-amber-500" : "text-[#344054]")}>{queryRate}</span>
+                <span className="text-[11px] text-[#98a2b3]">%</span>
+              </div>
+              <span className="text-[10px] text-[#98a2b3]">{queriedCount} of {inv.length} queried</span>
+              <div className="mt-1 h-1 rounded-full bg-[#f2f4f7] overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(queryRate, 100)}%`, background: queryRate > 20 ? RED : queryRate > 10 ? AMBER : GREEN }} />
+              </div>
+            </div>
+            {/* First-Pass */}
+            <div className="px-4 py-4 flex flex-col gap-1.5">
+              <p className="text-[9px] text-[#98a2b3] uppercase tracking-wide">First-Pass Rate</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[20px] font-bold text-[#344054] leading-none">{firstPassRate}</span>
+                <span className="text-[11px] text-[#98a2b3]">%</span>
+              </div>
+              <span className="text-[10px] text-[#98a2b3]">{firstPassCount} clean passes</span>
+              <div className="mt-1 h-1 rounded-full bg-[#f2f4f7] overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(firstPassRate, 100)}%`, background: GREEN }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Compliance & Control Health */}
+        <div className="bg-white border border-[#eaecf0] rounded-[14px] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-[#fafafa] border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-6 rounded-[6px] flex items-center justify-center shrink-0" style={{ background: complianceBg, border: `1px solid ${complianceBorder}` }}>
+                <HeartPulse size={11} style={{ color: complianceColor }} />
+              </span>
+              <div>
+                <p className="text-[13px] font-semibold text-[#344054] leading-none">Compliance & Control</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">Policy adherence · current period</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border" style={{ color: complianceColor, background: complianceBg, borderColor: complianceBorder }}>
+              {complianceStatus}
+            </span>
+          </div>
+
+          {/* Score hero */}
+          <div className="px-4 pt-4 pb-3 border-b border-[#f2f4f7] flex items-center gap-4">
+            <div className="relative size-[64px] shrink-0">
+              <svg viewBox="0 0 64 64" className="size-[64px] -rotate-90">
+                <circle cx="32" cy="32" r="26" fill="none" stroke="#f2f4f7" strokeWidth="7" />
+                <circle cx="32" cy="32" r="26" fill="none" strokeWidth="7"
+                  stroke={complianceColor}
+                  strokeDasharray={`${2 * Math.PI * 26}`}
+                  strokeDashoffset={`${2 * Math.PI * 26 * (1 - complianceScore / 100)}`}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-[16px] font-bold text-[#344054] leading-none">{complianceScore}</span>
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] text-[#98a2b3] mb-2">out of 100 · {failedCount + warningCount} {failedCount + warningCount === 1 ? "check" : "checks"} need attention</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {passedCount > 0 && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] text-[#15803d]">{passedCount} passed</span>}
+                {warningCount > 0 && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#fffbeb] border border-[#fde68a] text-[#b45309]">{warningCount} warnings</span>}
+                {failedCount > 0 && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#fff1f2] border border-[#fecdd3] text-[#be123c]">{failedCount} failed</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Dimension rows */}
+          <div className="flex flex-col flex-1">
+            {complianceDimensions.map((d, i) => {
+              const status = dimStatus(d)
+              const color  = dimColor(d)
+              return (
+                <div key={d.label} className={cn("flex items-center gap-3 px-4 py-2.5", i < complianceDimensions.length - 1 && "border-b border-[#f2f4f7]")}>
+                  <span className="size-2 rounded-full shrink-0" style={{ background: color }} />
+                  <p className="flex-1 text-[12px] text-[#344054] leading-none min-w-0 truncate">{d.label}</p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="w-[44px] h-1.5 rounded-full bg-[#f2f4f7] overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${d.rate}%`, background: color }} />
+                    </div>
+                    <span className="text-[12px] font-semibold w-[32px] text-right" style={{ color }}>{d.rate}%</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  )
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -121,13 +998,13 @@ function ChannelToggle({
   channel, onChange,
 }: { channel: "form" | "email"; onChange: (v: "form" | "email") => void }) {
   return (
-    <div className="flex bg-[#e7e6e6] border border-[#f2f4f7] rounded-[12px] p-1 gap-0" style={{ fontFamily: "Inter" }}>
+    <div className="flex bg-[#e7e6e6] border border-[#f2f4f7] rounded-[10px] p-0.5 gap-0" style={{ fontFamily: "Inter" }}>
       {(["form", "email"] as const).map(v => (
         <button
           key={v}
           onClick={() => onChange(v)}
           className={cn(
-            "px-3 py-2 rounded-[10px] text-[14px] capitalize transition-all duration-150 cursor-pointer",
+            "px-3 py-1.5 rounded-[8px] text-[13px] capitalize transition-all duration-150 cursor-pointer",
             channel === v
               ? "bg-white text-[#344054] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
               : "text-[#667085] hover:text-[#344054]"
@@ -313,101 +1190,206 @@ function DetailsTab({ invoice, onTabChange }: { invoice: InvoiceListItem; onTabC
     { label: "Total",     value: `MYR ${(invoice.total_myr ?? 0).toFixed(2)}`,   bold: true  },
   ]
 
-  const sectionLabel = "text-[10px] font-semibold uppercase tracking-wide text-[#98a2b3]"
-  const fieldRow = "flex items-start justify-between py-2.5 border-b border-[#f2f4f7]"
-  const fieldLabel = "text-[12px] text-[#667085] shrink-0 w-28"
-  const fieldVal = "text-[13px] font-medium text-[#344054] text-right"
-
   function Section({ title, fields }: { title: string; fields: { label: string; value: string; bold?: boolean }[] }) {
     return (
-      <div className="mb-5">
-        <p className={sectionLabel} style={{ fontFamily: "Inter" }}>{title}</p>
-        <div className="border-b border-[#eaecf0] mb-2" />
-        {fields.map((f, i) => (
-          <div key={i} className={fieldRow} style={{ fontFamily: "Inter" }}>
-            <span className={fieldLabel}>{f.label}</span>
-            <span className={cn(fieldVal, f.bold && "font-bold")}>{f.value}</span>
-          </div>
-        ))}
+      <div className="mb-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#98a2b3] mb-2" style={{ fontFamily: "Inter" }}>{title}</p>
+        <div className="bg-[#fafafa] border border-[#f2f4f7] rounded-[10px] overflow-hidden">
+          {fields.map((f, i) => (
+            <div key={i} className={cn("flex items-start justify-between px-3.5 py-2.5", i < fields.length - 1 && "border-b border-[#f2f4f7]")} style={{ fontFamily: "Inter" }}>
+              <span className="text-[12px] text-[#98a2b3] shrink-0 w-28">{f.label}</span>
+              <span className={cn("text-[12px] text-[#344054] text-right ml-2", f.bold ? "font-bold text-[#111]" : "font-medium")}>{f.value}</span>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
 
+  // ── Next-action derivation ──────────────────────────────────────
+  const steps: any[] = inv.approval_steps ?? []
+  const currentStep = steps.find((s: any) => s.status === "current")
+  const thread: any[] = inv.comment_thread ?? []
+  const openQueries = thread.filter((t: any) => t.type === "comment" && t.is_query && !t.resolved)
+
+  function initials(name: string) {
+    return name.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase()
+  }
+
+  // Derive who is blocking: prefer an open query directed back at requestor, else current approval step
+  const blockingQuery = openQueries.length > 0 ? openQueries[openQueries.length - 1] : null
+  const hasBlock = currentStep || blockingQuery
+
   return (
     <div>
-      {/* Action Required Banner */}
-      {inv.risk_level === "warning" && (
-        <div className="flex gap-3 bg-amber-50 border border-amber-200 rounded-[12px] p-4 mb-5 border-l-4 border-l-amber-400 shadow-[0_2px_8px_rgba(186,117,23,0.10)]">
-          <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-[13px] font-semibold text-amber-900" style={{ fontFamily: "Inter" }}>
-              Action Required
+      {/* Next Action — who needs to act now */}
+      {hasBlock && (
+        <div className="rounded-[12px] border border-[#e4e7ec] bg-white mb-4 overflow-hidden" style={{ fontFamily: "Inter" }}>
+          <div className="px-3.5 py-2.5 border-b border-[#f2f4f7] flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Clock size={11} className="text-[#98a2b3]" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#98a2b3]">Waiting On</span>
+            </div>
+            {currentStep?.sla_at_risk && (
+              <span className="text-[10px] font-medium bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">SLA at risk</span>
+            )}
+          </div>
+
+          {/* Current approval step */}
+          {currentStep && (
+            <div className="flex items-center gap-3 px-3.5 py-3 border-b border-[#f9fafb]">
+              <div className="size-7 rounded-full bg-[#eef0ff] flex items-center justify-center shrink-0">
+                <span className="text-[10px] font-bold text-[#5d5ef4]">{initials(currentStep.assignee)}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-[#344054] leading-none">{currentStep.assignee}</p>
+                <p className="text-[11px] text-[#98a2b3] mt-0.5 leading-none">{currentStep.title}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-auto px-2 py-1 text-[11px] font-medium text-[#5d5ef4] hover:bg-[#eef0ff] hover:text-[#5d5ef4] shrink-0"
+                onClick={() => onTabChange?.("approval")}
+              >
+                View →
+              </Button>
+            </div>
+          )}
+
+          {/* Open queries */}
+          {blockingQuery && (
+            <div className="flex items-start gap-3 px-3.5 py-3">
+              <div className="size-7 rounded-full bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-[10px] font-bold text-amber-600">{initials(blockingQuery.author)}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <p className="text-[12px] font-semibold text-[#344054] leading-none">{blockingQuery.author}</p>
+                  <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 px-1 py-0.5 rounded-full leading-none">query</span>
+                </div>
+                <p className="text-[11px] text-[#667085] leading-[1.4] line-clamp-2">{blockingQuery.message}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-auto px-2 py-1 text-[11px] font-medium text-[#5d5ef4] hover:bg-[#eef0ff] hover:text-[#5d5ef4] shrink-0 mt-0.5"
+                onClick={() => onTabChange?.("comments")}
+              >
+                Reply →
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Jomie Compliance — unified card */}
+      {inv.risk_level && (
+        <div className={cn(
+          "rounded-[12px] p-4 mb-4 border",
+          failCount > 0
+            ? "bg-red-50 border-red-200"
+            : warnCount > 0
+            ? "bg-amber-50 border-amber-200"
+            : "bg-[#f0fdf4] border-[#bbf7d0]"
+        )}>
+          {/* Top row: label + score */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                "size-6 rounded-[6px] flex items-center justify-center shrink-0",
+                failCount > 0 ? "bg-red-100" : warnCount > 0 ? "bg-amber-100" : "bg-[#dcfce7]"
+              )}>
+                {failCount > 0 || warnCount > 0
+                  ? <AlertTriangle size={12} className={failCount > 0 ? "text-red-500" : "text-amber-500"} />
+                  : <CheckCircle2 size={12} className="text-[#16a34a]" />
+                }
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-[#344054] leading-none" style={{ fontFamily: "Inter" }}>
+                  {failCount > 0 || warnCount > 0 ? "Action Required" : "All Clear"}
+                </p>
+                <p className="text-[10px] text-[#667085] mt-0.5 leading-none" style={{ fontFamily: "Inter" }}>
+                  ✦ Jomie Compliance
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className={cn(
+                "text-[20px] font-bold leading-none",
+                failCount > 0 ? "text-red-600" : warnCount > 0 ? "text-amber-600" : "text-[#16a34a]"
+              )} style={{ fontFamily: "Inter" }}>{complianceScore}</span>
+              <span className="text-[12px] text-[#98a2b3] font-medium" style={{ fontFamily: "Inter" }}> / 100</span>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="h-1.5 rounded-full bg-black/10 overflow-hidden mb-3">
+            <div className={cn(
+              "h-full rounded-full transition-all",
+              failCount > 0 ? "bg-red-500" : warnCount > 0 ? "bg-amber-500" : "bg-[#16a34a]"
+            )} style={{ width: `${complianceScore}%` }} />
+          </div>
+
+          {/* Bottom row: status + CTA */}
+          <div className="flex items-center justify-between">
+            <p className={cn(
+              "text-[11px]",
+              failCount > 0 ? "text-red-700" : warnCount > 0 ? "text-amber-700" : "text-[#15803d]"
+            )} style={{ fontFamily: "Inter" }}>
+              {failCount > 0
+                ? `${failCount} fail${failCount !== 1 ? "s" : ""}, ${warnCount} warning${warnCount !== 1 ? "s" : ""} detected`
+                : warnCount > 0
+                ? `${warnCount} warning${warnCount !== 1 ? "s" : ""} detected — review before approving`
+                : "All compliance checks passed"}
             </p>
-            <p className="text-[12px] text-amber-700 mt-0.5" style={{ fontFamily: "Inter" }}>
-              {inv.risk_count} compliance warning{inv.risk_count !== 1 ? "s" : ""} detected. Review before approving.
-            </p>
-            <button
-              className="text-[11px] text-[#5d5ef4] hover:underline cursor-pointer mt-2 block"
-              style={{ fontFamily: "Inter" }}
-              onClick={() => onTabChange?.("checks")}>
-              View All Checks →
-            </button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-auto px-2 py-1 text-[11px] font-medium text-[#5d5ef4] hover:bg-transparent hover:underline shrink-0 ml-1"
+              onClick={() => onTabChange?.("checks")}
+            >
+              View Checks →
+            </Button>
           </div>
         </div>
       )}
 
-      {/* Jomie Compliance Summary */}
-      {inv.risk_level && (
-        <div className="bg-gradient-to-r from-[#f7f7fe] to-[#eef0ff] border border-[#c7c9fb] rounded-[12px] p-4 mb-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>
-              ✦ Jomie Compliance
-            </span>
-            <span className="text-[20px] font-bold text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>
-              {complianceScore} / 100
-            </span>
-          </div>
-          <div className="h-1.5 rounded-full bg-[#eaecf0] overflow-hidden mb-2">
-            <div className="h-full rounded-full bg-[#5d5ef4] transition-all"
-                 style={{ width: `${complianceScore}%` }} />
-          </div>
-          <p className="text-[11px] text-[#667085] mb-2" style={{ fontFamily: "Inter" }}>
-            {failCount > 0
-              ? `${failCount} fail${failCount !== 1 ? "s" : ""}, ${warnCount} warning${warnCount !== 1 ? "s" : ""} detected`
-              : warnCount > 0
-              ? `${warnCount} warning${warnCount !== 1 ? "s" : ""} detected`
-              : "All checks passed"}
+      {/* Amounts highlight */}
+      <div className="bg-[#fafafa] border border-[#f2f4f7] rounded-[10px] px-4 py-3 mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-[10px] text-[#98a2b3] font-medium uppercase tracking-[0.08em]" style={{ fontFamily: "Inter" }}>Total Amount</p>
+          <p className="text-[20px] font-bold text-[#111] mt-0.5 leading-none" style={{ fontFamily: "Inter" }}>
+            MYR {(invoice.total_myr ?? 0).toLocaleString("en-MY", { minimumFractionDigits: 2 })}
           </p>
-          <button
-            className="text-[11px] text-[#5d5ef4] hover:underline cursor-pointer"
-            style={{ fontFamily: "Inter" }}
-            onClick={() => onTabChange?.("checks")}>
-            View All Checks →
-          </button>
         </div>
-      )}
+        <div className="text-right">
+          <p className="text-[10px] text-[#98a2b3] font-medium uppercase tracking-[0.08em]" style={{ fontFamily: "Inter" }}>Due</p>
+          <p className="text-[13px] font-semibold text-[#344054] mt-0.5" style={{ fontFamily: "Inter" }}>{formatDate(invoice.due_date)}</p>
+        </div>
+      </div>
 
       {/* PR Info */}
       {inv.pr_number && (
-        <div className="mb-5">
-          <p className={sectionLabel} style={{ fontFamily: "Inter" }}>Payment Request</p>
-          <div className="border-b border-[#eaecf0] mb-2" />
-          {[
-            { label: "PR Number",   value: inv.pr_number },
-            { label: "Requestor",   value: inv.requestor_name ?? "—" },
-            { label: "Pay By",      value: formatDate(inv.payment_needed_by) },
-            { label: "Channel",     value: inv.intake_channel ?? "—" },
-            { label: "Urgency",     value: inv.urgency_level ?? "normal" },
-          ].map((f, i) => (
-            <div key={i} className={fieldRow} style={{ fontFamily: "Inter" }}>
-              <span className={fieldLabel}>{f.label}</span>
-              <span className={fieldVal}>{f.value}</span>
-            </div>
-          ))}
+        <div className="mb-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#98a2b3] mb-2" style={{ fontFamily: "Inter" }}>Payment Request</p>
+          <div className="bg-[#fafafa] border border-[#f2f4f7] rounded-[10px] overflow-hidden">
+            {[
+              { label: "PR Number", value: inv.pr_number },
+              { label: "Requestor", value: inv.requestor_name ?? "—" },
+              { label: "Pay By",    value: formatDate(inv.payment_needed_by) },
+              { label: "Channel",   value: inv.intake_channel ?? "—" },
+              { label: "Urgency",   value: inv.urgency_level ?? "normal" },
+            ].map((f, i, arr) => (
+              <div key={i} className={cn("flex items-start justify-between px-3.5 py-2.5", i < arr.length - 1 && "border-b border-[#f2f4f7]")} style={{ fontFamily: "Inter" }}>
+                <span className="text-[12px] text-[#98a2b3] shrink-0 w-28">{f.label}</span>
+                <span className="text-[12px] font-medium text-[#344054] text-right ml-2">{f.value}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      <Section title="Vendor" fields={vendorFields} />
+      <Section title="Vendor"  fields={vendorFields} />
       <Section title="Bill To" fields={billToFields} />
       <Section title="Invoice" fields={invoiceFields} />
       <Section title="Amounts" fields={amountFields} />
@@ -476,11 +1458,13 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 px-8 py-5">
+    <div className="flex flex-col flex-1 min-h-0 pt-3 pb-2">
+      <div className="flex flex-col flex-1 min-h-0">
       <MessageScrollerProvider defaultScrollPosition="end" autoScroll>
-        <MessageScroller className="flex-1">
-          <MessageScrollerViewport className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/30 focus-visible:ring-offset-0">
-            <MessageScrollerContent className="gap-3">
+        <MessageScroller className="flex-1 min-h-0">
+          <MessageScrollerViewport className="focus:outline-none focus-visible:ring-0">
+            <MessageScrollerContent className="gap-1 pb-2 px-4">
+              <div className="flex-1" />
               {rows.length === 0 && (
                 <p className="text-[13px] text-[#98a2b3] text-center py-8" style={{ fontFamily: "Inter" }}>
                   No comments yet.
@@ -491,10 +1475,11 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                   const item = row.item
                   return (
                     <MessageScrollerItem key={item.id} messageId={item.id} className="[content-visibility:visible]">
-                      <Marker className="my-2">
-                        <MarkerContent className="text-[11px] italic text-[#98a2b3]" style={{ fontFamily: "Inter" }}>
+                      <Marker className="my-1.5">
+                        <MarkerContent className="text-[11px] italic text-[#98a2b3] flex items-center gap-1.5" style={{ fontFamily: "Inter" }}>
+                          <span className="size-1.5 rounded-full bg-[#d0d5dd] shrink-0 not-italic" />
                           {item.description}
-                          <span className="ml-2 text-[10px] text-[#c0c5ce] tabular-nums not-italic">
+                          <span className="ml-1 text-[10px] text-[#c0c5ce] tabular-nums not-italic">
                             {formatDate(item.timestamp)} {formatTime(item.timestamp)}
                           </span>
                         </MarkerContent>
@@ -522,7 +1507,7 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                         const initials = (item.author ?? "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
 
                         return (
-                          <Message key={item.id} align={isMine ? "end" : "start"} className="mb-1 group/message">
+                          <Message key={item.id} align={isMine ? "end" : "start"} className="mb-0.5 group/message">
                             <MessageAvatar>
                               {isLastInGroup && (
                                 <Avatar className="size-8">
@@ -534,37 +1519,66 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                             </MessageAvatar>
                             <MessageContent>
                               {i === 0 && (
-                                <MessageHeader className="flex items-center gap-2">
-                                  <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{item.author}</span>
+                                <MessageHeader className="flex items-center gap-1.5 mb-0.5">
+                                  <span className="text-[12px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>{item.author}</span>
                                   {item.role && (
-                                    <span className="text-[10px] bg-[#f2f4f7] rounded-full px-2 text-[#667085]" style={{ fontFamily: "Inter" }}>{item.role}</span>
+                                    <span className="text-[10px] bg-[#f2f4f7] rounded-full px-1.5 py-px text-[#667085]" style={{ fontFamily: "Inter" }}>{item.role}</span>
                                   )}
-                                  <span className="text-[10px] text-[#98a2b3] ml-auto" style={{ fontFamily: "Inter" }}>
-                                    {formatDate(item.timestamp)} {formatTime(item.timestamp)}
+                                  {isQuery && !item.resolved && (
+                                    <span className="text-[10px] bg-[#eef0fe] rounded-full px-1.5 py-px text-[#5d5ef4] font-medium" style={{ fontFamily: "Inter" }}>Query</span>
+                                  )}
+                                  {isQuery && item.resolved && (
+                                    <span className="text-[10px] bg-[#ecfdf3] rounded-full px-1.5 py-px text-[#027a48] font-medium flex items-center gap-0.5" style={{ fontFamily: "Inter" }}>
+                                      <CheckCircle2 size={9} /> Resolved
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-[#98a2b3] ml-auto tabular-nums" style={{ fontFamily: "Inter" }}>
+                                    {formatTime(item.timestamp)}
                                   </span>
                                 </MessageHeader>
                               )}
-                              <Bubble
-                                align={isMine ? "end" : "start"}
-                                variant={isQuery ? "tinted" : isMine ? "default" : "outline"}
-                                className={cn(
-                                  "rounded-[12px]",
-                                  isMine ? "rounded-tr-[4px]" : "rounded-tl-[4px]",
-                                  isQuery && "*:data-[slot=bubble-content]:!bg-amber-50 *:data-[slot=bubble-content]:!border-amber-200 *:data-[slot=bubble-content]:border-l-4 *:data-[slot=bubble-content]:!border-l-amber-400"
-                                )}
-                              >
-                                <BubbleContent>
-                                  <p className={cn(
-                                    "text-[13px] leading-5",
-                                    isMine ? "text-white" : "text-[#344054]",
-                                    isQuery && item.resolved && "line-through"
-                                  )} style={{ fontFamily: "Inter" }}>
-                                    {item.message}
-                                  </p>
-                                </BubbleContent>
-                              </Bubble>
+                              <div className={cn("flex items-center gap-2", isMine ? "flex-row-reverse justify-start" : "flex-row")}>
+                                <Bubble
+                                  align={isMine ? "end" : "start"}
+                                  variant={isMine ? "default" : "outline"}
+                                  className={cn(
+                                    "rounded-[10px] shrink-0",
+                                    isMine ? "rounded-tr-[4px]" : "rounded-tl-[4px]",
+                                    isQuery && !item.resolved && "*:data-[slot=bubble-content]:!bg-[#f5f5ff] *:data-[slot=bubble-content]:!border-[#c7c8fa]",
+                                    isQuery && item.resolved && "*:data-[slot=bubble-content]:!bg-[#f6fef9] *:data-[slot=bubble-content]:!border-[#abefc6]"
+                                  )}
+                                >
+                                  <BubbleContent className="py-1.5 px-3">
+                                    <p className={cn(
+                                      "text-[13px] leading-[1.45]",
+                                      isMine ? "text-white" : "text-[#344054]",
+                                      isQuery && item.resolved && "opacity-60"
+                                    )} style={{ fontFamily: "Inter" }}>
+                                      {item.message}
+                                    </p>
+                                  </BubbleContent>
+                                </Bubble>
+                                <div className="flex items-center gap-0.5 opacity-0 group-hover/message:opacity-100 transition-opacity shrink-0">
+                                  <button
+                                    onClick={() => handleCopy(item.message)}
+                                    className="p-1 rounded-md text-[#c0c5ce] hover:text-[#667085] hover:bg-[#f2f4f7] transition-colors cursor-pointer"
+                                    title="Copy"
+                                  >
+                                    <Copy size={12} />
+                                  </button>
+                                  {isQuery && !item.resolved && (
+                                    <button
+                                      onClick={() => handleResolve(item.id)}
+                                      className="p-1 rounded-md text-[#c0c5ce] hover:text-[#5d5ef4] hover:bg-[#eef0fe] transition-colors cursor-pointer"
+                                      title="Resolve"
+                                    >
+                                      <CheckCircle2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                               {item.attachment && (
-                                <Attachment size="sm" className="mt-2 bg-[#f9fafb] border-[#eaecf0]">
+                                <Attachment size="sm" className="mt-1.5 bg-[#f9fafb] border-[#eaecf0]">
                                   <AttachmentMedia className="bg-[#f2f4f7]">
                                     <FileText size={14} />
                                   </AttachmentMedia>
@@ -582,26 +1596,6 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
                                   </AttachmentActions>
                                 </Attachment>
                               )}
-                              <MessageFooter className="flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity">
-                                <Button variant="ghost" size="xs" onClick={() => handleCopy(item.message)}>
-                                  <Copy size={12} /> Copy
-                                </Button>
-                                {isQuery && !item.resolved && (
-                                  <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    onClick={() => handleResolve(item.id)}
-                                    className="text-green-600 hover:text-green-700"
-                                  >
-                                    <CheckCircle2 size={12} /> Mark Resolved
-                                  </Button>
-                                )}
-                                {isQuery && item.resolved && (
-                                  <p className="text-[11px] text-green-600 flex items-center gap-1 opacity-100" style={{ fontFamily: "Inter" }}>
-                                    <CheckCircle2 size={11} /> Resolved by {item.resolved_by ?? "—"}
-                                  </p>
-                                )}
-                              </MessageFooter>
                             </MessageContent>
                           </Message>
                         )
@@ -615,34 +1609,39 @@ function CommentsTab({ invoice }: { invoice: InvoiceListItem }) {
           <MessageScrollerButton />
         </MessageScroller>
       </MessageScrollerProvider>
+      </div>
 
-      {/* Compose */}
-      <div className="border-t border-[#eaecf0] pt-4 bg-white shrink-0">
-        <textarea
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
-          placeholder="Add a comment..."
-          className="w-full bg-[#f9fafb] border border-[#eaecf0] rounded-[12px] px-3 py-2.5 text-[13px] text-[#344054] min-h-[72px] resize-none focus:outline-none focus:border-[#5d5ef4] focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/10 transition-colors"
-          style={{ fontFamily: "Inter" }}
-        />
-        <div className="flex justify-between items-center mt-2">
-          <div className="flex items-center gap-3">
-            <button className="text-[#98a2b3] hover:text-[#344054] transition-colors cursor-pointer"><Paperclip size={14} /></button>
-            <button className="text-[#98a2b3] hover:text-[#344054] transition-colors cursor-pointer"><AlertTriangle size={14} /></button>
-          </div>
-          <button
-            onClick={handleSend}
-            className="bg-[#5d5ef4] text-white rounded-[10px] px-4 py-2 text-[13px] hover:bg-[#4546d4] transition-colors cursor-pointer"
+      {/* Compose — pinned to bottom */}
+      <div className="pt-1 pb-4 px-4 shrink-0">
+        <div className="bg-[#f9fafb] rounded-[12px] focus-within:ring-2 focus-within:ring-[#5d5ef4]/10 transition-all">
+          <textarea
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                handleSend()
+              }
+            }}
+            placeholder="Add a comment or query…"
+            rows={2}
+            className="w-full bg-transparent px-3 pt-2.5 pb-1 text-[13px] text-[#344054] resize-none focus:outline-none placeholder:text-[#98a2b3]"
             style={{ fontFamily: "Inter" }}
-          >
-            Send
-          </button>
+          />
+          <div className="flex justify-between items-center px-2 pb-2">
+            <div className="flex items-center gap-1">
+              <button className="text-[#c0c5ce] hover:text-[#667085] transition-colors cursor-pointer p-1 rounded-md hover:bg-[#eaecf0]"><Paperclip size={13} /></button>
+              <button className="text-[#c0c5ce] hover:text-[#667085] transition-colors cursor-pointer p-1 rounded-md hover:bg-[#eaecf0]"><AlertTriangle size={13} /></button>
+            </div>
+            <button
+              onClick={handleSend}
+              disabled={!message.trim()}
+              className="bg-[#5d5ef4] text-white rounded-[8px] px-3.5 py-1.5 text-[12px] font-medium hover:bg-[#4546d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              style={{ fontFamily: "Inter" }}
+            >
+              Send
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -993,39 +1992,67 @@ function DetailPanel({
   return (
     <div className="flex-1 bg-white border border-[#eaecf0] rounded-[20px] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-start justify-between px-8 pt-6 pb-5 shrink-0">
-        <div className="flex items-start gap-3">
-          <div className="size-[48px] rounded-[8px] flex items-center justify-center shrink-0" style={{ background: cat.color + "18" }}>
-            <CatIcon size={24} style={{ color: cat.color }} strokeWidth={1.6} />
+      <div className="flex items-start justify-between px-4 pt-4 pb-4 shrink-0">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="size-[40px] rounded-[8px] flex items-center justify-center shrink-0 mt-0.5" style={{ background: cat.color + "18" }}>
+            <CatIcon size={20} style={{ color: cat.color }} strokeWidth={1.6} />
           </div>
-          <div>
-            <p className="text-[18px] font-bold text-[#344054] leading-7 truncate max-w-[220px]" style={{ fontFamily: "Inter" }}>
+          <div className="min-w-0">
+            <p className="text-[16px] font-bold text-[#344054] leading-6 truncate max-w-[260px]" style={{ fontFamily: "Inter" }}>
               {toTitleCase(invoice.vendor_name_raw ?? "")}
             </p>
-            <p className="text-[14px] text-[#667085]" style={{ fontFamily: "Inter" }}>
+            <p className="text-[12px] text-[#98a2b3] mt-0.5" style={{ fontFamily: "Inter" }}>
               {invoice.invoice_number}{inv.pr_number && ` · ${inv.pr_number}`}
+              {inv.requestor_name && <span className="ml-1.5">· {inv.requestor_name}</span>}
             </p>
-            {inv.requestor_name && (
-              <p className="text-[12px] text-[#98a2b3]" style={{ fontFamily: "Inter" }}>Submitted by {inv.requestor_name}</p>
-            )}
+            {/* Summary row */}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {invoice.total_myr != null && (
+                <span className="text-[13px] font-semibold text-[#344054]" style={{ fontFamily: "Inter" }}>
+                  RM {invoice.total_myr.toLocaleString("en-MY", { minimumFractionDigits: 2 })}
+                </span>
+              )}
+              <span className={cn(
+                "text-[11px] font-medium px-2 py-0.5 rounded-full",
+                invoice.status === "paid"           && "bg-[#ecfdf3] text-[#027a48]",
+                invoice.status === "approved"       && "bg-[#eef0fe] text-[#5d5ef4]",
+                invoice.status === "pending_review" && "bg-[#f2f4f7] text-[#667085]",
+                invoice.status === "rejected"       && "bg-[#fff1f0] text-[#b42318]",
+              )} style={{ fontFamily: "Inter" }}>
+                {invoice.status === "pending_review" ? "Pending" : invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+              </span>
+              {urgencyLabel(invoice) && (
+                <span className={cn("text-[11px]", urgencyColor(invoice))} style={{ fontFamily: "Inter" }}>
+                  {urgencyLabel(invoice)}
+                </span>
+              )}
+              {inv.urgency_level && inv.urgency_level !== "normal" && (
+                <span className={cn(
+                  "text-[11px] font-medium px-2 py-0.5 rounded-full",
+                  inv.urgency_level === "critical" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
+                )} style={{ fontFamily: "Inter" }}>
+                  {inv.urgency_level === "critical" ? "Critical" : "Urgent"}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 mt-0.5">
           <button
             onClick={onQuery}
-            className="bg-white border border-[#eaecf0] rounded-[12px] px-4 py-[10px] text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#f2f4f7] transition-colors cursor-pointer"
+            className="bg-white border border-[#eaecf0] rounded-[10px] px-3 py-[6px] text-[13px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#f2f4f7] transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             Query
           </button>
           <button
             onClick={() => setConfirmAction("reject")}
-            className="bg-white border border-[#fda29b] rounded-[12px] p-[10px] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-red-50 hover:border-[#f97066] focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 focus:ring-offset-1 transition-colors cursor-pointer">
-            <X size={20} className="text-[#b42318]" />
+            className="bg-white border border-[#fda29b] rounded-[10px] p-[7px] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-red-50 hover:border-[#f97066] focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 focus:ring-offset-1 transition-colors cursor-pointer">
+            <X size={16} className="text-[#b42318]" />
           </button>
           <button
             onClick={() => setConfirmAction("approve")}
-            className="bg-[#5d5ef4] border border-[#5d5ef4] rounded-[12px] px-4 py-[10px] text-[14px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#4546d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1 transition-colors cursor-pointer"
+            className="bg-[#5d5ef4] border border-[#5d5ef4] rounded-[10px] px-3 py-[6px] text-[13px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#4546d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus:ring-offset-1 transition-colors cursor-pointer"
             style={{ fontFamily: "Inter" }}>
             Approve
           </button>
@@ -1037,7 +2064,7 @@ function DetailPanel({
         key={activeTab}
         className={cn(
           "flex-1 min-h-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 duration-150",
-          activeTab === "comments" ? "flex flex-col overflow-hidden" : "overflow-y-auto px-8 py-5"
+          activeTab === "comments" ? "flex flex-col overflow-hidden" : "overflow-y-auto px-4 py-5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#d0d5dd] [&::-webkit-scrollbar-thumb]:rounded-full"
         )}
       >
         {activeTab === "details"  && <DetailsTab  invoice={invoice} onTabChange={onTabChange} />}
@@ -1166,7 +2193,7 @@ export default function PaymentRequestsPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden pb-4" style={{ backgroundColor: "#f4f4f1" }}>
+    <div className="flex flex-col h-screen overflow-hidden pb-6" style={{ backgroundColor: "#f4f4f1" }}>
 
       {/* Header */}
       <div className="relative flex items-center px-4 pt-4 pb-0 shrink-0">
@@ -1232,7 +2259,8 @@ export default function PaymentRequestsPage() {
       </div>
 
       {/* Body */}
-      <div ref={containerRef} className="flex flex-1 overflow-hidden mt-9 px-4 pb-4 gap-2">
+      {viewTab === "dashboard" && <APDashboard invoices={invoices} />}
+      <div ref={containerRef} className={cn("flex flex-1 overflow-hidden mt-9 px-4 pb-4 gap-2", viewTab === "dashboard" && "hidden")}>
 
         {/* Left panel */}
         <div
@@ -1256,8 +2284,7 @@ export default function PaymentRequestsPage() {
                 />
               </div>
 
-              {/* Metrics */}
-              <MetricsBoard metrics={metrics} pinned={pinnedMetrics} expanded={middleCollapsed || leftWidth > 500} />
+              {/* Metrics — hidden */}
 
               {/* Filters */}
               <div className="flex items-center gap-2">
@@ -1390,7 +2417,7 @@ export default function PaymentRequestsPage() {
 
         {/* D — detail panel, slides in/out like a drawer */}
         <div className={cn(
-          "overflow-hidden transition-[width] duration-200",
+          "overflow-hidden transition-[width] duration-200 flex flex-col h-full",
           middleCollapsed ? "w-0 pointer-events-none" : "flex-1 min-w-[600px]"
         )}>
           {!middleCollapsed && (selected ? (
@@ -1460,62 +2487,115 @@ export default function PaymentRequestsPage() {
             </div>
 
             {/* PDF viewer area */}
-            <div className="flex-1 bg-[#f4f4f1] flex flex-col items-center justify-center overflow-auto p-6">
-              {/* Document outline */}
-              <div className="bg-white rounded-[8px] shadow-[0_4px_24px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden" style={{ width: 280, minHeight: 360 }}>
-                {/* Document header bar */}
-                <div className="bg-[#5d5ef4] px-5 py-3 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-2">
-                    <FileText size={14} className="text-white/80" />
-                    <span className="text-[12px] font-medium text-white truncate max-w-[160px]" style={{ fontFamily: "Inter" }}>
-                      {selected?.invoice_number}.pdf
+            <div className="flex-1 flex flex-col items-center overflow-auto py-6 px-4" style={{ backgroundColor: "#3a3a3a" }}>
+              {/* A4 document — ratio 1:1.414 */}
+              <div className="bg-white w-full flex flex-col" style={{ maxWidth: 360, minHeight: 509, boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3)" }}>
+                {/* Vendor header */}
+                <div className="flex items-start justify-between px-8 pt-7 pb-5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-7 bg-[#111] flex items-center justify-center rounded-[2px] shrink-0">
+                      <span className="text-[8px] font-black text-white" style={{ fontFamily: "Georgia, serif" }}>
+                        {(selected?.vendor_name_raw ?? "??").split(" ").map((w: string) => w[0]).join("").slice(0,2).toUpperCase()}
+                      </span>
+                    </div>
+                    <span className="text-[7px] font-semibold tracking-[0.12em] text-[#555] uppercase" style={{ fontFamily: "Inter" }}>
+                      {(selected?.vendor_name_raw ?? "").toUpperCase()}
                     </span>
                   </div>
-                  <span className="text-[10px] text-white/60" style={{ fontFamily: "Inter" }}>Page 1 of 3</span>
                 </div>
-                {/* Document body — skeleton lines */}
-                <div className="flex-1 p-6 flex flex-col gap-3">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex flex-col gap-1.5">
-                      <div className="h-3 w-24 bg-[#f2f4f7] rounded-full" />
-                      <div className="h-2 w-16 bg-[#f2f4f7] rounded-full" />
-                      <div className="h-2 w-20 bg-[#f2f4f7] rounded-full" />
-                    </div>
-                    <div className="h-8 w-20 bg-[#5d5ef4]/10 rounded-[4px] flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-[#5d5ef4]" style={{ fontFamily: "Inter" }}>INVOICE</span>
-                    </div>
+
+                <div className="px-8 pb-5">
+                  <p className="text-[18px] font-black text-[#111] tracking-tight leading-none" style={{ fontFamily: "Georgia, serif" }}>TAX INVOICE</p>
+                </div>
+
+                {/* Meta grid */}
+                <div className="px-8 pb-4 flex gap-8">
+                  <div>
+                    <p className="text-[6.5px] text-[#999] uppercase tracking-[0.1em] mb-0.5" style={{ fontFamily: "Inter" }}>Invoice no.</p>
+                    <p className="text-[9px] font-bold text-[#111]" style={{ fontFamily: "Inter" }}>{selected?.invoice_number ?? "—"}</p>
                   </div>
-                  <div className="h-2 w-full bg-[#5d5ef4]/15 rounded-full" />
-                  {[80, 65, 90, 55, 70].map((w, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <div className="h-1.5 rounded-full bg-[#f2f4f7]" style={{ width: `${w}%` }} />
-                      <div className="h-1.5 w-8 rounded-full bg-[#f2f4f7] ml-auto" />
-                    </div>
-                  ))}
-                  <div className="flex-1" />
-                  <div className="border-t border-[#f2f4f7] pt-3 flex flex-col gap-1.5">
-                    <div className="flex justify-between">
-                      <div className="h-1.5 w-16 bg-[#f2f4f7] rounded-full" />
-                      <div className="h-1.5 w-12 bg-[#f2f4f7] rounded-full" />
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="h-2 w-20 bg-[#344054]/20 rounded-full" />
-                      <div className="h-2 w-14 bg-[#5d5ef4]/30 rounded-full" />
-                    </div>
+                  <div>
+                    <p className="text-[6.5px] text-[#999] uppercase tracking-[0.1em] mb-0.5" style={{ fontFamily: "Inter" }}>Date</p>
+                    <p className="text-[9px] font-bold text-[#111]" style={{ fontFamily: "Inter" }}>
+                      {selected?.created_at ? new Date(selected.created_at).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                    </p>
                   </div>
-                  <div className="flex justify-end mt-2">
-                    <div className="size-10 bg-[#f2f4f7] rounded-[4px] flex items-center justify-center">
-                      <div className="size-6 grid grid-cols-3 gap-0.5">
-                        {Array.from({ length: 9 }).map((_, i) => (
-                          <div key={i} className={cn("rounded-[1px]", [0,2,6,8].includes(i) ? "bg-[#344054]" : i === 4 ? "bg-[#5d5ef4]" : "bg-[#d0d5dd]")} />
-                        ))}
-                      </div>
+                  {selected?.due_date && (
+                    <div>
+                      <p className="text-[6.5px] text-[#999] uppercase tracking-[0.1em] mb-0.5" style={{ fontFamily: "Inter" }}>Due date</p>
+                      <p className="text-[9px] font-bold text-[#111]" style={{ fontFamily: "Inter" }}>
+                        {new Date(selected.due_date).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}
+                      </p>
                     </div>
+                  )}
+                </div>
+
+                <div className="mx-8 border-t border-[#e8e8e8] mb-4" />
+
+                {/* Bill to */}
+                <div className="px-8 mb-5">
+                  <p className="text-[6.5px] text-[#999] uppercase tracking-[0.1em] mb-1.5" style={{ fontFamily: "Inter" }}>Bill to</p>
+                  <p className="text-[9px] font-bold text-[#111]" style={{ fontFamily: "Inter" }}>Jomie Invoice Sdn Bhd</p>
+                  <p className="text-[8px] text-[#666] mt-0.5" style={{ fontFamily: "Inter" }}>Suite 12-5, Menara KL Eco City</p>
+                  <p className="text-[8px] text-[#666]" style={{ fontFamily: "Inter" }}>Kuala Lumpur, 59200</p>
+                </div>
+
+                <div className="mx-8 border-t border-[#e8e8e8] mb-0" />
+
+                {/* Line items header */}
+                <div className="flex justify-between px-8 py-1.5 bg-[#f9f9f9]">
+                  <p className="text-[6.5px] font-semibold text-[#888] uppercase tracking-[0.08em]" style={{ fontFamily: "Inter" }}>Description</p>
+                  <p className="text-[6.5px] font-semibold text-[#888] uppercase tracking-[0.08em]" style={{ fontFamily: "Inter" }}>Amount</p>
+                </div>
+                <div className="mx-8 border-t border-[#e8e8e8]" />
+
+                {/* Line item */}
+                <div className="flex justify-between items-start px-8 py-3 border-b border-[#f0f0f0]">
+                  <div>
+                    <p className="text-[8.5px] text-[#111]" style={{ fontFamily: "Inter" }}>
+                      {selected?.invoice_number ? `Services — ${selected.invoice_number}` : "Professional Services"}
+                    </p>
+                    <p className="text-[7px] text-[#999] mt-0.5" style={{ fontFamily: "Inter" }}>1 unit</p>
                   </div>
+                  <p className="text-[8.5px] font-semibold text-[#111]" style={{ fontFamily: "Inter" }}>
+                    {selected?.total_myr != null ? `RM ${selected.total_myr.toLocaleString("en-MY", { minimumFractionDigits: 2 })}` : "—"}
+                  </p>
+                </div>
+
+                {/* Totals */}
+                <div className="px-8 pt-3 pb-4 flex flex-col items-end gap-1.5">
+                  <div className="flex gap-8 items-center">
+                    <p className="text-[7.5px] text-[#888]" style={{ fontFamily: "Inter" }}>Subtotal</p>
+                    <p className="text-[7.5px] text-[#555] w-20 text-right" style={{ fontFamily: "Inter" }}>
+                      {selected?.total_myr != null ? `RM ${selected.total_myr.toLocaleString("en-MY", { minimumFractionDigits: 2 })}` : "—"}
+                    </p>
+                  </div>
+                  <div className="flex gap-8 items-center">
+                    <p className="text-[7.5px] text-[#888]" style={{ fontFamily: "Inter" }}>Tax (0%)</p>
+                    <p className="text-[7.5px] text-[#555] w-20 text-right" style={{ fontFamily: "Inter" }}>RM 0.00</p>
+                  </div>
+                  <div className="h-px bg-[#e8e8e8] w-32 my-0.5" />
+                  <div className="flex gap-8 items-center">
+                    <p className="text-[8px] font-bold text-[#888] uppercase tracking-[0.06em]" style={{ fontFamily: "Inter" }}>Total due</p>
+                    <p className="text-[11px] font-black text-[#111] w-20 text-right" style={{ fontFamily: "Inter" }}>
+                      {selected?.total_myr != null ? `RM ${selected.total_myr.toLocaleString("en-MY", { minimumFractionDigits: 2 })}` : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex-1" />
+
+                {/* Footer */}
+                <div className="px-8 pb-5 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 border border-[#d0d5dd] rounded-[3px] px-2 py-1">
+                    <div className="size-1.5 rounded-full bg-[#10b981] shrink-0" />
+                    <span className="text-[7px] font-semibold tracking-[0.1em] text-[#667085] uppercase" style={{ fontFamily: "Inter" }}>AI Extracted · 91%</span>
+                  </div>
+                  <p className="text-[7px] text-[#ccc]" style={{ fontFamily: "Inter" }}>Page 1 of 3</p>
                 </div>
               </div>
-              <p className="text-[11px] text-[#98a2b3] mt-3" style={{ fontFamily: "Inter" }}>
-                Real PDF preview will appear when connected to backend
+              <p className="text-[10px] text-white/25 mt-4" style={{ fontFamily: "Inter" }}>
+                Real PDF when connected to backend
               </p>
             </div>
 
