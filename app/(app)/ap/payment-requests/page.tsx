@@ -1065,6 +1065,78 @@ function MetricsBoard({
   )
 }
 
+// ─── Filter Dropdown ──────────────────────────────────────────────────────────
+
+function FilterDropdown({
+  label, active, heading, options, selected, onSelect,
+}: {
+  label: string
+  active: boolean
+  heading: string
+  options: { value: string; label: string }[]
+  selected: string
+  onSelect: (v: string) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    if (!open) return
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={cn(
+          "flex items-center gap-1.5 border rounded-[10px] pl-3 pr-2.5 py-[7px] text-[13px] font-medium shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] cursor-pointer transition-colors focus:outline-none",
+          active || open
+            ? "bg-[#eef0ff] border-[#c7c9fb] text-[#5d5ef4]"
+            : "bg-white border-[#eaecf0] text-[#344054] hover:bg-[#f9fafb]"
+        )}
+        style={{ fontFamily: "Inter" }}
+      >
+        {label}
+        <ChevronDown size={13} className={cn("transition-transform duration-150", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 w-[176px] bg-white border border-[#eaecf0] rounded-[10px] shadow-[0px_4px_16px_0px_rgba(16,24,40,0.10)] z-50 py-1 overflow-hidden">
+          <div className="px-3 pt-2 pb-1">
+            <p className="text-[10px] font-semibold text-[#98a2b3] uppercase tracking-wider" style={{ fontFamily: "Inter" }}>{heading}</p>
+          </div>
+          <div className="h-px bg-[#f2f4f7] mx-2 mb-1" />
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onSelect(opt.value); setOpen(false) }}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-2 text-[13px] text-left transition-colors hover:bg-[#f9fafb]",
+                selected === opt.value ? "font-semibold text-[#5d5ef4]" : "font-normal text-[#344054]"
+              )}
+              style={{ fontFamily: "Inter" }}
+            >
+              <span className={cn("size-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors",
+                selected === opt.value ? "bg-[#5d5ef4] border-[#5d5ef4]" : "border-[#d0d5dd]"
+              )}>
+                {selected === opt.value && <span className="size-1.5 rounded-full bg-white" />}
+              </span>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Request List Item ────────────────────────────────────────────────────────
 
 function RequestListItem({
@@ -2160,6 +2232,8 @@ export default function PaymentRequestsPage() {
   const [rightWidth, setRightWidth]     = React.useState(440)
   const [middleCollapsed, setMiddleCollapsed] = React.useState(false)
   const [search, setSearch]             = React.useState("")
+  const [statusFilter, setStatusFilter]       = React.useState<InvoiceStatus | "all">("all")
+  const [dateSort, setDateSort]               = React.useState<"newest" | "oldest" | "due_soonest" | "due_latest">("newest")
   const containerRef = React.useRef<HTMLDivElement>(null)
   const prevL2Open   = React.useRef(l2Open)
 
@@ -2169,15 +2243,23 @@ export default function PaymentRequestsPage() {
     return () => clearTimeout(t)
   }, [])
 
-  const filteredInvoices = invoices.filter(inv => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return (
-      (inv.vendor_name_raw ?? "").toLowerCase().includes(q) ||
-      (inv.invoice_number ?? "").toLowerCase().includes(q) ||
-      ((inv as any).pr_number ?? "").toLowerCase().includes(q)
-    )
-  })
+  const filteredInvoices = React.useMemo(() => {
+    let list = invoices.filter(inv => {
+      if (statusFilter !== "all" && inv.status !== statusFilter) return false
+      if (!search) return true
+      const q = search.toLowerCase()
+      return (
+        (inv.vendor_name_raw ?? "").toLowerCase().includes(q) ||
+        (inv.invoice_number ?? "").toLowerCase().includes(q) ||
+        ((inv as any).pr_number ?? "").toLowerCase().includes(q)
+      )
+    })
+    if (dateSort === "oldest")      list = [...list].sort((a, b) => new Date(a.invoice_date ?? 0).getTime() - new Date(b.invoice_date ?? 0).getTime())
+    if (dateSort === "newest")      list = [...list].sort((a, b) => new Date(b.invoice_date ?? 0).getTime() - new Date(a.invoice_date ?? 0).getTime())
+    if (dateSort === "due_soonest") list = [...list].sort((a, b) => new Date(a.due_date ?? 0).getTime() - new Date(b.due_date ?? 0).getTime())
+    if (dateSort === "due_latest")  list = [...list].sort((a, b) => new Date(b.due_date ?? 0).getTime() - new Date(a.due_date ?? 0).getTime())
+    return list
+  }, [invoices, search, statusFilter, dateSort])
 
   // V7 — auto-select first invoice once loaded
   React.useEffect(() => {
@@ -2320,16 +2402,38 @@ export default function PaymentRequestsPage() {
                     style={{ fontFamily: "Inter" }}
                   />
                 </div>
-                <button
-                  className="shrink-0 flex items-center gap-1 bg-white border border-[#eaecf0] rounded-[10px] pl-3 pr-3.5 py-2 text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] cursor-pointer hover:bg-[#f9fafb] transition-colors"
-                  style={{ fontFamily: "Inter" }}>
-                  Pending <ChevronDown size={14} />
-                </button>
-                <button
-                  className="shrink-0 flex items-center gap-1 bg-white border border-[#eaecf0] rounded-[10px] pl-3 pr-3.5 py-2 text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] cursor-pointer hover:bg-[#f9fafb] transition-colors"
-                  style={{ fontFamily: "Inter" }}>
-                  Datetime <ChevronDown size={14} />
-                </button>
+                {/* Status filter dropdown */}
+                <FilterDropdown
+                  label={statusFilter === "all" ? "Status" : STATUS_LABEL[statusFilter as InvoiceStatus]}
+                  active={statusFilter !== "all"}
+                  heading="Filter by Status"
+                  options={[
+                    { value: "all",            label: "All Statuses" },
+                    { value: "pending_review", label: "Pending" },
+                    { value: "approved",       label: "Approved" },
+                    { value: "rejected",       label: "Rejected" },
+                    { value: "paid",           label: "Paid" },
+                    { value: "overdue",        label: "Overdue" },
+                    { value: "partially_paid", label: "Part Paid" },
+                  ]}
+                  selected={statusFilter}
+                  onSelect={v => setStatusFilter(v as any)}
+                />
+
+                {/* Date sort dropdown */}
+                <FilterDropdown
+                  label={dateSort === "newest" ? "Datetime" : dateSort === "oldest" ? "Oldest First" : dateSort === "due_soonest" ? "Due: Soonest" : "Due: Latest"}
+                  active={dateSort !== "newest"}
+                  heading="Sort by Date"
+                  options={[
+                    { value: "newest",      label: "Newest First" },
+                    { value: "oldest",      label: "Oldest First" },
+                    { value: "due_soonest", label: "Due: Soonest" },
+                    { value: "due_latest",  label: "Due: Latest" },
+                  ]}
+                  selected={dateSort}
+                  onSelect={v => setDateSort(v as any)}
+                />
                 <button
                   onClick={() => {}}
                   className="shrink-0 p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus-visible:ring-offset-1"
