@@ -73,28 +73,18 @@ const NAV_HOVER_BG   = "rgba(93,94,244,0.10)"
 // ── L1 nav data ────────────────────────────────────────────────────────────
 
 const MAIN_NAV_TOP: MainNavItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard",        moduleKey: "dashboard",        href: "/dashboard" },
   { icon: FolderKanban,    label: "Projects",         moduleKey: "projects",         href: "/projects" },
   { icon: ShoppingCart,    label: "Procurement",      moduleKey: "procurement",      href: "/p2p/purchase-requests" },
-  { icon: Receipt,         label: "Accounts Payable", moduleKey: "accounts-payable", href: "/ap/invoices" },
+  { icon: Receipt,         label: "Accounts Payable", moduleKey: "accounts-payable", href: "/ap/payment-requests" },
+  { icon: Store,           label: "Vendors",          moduleKey: "vendors",          href: "/vendors" },
+  { icon: Package,         label: "Items",            moduleKey: "items",            href: "/items" },
   { icon: Calculator,      label: "Accounting",       moduleKey: "accounting",       href: "/accounting/journals" },
-  { icon: ShieldCheck,     label: "Audit",            moduleKey: "audit",            href: "/audit/findings" },
-  { icon: ListChecks,      label: "Approvals",        moduleKey: "approvals",        href: "/approvals",   badge: 4 },
   { icon: Bell,            label: "Notifications",    moduleKey: "notifications",    href: "/notifications", badge: 7 },
 ]
 
-const MAIN_NAV_MID: MainNavItem[] = [
-  { icon: Store,           label: "Vendors",          moduleKey: "vendors",          href: "/vendors" },
-  { icon: Package,         label: "Items",            moduleKey: "items",            href: "/items" },
-  { icon: ArrowLeftRight,  label: "Inter-company",    moduleKey: "interco",          href: "/interco/transactions" },
-  { icon: BarChart3,       label: "Reports",          moduleKey: "reports",          href: "/reports/financial-statements" },
-  { icon: Users,           label: "Practice Hub",     moduleKey: "practice",         href: "/practice/clients" },
-]
+const MAIN_NAV_MID: MainNavItem[] = []
 
-const MAIN_NAV_BOTTOM: MainNavItem[] = [
-  { icon: BookOpen,        label: "Knowledge Base",   moduleKey: "knowledge",        href: "/knowledge" },
-  { icon: Cpu,             label: "Automation",       moduleKey: "automation",       href: "/automation" },
-]
+const MAIN_NAV_BOTTOM: MainNavItem[] = []
 
 // ── L2 sub-navigation ──────────────────────────────────────────────────────
 
@@ -112,8 +102,8 @@ const SUB_NAV: SubNavGroup[] = [
     moduleKey: "projects",
     sectionLabel: "Projects",
     items: [
-      { label: "My Projects",        href: "/projects" },
       { label: "All Projects",       href: "/projects/all" },
+      { label: "Analysis",           href: "/projects/analysis" },
     ],
   },
   {
@@ -134,12 +124,9 @@ const SUB_NAV: SubNavGroup[] = [
     moduleKey: "accounts-payable",
     sectionLabel: "Accounts Payable",
     items: [
-      { label: "Invoice Inbox",    href: "/ap/invoices",           badge: 3, badgeVariant: "red"   },
       { label: "Payment Request",  href: "/ap/payment-requests",   badge: 2, badgeVariant: "amber" },
-      { label: "Registrations",    href: "/ap/registrations",      badge: 7, badgeVariant: "amber" },
       { label: "Payment Runs",     href: "/ap/payment-runs" },
-      { label: "Payment History", href: "/ap/payment-history" },
-      { label: "Spend Analysis",  href: "/ap/analytics" },
+      { label: "Spend Analysis",   href: "/ap/analytics" },
     ],
   },
   {
@@ -192,10 +179,8 @@ const SUB_NAV: SubNavGroup[] = [
     moduleKey: "vendors",
     sectionLabel: "Vendors",
     items: [
-      { label: "All Vendors",          href: "/vendors" },
-      { label: "Onboarding Queue",     href: "/vendors/onboarding-queue",     badge: 2, badgeVariant: "amber" },
-      { label: "Risk Scores",          href: "/vendors/risk-scores" },
-      { label: "Blacklist",            href: "/vendors/blacklist" },
+      { label: "All Vendor",           href: "/vendors" },
+      { label: "Vendor View",          href: "/vendors/view" },
     ],
   },
   {
@@ -575,18 +560,6 @@ export function AppSidebar() {
           }}
         >
           {MAIN_NAV_TOP.map(item => (
-            <NavIcon key={item.moduleKey} item={item} isActive={activeModule === item.moduleKey} />
-          ))}
-
-          <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
-
-          {MAIN_NAV_MID.map(item => (
-            <NavIcon key={item.moduleKey} item={item} isActive={activeModule === item.moduleKey} />
-          ))}
-
-          <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
-
-          {MAIN_NAV_BOTTOM.map(item => (
             <NavIcon key={item.moduleKey} item={item} isActive={activeModule === item.moduleKey} />
           ))}
         </div>
