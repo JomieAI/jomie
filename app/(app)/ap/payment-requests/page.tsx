@@ -1076,73 +1076,109 @@ function RequestListItem({
   const pr = (inv as any).pr_number as string | undefined
   const statusColor = STATUS_COLOR[inv.status as InvoiceStatus]
 
+  const rowBg = selected
+    ? "bg-[#f2f4f7] border-[#d0d5dd]"
+    : "bg-white border-transparent hover:bg-[#f9fafb] hover:border-[#eaecf0]"
+
+  // Urgency chip style
+  const urgLabel = urgencyLabel(inv)
+  const urgChipStyle = (() => {
+    if (inv.status === "paid") return null
+    if (!urgLabel) return null
+    if (urgLabel.includes("overdue")) return { bg: "#fef3f2", text: "#b42318" }
+    if (urgLabel === "Due today") return { bg: "#fff6ed", text: "#c4320a" }
+    if (urgLabel.startsWith("Due")) return { bg: "#fffaeb", text: "#b54708" }
+    return null
+  })()
+
   return (
     <div
       onClick={onSelect}
       className={cn(
-        "flex flex-col gap-1.5 p-2.5 rounded-[10px] cursor-pointer transition-colors duration-150 border",
-        selected ? "bg-[#f2f4f7] border-[#d0d5dd]" : "bg-white border-transparent hover:bg-[#f9fafb] hover:border-[#eaecf0]"
+        "flex flex-col gap-0 rounded-[10px] cursor-pointer transition-all duration-150 border overflow-hidden",
+        rowBg
       )}
     >
-      <div className="flex items-start gap-3">
+      {/* Main row */}
+      <div className="flex items-center gap-3 px-3 pt-3 pb-2">
+        {/* Category icon */}
         <div
-          className="size-9 rounded-[8px] flex items-center justify-center shrink-0"
-          style={{ background: cat.color + "18" }}
+          className="size-9 rounded-[9px] flex items-center justify-center shrink-0 border"
+          style={{ background: cat.color + "12", borderColor: cat.color + "28" }}
           title={cat.label}
         >
-          <CatIcon size={16} style={{ color: cat.color }} strokeWidth={1.6} />
+          <CatIcon size={15} style={{ color: cat.color }} strokeWidth={1.7} />
         </div>
+
+        {/* Middle: vendor + invoice ref */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[13px] font-semibold text-[#1d2939] truncate" style={{ fontFamily: "Inter" }}>
-              {toTitleCase(inv.vendor_name_raw ?? "")}
-            </p>
-            <p className="text-[13px] font-medium text-[#344054] tabular-nums shrink-0" style={{ fontFamily: "Inter" }}>
-              {amount}
-            </p>
-          </div>
-          <div className="flex items-center justify-between gap-2 mt-0.5">
-            <p className="text-[11px] text-[#667085] truncate" style={{ fontFamily: "Inter" }}>
-              {inv.invoice_number}{pr && ` · ${pr}`}
-            </p>
-            <span
-              className="text-[10px] font-medium rounded-[5px] px-1.5 py-0.5 shrink-0"
-              style={{ background: statusColor.bg, color: statusColor.text }}
-            >
-              {STATUS_LABEL[inv.status as InvoiceStatus]}
-            </span>
-          </div>
+          <p className="text-[13px] font-semibold text-[#101828] truncate leading-tight">
+            {toTitleCase(inv.vendor_name_raw ?? "")}
+          </p>
+          <p className="text-[11px] text-[#98a2b3] truncate mt-0.5 leading-tight">
+            {inv.invoice_number}{pr && <span className="text-[#d0d5dd]"> · </span>}{pr && <span>{pr}</span>}
+          </p>
+        </div>
+
+        {/* Right: amount + status */}
+        <div className="shrink-0 text-right">
+          <p className="text-[13px] font-bold text-[#101828] tabular-nums leading-tight">
+            {amount}
+          </p>
+          <span
+            className="inline-block text-[10px] font-semibold rounded-[5px] px-1.5 py-0.5 mt-0.5 leading-none"
+            style={{ background: statusColor.bg, color: statusColor.text }}
+          >
+            {STATUS_LABEL[inv.status as InvoiceStatus]}
+          </span>
         </div>
       </div>
 
-      {/* Meta row — requestor/urgency/risk always show; Dup + FM only when expanded */}
-      <div className="flex items-center gap-2 pl-12 flex-wrap">
-        <span className="text-[11px] text-[#98a2b3] truncate" style={{ fontFamily: "Inter" }}>
+      {/* Meta row */}
+      <div className="flex items-center gap-1.5 px-3 pb-2.5 pl-[52px] flex-wrap">
+        {/* Requestor */}
+        <span className="text-[11px] text-[#98a2b3] truncate max-w-[100px]">
           {(inv as any).requestor_name}
         </span>
-        <span className={cn("text-[11px]", urgencyColor(inv))} style={{ fontFamily: "Inter" }}>
-          {urgencyLabel(inv)}
-        </span>
+
+        {/* Urgency chip */}
+        {urgChipStyle ? (
+          <span
+            className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-[5px]"
+            style={{ background: urgChipStyle.bg, color: urgChipStyle.text }}
+          >
+            {urgLabel}
+          </span>
+        ) : urgLabel ? (
+          <span className="text-[11px] text-[#98a2b3]">{urgLabel}</span>
+        ) : null}
+
+        {/* Risk chips */}
         {inv.risk_level === "warning" && (
-          <span className="flex items-center gap-0.5 text-amber-500">
-            <AlertTriangle size={10} /> <span className="text-[11px] font-semibold">{inv.risk_count}</span>
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-[5px] bg-[#fffaeb] text-[#b54708]">
+            <AlertTriangle size={9} strokeWidth={2.5} /> {inv.risk_count}
           </span>
         )}
         {inv.risk_level === "fail" && (
-          <span className="flex items-center gap-0.5 text-red-500">
-            <XCircle size={10} /> <span className="text-[11px] font-semibold">{inv.risk_count}</span>
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-[5px] bg-[#fef3f2] text-[#b42318]">
+            <XCircle size={9} strokeWidth={2.5} /> {inv.risk_count}
           </span>
         )}
-        {inv.risk_level === "pass" && <CheckCircle2 size={10} className="text-green-500" />}
+        {inv.risk_level === "pass" && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-[5px] bg-[#ecfdf3] text-[#027a48]">
+            <CheckCircle2 size={9} strokeWidth={2.5} /> Clear
+          </span>
+        )}
 
+        {/* Expanded-only chips */}
         {expanded && inv.duplicate_risk !== "none" && (
-          <span className="flex items-center gap-0.5 text-[11px] font-medium text-red-500">
-            <AlertTriangle size={10} /> Dup
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-[5px] bg-[#fef3f2] text-[#b42318]">
+            <Minus size={9} strokeWidth={3} /> Dup
           </span>
         )}
         {expanded && (inv as any).sla_warning && (
-          <span className="flex items-center gap-0.5 text-[11px] text-amber-500">
-            <Clock size={10} /> {(inv as any).sla_warning}
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-[5px] bg-[#fff6ed] text-[#c4320a]">
+            <Clock size={9} strokeWidth={2.5} /> {(inv as any).sla_warning}
           </span>
         )}
       </div>
@@ -2272,39 +2308,37 @@ export default function PaymentRequestsPage() {
         >
 
           <>
-              {/* Search */}
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#667085]" />
-                <input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search invoice number, vendor..."
-                  className="w-full max-w-[320px] bg-white border border-[#eaecf0] rounded-[10px] pl-9 pr-3 py-[7px] text-[14px] text-[#667085] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus:outline-none focus:border-[#5d5ef4] focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/20 transition-colors"
-                  style={{ fontFamily: "Inter" }}
-                />
-              </div>
-
-              {/* Metrics — hidden */}
-
-              {/* Filters */}
-              <div className="flex items-center gap-2">
+              {/* Search + Filters — inline when wide, wraps when narrow */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#667085]" />
+                  <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search invoice number, vendor..."
+                    className="w-[320px] bg-white border border-[#eaecf0] rounded-[10px] pl-9 pr-3 py-[7px] text-[14px] text-[#667085] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus:outline-none focus:border-[#5d5ef4] focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/20 transition-colors"
+                    style={{ fontFamily: "Inter" }}
+                  />
+                </div>
                 <button
-                  className="flex items-center gap-1 bg-white border border-[#eaecf0] rounded-[10px] pl-3 pr-3.5 py-2 text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] cursor-pointer hover:bg-[#f9fafb] transition-colors"
+                  className="shrink-0 flex items-center gap-1 bg-white border border-[#eaecf0] rounded-[10px] pl-3 pr-3.5 py-2 text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] cursor-pointer hover:bg-[#f9fafb] transition-colors"
                   style={{ fontFamily: "Inter" }}>
                   Pending <ChevronDown size={14} />
                 </button>
                 <button
-                  className="flex items-center gap-1 bg-white border border-[#eaecf0] rounded-[10px] pl-3 pr-3.5 py-2 text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] cursor-pointer hover:bg-[#f9fafb] transition-colors"
+                  className="shrink-0 flex items-center gap-1 bg-white border border-[#eaecf0] rounded-[10px] pl-3 pr-3.5 py-2 text-[14px] text-[#344054] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] cursor-pointer hover:bg-[#f9fafb] transition-colors"
                   style={{ fontFamily: "Inter" }}>
                   Datetime <ChevronDown size={14} />
                 </button>
                 <button
                   onClick={() => {}}
-                  className="p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus-visible:ring-offset-1"
+                  className="shrink-0 p-2 rounded-[8px] transition-colors cursor-pointer text-[#667085] hover:text-[#344054] hover:bg-[#e7e6e6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5d5ef4]/40 focus-visible:ring-offset-1"
                 >
                   <SlidersHorizontal size={16} />
                 </button>
               </div>
+
+              {/* Metrics — hidden */}
 
               {/* Request list */}
               <div className="flex flex-col bg-white border border-[#eaecf0] rounded-[12px] p-2 gap-2 flex-1 overflow-y-auto">
