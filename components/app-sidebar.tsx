@@ -126,7 +126,7 @@ const SUB_NAV: SubNavGroup[] = [
     items: [
       { label: "Payment Request",  href: "/ap/payment-requests",   badge: 2, badgeVariant: "amber" },
       { label: "Payment Runs",     href: "/ap/payment-runs" },
-      { label: "Spend Analysis",   href: "/ap/analytics" },
+      { label: "Spend Analysis",   href: "/ap/spend-analysis" },
     ],
   },
   {
